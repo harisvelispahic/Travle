@@ -12,7 +12,7 @@ using Travle.Services.Database;
 namespace Travle.Services.Migrations
 {
     [DbContext(typeof(TravleDbContext))]
-    [Migration("20260711224208_init")]
+    [Migration("20260712120412_init")]
     partial class init
     {
         /// <inheritdoc />
@@ -20,7 +20,7 @@ namespace Travle.Services.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "9.0.8")
+                .HasAnnotation("ProductVersion", "10.0.9")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);

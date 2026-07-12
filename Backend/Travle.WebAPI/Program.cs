@@ -14,7 +14,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using Scalar.AspNetCore;
 using System.Text;
 
@@ -126,7 +126,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(
     options =>
     {
-        options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+        options.SwaggerDoc("v1", new OpenApiInfo
         {
             Version = "v1",
             Title = "Travle API",
@@ -143,17 +143,12 @@ builder.Services.AddSwaggerGen(
             In = ParameterLocation.Header,
             Type = SecuritySchemeType.Http,
             Scheme = JwtBearerDefaults.AuthenticationScheme,
-            Reference = new OpenApiReference
-            {
-                Id = JwtBearerDefaults.AuthenticationScheme,
-                Type = ReferenceType.SecurityScheme
-            }
         };
 
-        options.AddSecurityDefinition(jwtSecurityScheme.Reference.Id, jwtSecurityScheme);
-        options.AddSecurityRequirement(new OpenApiSecurityRequirement
+        options.AddSecurityDefinition(JwtBearerDefaults.AuthenticationScheme, jwtSecurityScheme);
+        options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
                 {
-                    { jwtSecurityScheme, Array.Empty<string>() }
+                    { new OpenApiSecuritySchemeReference(JwtBearerDefaults.AuthenticationScheme, document), new List<string>() }
                 });
     });
 
