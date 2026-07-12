@@ -2,12 +2,6 @@ using Travle.Model.SearchObjects;
 using Travle.Services.Database;
 using FluentValidation;
 using FluentValidation.Results;
-using Mapster;
-using MapsterMapper;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace Travle.Services
 {
@@ -28,11 +22,6 @@ namespace Travle.Services
             _insertValidator = insertValidator;
             _updateValidator = updateValidator;
         }
-
-        /// <summary>
-        /// Gets a writable data source for CRUD operations. Override in derived classes.
-        /// </summary>
-
 
         /// <summary>
         /// Maps an insert request to an entity. Override in derived classes for custom logic.

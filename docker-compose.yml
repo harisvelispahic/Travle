@@ -1,0 +1,43 @@
+# Travle — orchestration. Run from the repo root: `docker compose up`.
+# All values come from `.env` (copy `.env.example` → `.env`). Nothing secret is hardcoded here.
+# NOTE: worker + rabbitmq services are added in the next Phase 0 step (Travle.Worker not yet created).
+
+services:
+  travle-sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: travle-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+    ports:
+      - "${SQLSERVER_HOST_PORT}:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    networks:
+      - travle-network
+
+  travle-api:
+    build:
+      context: ./Backend
+      dockerfile: Travle.WebAPI/Dockerfile
+    container_name: travle-api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
+      - ConnectionStrings__DefaultConnection=${CONNECTION_STRING}
+      - JwtToken__SecretKey=${JWT_SECRET_KEY}
+      - JwtToken__Issuer=${JWT_ISSUER}
+      - JwtToken__Audience=${JWT_AUDIENCE}
+      - JwtToken__DurationInMinutes=${JWT_DURATION_MINUTES}
+    ports:
+      - "${API_HOST_PORT}:5121"
+    depends_on:
+      - travle-sqlserver
+    networks:
+      - travle-network
+
+volumes:
+  sqlserver_data:
+
+networks:
+  travle-network:
+    driver: bridge

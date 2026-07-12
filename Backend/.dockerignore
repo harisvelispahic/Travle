@@ -1,0 +1,7 @@
+# Keep host build artifacts and IDE state out of the image build context.
+**/bin/
+**/obj/
+**/.vs/
+**/*.user
+**/Dockerfile*
+**/.dockerignore

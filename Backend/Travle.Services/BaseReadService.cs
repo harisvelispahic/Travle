@@ -1,10 +1,6 @@
 using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
 using Travle.Services.Database;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using System.Linq.Dynamic.Core;
 
 namespace Travle.Services
