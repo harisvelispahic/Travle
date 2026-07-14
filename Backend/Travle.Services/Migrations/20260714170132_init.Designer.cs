@@ -12,7 +12,7 @@ using Travle.Services.Database;
 namespace Travle.Services.Migrations
 {
     [DbContext(typeof(TravleDbContext))]
-    [Migration("20260712120412_init")]
+    [Migration("20260714170132_init")]
     partial class init
     {
         /// <inheritdoc />

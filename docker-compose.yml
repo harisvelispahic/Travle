@@ -1,6 +1,13 @@
-# Travle — orchestration. Run from the repo root: `docker compose up`.
+# Travle — orchestration. Run from the repo root.
+#
+#   docker compose up --build
+#       → everything: SQL Server, RabbitMQ, worker, API (the canonical / grader run).
+#
+#   docker compose up travle-sqlserver travle-rabbitmq travle-worker
+#       → infra + worker only; leave the API out and run/debug it locally in VS.
+#         (A locally-run API reads appsettings.Development.json → localhost,1435 / localhost:5672.)
+#
 # All values come from `.env` (copy `.env.example` → `.env`). Nothing secret is hardcoded here.
-# NOTE: worker + rabbitmq services are added in the next Phase 0 step (Travle.Worker not yet created).
 
 services:
   travle-sqlserver:
@@ -13,6 +20,38 @@ services:
       - "${SQLSERVER_HOST_PORT}:1433"
     volumes:
       - sqlserver_data:/var/opt/mssql
+    networks:
+      - travle-network
+
+  travle-rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: travle-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "${RABBITMQ_HOST_PORT}:5672"     # AMQP
+      - "${RABBITMQ_MGMT_PORT}:15672"    # management UI (http://localhost:15672)
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - travle-network
+
+  travle-worker:
+    build:
+      context: ./Backend
+      dockerfile: Travle.Worker/Dockerfile
+    container_name: travle-worker
+    environment:
+      - DOTNET_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
+      - ConnectionStrings__DefaultConnection=${CONNECTION_STRING}
+      - RabbitMq__Host=${RABBITMQ_HOST}
+      - RabbitMq__Port=${RABBITMQ_PORT}
+      - RabbitMq__Username=${RABBITMQ_USERNAME}
+      - RabbitMq__Password=${RABBITMQ_PASSWORD}
+    depends_on:
+      - travle-sqlserver
+      - travle-rabbitmq
     networks:
       - travle-network
 
@@ -32,11 +71,13 @@ services:
       - "${API_HOST_PORT}:5121"
     depends_on:
       - travle-sqlserver
+      - travle-rabbitmq
     networks:
       - travle-network
 
 volumes:
   sqlserver_data:
+  rabbitmq_data:
 
 networks:
   travle-network:
