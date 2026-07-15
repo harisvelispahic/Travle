@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Travle.Services.Database;
 
@@ -11,9 +12,11 @@ using Travle.Services.Database;
 namespace Travle.Services.Migrations
 {
     [DbContext(typeof(TravleDbContext))]
-    partial class TravleDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260715174602_InitialCreate")]
+    partial class InitialCreate
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

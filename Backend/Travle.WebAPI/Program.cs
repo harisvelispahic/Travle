@@ -3,7 +3,6 @@ using Travle.Model.Requests;
 using Travle.Model.Responses;
 using Travle.Services;
 using Travle.Services.Database;
-using Travle.Services.ProductStateMachine;
 using Travle.Services.Validators;
 using Travle.WebAPI.Middleware;
 using Travle.WebAPI.Services;
@@ -68,51 +67,16 @@ builder.Services.AddDbContext<TravleDbContext>(options =>
 // register Mapster for object mapping
 builder.Services.AddMapster();
 
-// configure a few mappings explicitly if needed (optional)
-// Mapster will automatically map same-named properties, but configuration
-// ensures any custom rules or future needs can be added here.
-TypeAdapterConfig<Product, ProductResponse>.NewConfig().IgnoreNullValues(true);
-TypeAdapterConfig<Category, CategoryResponse>.NewConfig().IgnoreNullValues(true);
+// Explicit Mapster rules. Same-named properties map automatically; these add the custom behaviour
+// the User mappings need (ignore nulls so partial update requests don't overwrite with null).
 TypeAdapterConfig<User, UserResponse>.NewConfig().IgnoreNullValues(true);
 TypeAdapterConfig<UserUpdateRequest, User>.NewConfig().IgnoreNullValues(true);
-TypeAdapterConfig<ProductType, ProductTypeResponse>.NewConfig().IgnoreNullValues(true);
-TypeAdapterConfig<UnitOfMeasure, UnitOfMeasureResponse>.NewConfig().IgnoreNullValues(true);
-TypeAdapterConfig<Asset, AssetResponse>.NewConfig().IgnoreNullValues(true);
-TypeAdapterConfig<ProductReview, ProductReviewResponse>.NewConfig()
-    .Map(dest => dest.ReviewerDisplayName, src => $"{src.User.FirstName} {src.User.LastName}".Trim());
-TypeAdapterConfig<Order, OrderResponse>.NewConfig()
-    .Map(dest => dest.Status, src => (int)src.Status);
-TypeAdapterConfig<OrderItem, OrderItemResponse>.NewConfig()
-    .Map(dest => dest.ProductName, src => src.Product != null ? src.Product.Name : string.Empty);
-
 
 // register application services
-builder.Services.AddScoped<IProductService, ProductService>();
-builder.Services.AddScoped<BaseProductState>();
-builder.Services.AddScoped<InitialProductState>();
-builder.Services.AddScoped<DraftProductState>();
-builder.Services.AddScoped<ActiveProductState>();
-
-// category service
-builder.Services.AddScoped<ICategoryService, CategoryService>();
-// product type service
-builder.Services.AddScoped<IProductTypeService, ProductTypeService>();
-// unit of measure service
-builder.Services.AddScoped<IUnitOfMeasureService, UnitOfMeasureService>();
-// user service
 builder.Services.AddScoped<IUserService, UserService>();
-
-builder.Services.AddScoped<IAssetService, AssetService>();
-
-
 builder.Services.AddScoped<IRefreshTokenService, RefreshTokenService>();
-
 builder.Services.AddScoped<IAccessManager, AccessManager>();
-
 builder.Services.AddScoped<ICryptoService, CryptoService>();
-
-builder.Services.AddScoped<IOrderService, OrderService>();
-builder.Services.AddScoped<IProductReviewService, ProductReviewService>();
 
 // Register every FluentValidation validator in the Travle.Services assembly (Scoped) in one
 // sweep, so new validators are picked up automatically without editing Program.cs.
@@ -151,7 +115,7 @@ builder.Services.AddSwaggerGen(
         {
             Version = "v1",
             Title = "Travle API",
-            Description = "API for managing products and categories in the Travle application"
+            Description = "API for the Travle tourist-destination discovery and tour-booking marketplace"
         });
 
         var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";

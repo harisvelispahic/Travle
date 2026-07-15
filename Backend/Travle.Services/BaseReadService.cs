@@ -1,11 +1,18 @@
 using Travle.Model.Exceptions;
 using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
-using System.Linq.Dynamic.Core;
 using Travle.Services.Database;
+using Microsoft.EntityFrameworkCore;
+using System.Linq.Dynamic.Core;
+using System.Linq.Dynamic.Core.Exceptions;
 
 namespace Travle.Services
 {
+    /// <summary>
+    /// Generic base for read-only services. Every stage (filter, sort, page, project) is composed on
+    /// an <see cref="IQueryable{T}"/> so it is translated to SQL and evaluated in the database — the
+    /// set is never pulled into memory to be filtered client-side.
+    /// </summary>
     public abstract class BaseReadService<TEntity, TResponse, TSearch> : IBaseReadService<TResponse, TSearch>
         where TEntity : class
         where TSearch : BaseSearchObject
@@ -13,75 +20,110 @@ namespace Travle.Services
         protected readonly MapsterMapper.IMapper _mapper;
         protected readonly TravleDbContext _dbContext;
 
+        /// <summary>Hard upper bound on page size, enforced regardless of the requested value.</summary>
+        protected const int MaxPageSize = 100;
+
+        /// <summary>Page size used when the request does not specify one.</summary>
+        protected const int DefaultPageSize = 10;
+
         protected BaseReadService(MapsterMapper.IMapper mapper, TravleDbContext dbContext)
         {
             _mapper = mapper;
             _dbContext = dbContext;
         }
 
-
-        /// <summary>
-        /// Applies search filters to the query. Override in derived classes to implement specific filtering logic.
-        /// </summary>
-        protected abstract IEnumerable<TEntity> ApplyFilters(IEnumerable<TEntity> query, TSearch? search);
-
         public virtual async Task<PageResult<TResponse>> GetAllAsync(TSearch? search = null)
         {
-            IEnumerable<TEntity> query = this._dbContext.Set<TEntity>();
+            IQueryable<TEntity> query = _dbContext.Set<TEntity>().AsNoTracking();
 
-            query = await IncludeRelatedEntitiesAsync(search, query.AsQueryable());
             query = ApplyFilters(query, search);
 
             int? totalCount = null;
-
-            if (search.IncludeTotalCount ?? false)
+            if (search?.IncludeTotalCount ?? false)
             {
-                totalCount = query.Count();
+                // Counted before includes so COUNT(*) runs over the filtered set without join overhead.
+                totalCount = await query.CountAsync();
             }
 
-            if (!string.IsNullOrWhiteSpace(search.SortBy))
-            {
-                //TODO: parametrize sortBy to prevent SQL injection
-                query = query.AsQueryable().OrderBy(search.SortBy);
-            }
+            query = ApplySorting(query, search);
+            query = ApplyPaging(query, search);
+            query = ApplyIncludes(query, search);
 
-            if (search.Page.HasValue)
-            {
-                query = query.Skip((search.Page.Value - 1) * search.PageSize.Value);
-            }
+            var entities = await query.ToListAsync();
+            var items = _mapper.Map<List<TResponse>>(entities);
 
-            if (search.PageSize.HasValue)
+            return new PageResult<TResponse>
             {
-                query = query.Take(search.PageSize.Value);
-            }
-
-            var list = query.Select(item => _mapper.Map<TResponse>(item)).ToList();
-
-            var pageResult = new PageResult<TResponse>
-            {
-                Items = list,
+                Items = items,
                 TotalCount = totalCount
             };
-
-            return await Task.FromResult(pageResult);
         }
-
-        protected virtual async Task<IQueryable<TEntity>> IncludeRelatedEntitiesAsync(TSearch? search, IQueryable<TEntity> query = null)
-        {
-            // Override in derived classes to include related entities if necessary
-            return query;
-        }
-
 
         public virtual async Task<TResponse> GetByIdAsync(int id)
         {
-            var entity = await this._dbContext.Set<TEntity>().FindAsync(id);
-            if (entity == null)
+            var entity = await _dbContext.Set<TEntity>().FindAsync(id);
+            if (entity is null)
             {
                 throw new NotFoundException(typeof(TEntity).Name, id);
             }
 
             return _mapper.Map<TResponse>(entity);
+        }
+
+        /// <summary>
+        /// Adds search-specific <c>WHERE</c> clauses. Override in derived services. The query must stay
+        /// an <see cref="IQueryable{T}"/> so filters translate to SQL — never enumerate it here.
+        /// </summary>
+        protected virtual IQueryable<TEntity> ApplyFilters(IQueryable<TEntity> query, TSearch? search) => query;
+
+        /// <summary>
+        /// Adds <c>Include</c>/<c>ThenInclude</c> for related entities — typically toggled by flags on
+        /// the search object so an endpoint can return a lighter or richer graph on demand (e.g. skip
+        /// heavy navigations when the caller doesn't need them). Override in derived services; the base
+        /// includes nothing. Applied after paging so the count query stays lean and the includes only
+        /// hydrate the current page. Synchronous by design: composing an <see cref="IQueryable{T}"/>
+        /// never awaits (this replaces the template's misnamed <c>IncludeRelatedEntitiesAsync</c>).
+        /// </summary>
+        protected virtual IQueryable<TEntity> ApplyIncludes(IQueryable<TEntity> query, TSearch? search) => query;
+
+        /// <summary>
+        /// Applies <c>ORDER BY</c> from <see cref="BaseSearchObject.SortBy"/> (a property-name based
+        /// dynamic expression, not raw SQL), defaulting to <c>Id</c> so paging is deterministic. An
+        /// unparseable expression surfaces as a 400 instead of an unhandled 500.
+        /// </summary>
+        protected virtual IQueryable<TEntity> ApplySorting(IQueryable<TEntity> query, TSearch? search)
+        {
+            var sortBy = string.IsNullOrWhiteSpace(search?.SortBy) ? "Id" : search.SortBy;
+
+            try
+            {
+                return query.OrderBy(sortBy);
+            }
+            catch (ParseException)
+            {
+                throw new BusinessRuleException($"Invalid sort expression: '{search?.SortBy}'.");
+            }
+        }
+
+        /// <summary>
+        /// Applies <c>Skip</c>/<c>Take</c>. Paging is always applied and the page size is clamped to
+        /// <see cref="MaxPageSize"/> so a list endpoint can never return an unbounded result set.
+        /// </summary>
+        protected virtual IQueryable<TEntity> ApplyPaging(IQueryable<TEntity> query, TSearch? search)
+        {
+            int page = search?.Page is int p && p > 0 ? p : 1;
+
+            int pageSize = search?.PageSize ?? DefaultPageSize;
+            if (pageSize < 1)
+            {
+                pageSize = DefaultPageSize;
+            }
+            if (pageSize > MaxPageSize)
+            {
+                pageSize = MaxPageSize;
+            }
+
+            return query.Skip((page - 1) * pageSize).Take(pageSize);
         }
     }
 }

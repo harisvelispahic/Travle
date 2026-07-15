@@ -4,54 +4,28 @@ namespace Travle.Services.Database
 {
     public partial class TravleDbContext : DbContext
     {
-
         private void CreateConfiguration(ModelBuilder modelBuilder)
         {
-            modelBuilder.Entity<Category>()
-                .HasOne(c => c.ParentCategory)
-                .WithMany(c => c.ChildCategories)
-                .HasForeignKey(c => c.ParentCategoryId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            // Configure ProductCategory relationships
-            modelBuilder.Entity<ProductCategory>()
-                .HasOne(pc => pc.Product)
-                .WithMany(pc => pc.ProductCategories)
-                .HasForeignKey(pc => pc.ProductId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            modelBuilder.Entity<ProductCategory>()
-                .HasOne(pc => pc.Category)
-                .WithMany(pc => pc.ProductCategories)
-                .HasForeignKey(pc => pc.CategoryId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            // Configure UserRole relationships
+            // UserRole join entity: cascade from both sides so removing a user or a role removes the
+            // membership rows with it.
             modelBuilder.Entity<UserRole>()
                 .HasOne(ur => ur.User)
-                .WithMany(ur => ur.UserRoles)
+                .WithMany(u => u.UserRoles)
                 .HasForeignKey(ur => ur.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<UserRole>()
                 .HasOne(ur => ur.Role)
-                .WithMany(ur => ur.UserRoles)
+                .WithMany(r => r.UserRoles)
                 .HasForeignKey(ur => ur.RoleId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            modelBuilder.Entity<Asset>()
-               .HasOne(a => a.Product)
-               .WithMany(p => p.Assets)
-               .HasForeignKey(a => a.ProductId)
-               .OnDelete(DeleteBehavior.Cascade);
-
-            modelBuilder.Entity<ProductReview>()
-                .HasOne(pr => pr.Order)
-                .WithMany(o => o.ProductReviews)
-                .HasForeignKey(pr => pr.OrderId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            // Add any additional model configurations here
+            // Refresh tokens are owned by a user; deleting the user clears their tokens.
+            modelBuilder.Entity<RefreshToken>()
+                .HasOne(rt => rt.User)
+                .WithMany(u => u.RefreshTokens)
+                .HasForeignKey(rt => rt.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }

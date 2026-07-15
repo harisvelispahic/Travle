@@ -6,117 +6,85 @@ using FluentValidation;
 namespace Travle.Services
 {
     /// <summary>
-    /// Generic base service for CRUD operations (Create, Read, Update, Delete)
+    /// Generic base service for CRUD operations (Create, Read, Update, Delete). Audit timestamps
+    /// (<c>CreatedAt</c>/<c>ModifiedAt</c>) are stamped centrally in <see cref="TravleDbContext"/> on
+    /// save — services never set them, and the surrogate key is assigned by the database.
     /// </summary>
     public abstract class BaseCRUDService<TEntity, TResponse, TSearch, TInsertRequest, TUpdateRequest>
         : BaseReadService<TEntity, TResponse, TSearch>
         where TEntity : class
         where TSearch : BaseSearchObject
     {
-
         protected readonly IValidator<TInsertRequest> _insertValidator;
         protected readonly IValidator<TUpdateRequest> _updateValidator;
 
-        protected BaseCRUDService(TravleDbContext dbContext, MapsterMapper.IMapper mapper, IValidator<TInsertRequest> insertValidator, IValidator<TUpdateRequest> updateValidator) : base(mapper, dbContext)
+        protected BaseCRUDService(
+            TravleDbContext dbContext,
+            MapsterMapper.IMapper mapper,
+            IValidator<TInsertRequest> insertValidator,
+            IValidator<TUpdateRequest> updateValidator)
+            : base(mapper, dbContext)
         {
             _insertValidator = insertValidator;
             _updateValidator = updateValidator;
         }
 
         /// <summary>
-        /// Maps an insert request to an entity. Override in derived classes for custom logic.
+        /// Maps an insert request to a new entity. Override for logic the mapper can't express
+        /// (e.g. hashing a password), calling <c>base.MapInsertRequestToEntity</c> first.
         /// </summary>
         protected virtual TEntity MapInsertRequestToEntity(TInsertRequest request)
         {
-            var entity = _mapper.Map<TEntity>(request ?? throw new ArgumentNullException(nameof(request)));
-            return entity;
+            ArgumentNullException.ThrowIfNull(request);
+            return _mapper.Map<TEntity>(request);
         }
 
         /// <summary>
-        /// Maps an update request to an existing entity. Override in derived classes for custom logic.
+        /// Applies an update request onto an already-loaded, tracked entity. Override for custom logic.
         /// </summary>
         protected virtual void MapUpdateRequestToEntity(TUpdateRequest request, TEntity entity)
-        {
-            // var config = new TypeAdapterConfig();
-            // config.NewConfig<TUpdateRequest, TEntity>()
-            //     .IgnoreNullValues(true);
-            // new Mapper(config).Map(request, entity);
-            _mapper.Map(request, entity);
-        }
+            => _mapper.Map(request, entity);
 
-        /// <summary>
-        /// Inserts a new entity into the data source.
-        /// </summary>
         public virtual async Task<TResponse> InsertAsync(TInsertRequest request)
         {
-            var validationResult = await _insertValidator.ValidateAsync(request);
-            if (!validationResult.IsValid)
-            {
-                throw new ValidationException(validationResult.Errors);
-            }
+            // ValidateAndThrowAsync raises a ValidationException, which the ValidationExceptionHandler
+            // turns into the standard 400 ErrorResponse.
+            await _insertValidator.ValidateAndThrowAsync(request);
 
             var entity = MapInsertRequestToEntity(request);
 
-            // Set the Id property
-            var entityType = entity.GetType();
-            var idProperty = entityType.GetProperty("Id");
-            //idProperty?.SetValue(entity, GenerateNewId());
+            _dbContext.Set<TEntity>().Add(entity);
+            await _dbContext.SaveChangesAsync();
 
-            // Set CreatedAt if exists
-            var createdAtProperty = entityType.GetProperty("CreatedAt");
-            if (createdAtProperty?.CanWrite == true)
-            {
-                createdAtProperty.SetValue(entity, DateTime.UtcNow);
-            }
-
-            this._dbContext.Set<TEntity>().Add(entity);
-            await this._dbContext.SaveChangesAsync();
-            
-            return await Task.FromResult(_mapper.Map<TResponse>(entity));
+            return _mapper.Map<TResponse>(entity);
         }
 
-        /// <summary>
-        /// Updates an existing entity in the data source.
-        /// </summary>
         public virtual async Task<TResponse> UpdateAsync(int id, TUpdateRequest request)
         {
-            var validationResult = await _updateValidator.ValidateAsync(request);
-            if (!validationResult.IsValid)
+            await _updateValidator.ValidateAndThrowAsync(request);
+
+            var entity = await _dbContext.Set<TEntity>().FindAsync(id);
+            if (entity is null)
             {
-                throw new ValidationException(validationResult.Errors);
-            }
-
-            var entity = await this._dbContext.Set<TEntity>().FindAsync(id);
-
-            if (entity == null)
                 throw new NotFoundException(typeof(TEntity).Name, id);
+            }
 
             MapUpdateRequestToEntity(request, entity);
+            await _dbContext.SaveChangesAsync();
 
-            // Update the UpdatedAt timestamp
-            var updatedAtProperty = entity.GetType().GetProperty("UpdatedAt");
-            if (updatedAtProperty?.CanWrite == true)
-            {
-                updatedAtProperty.SetValue(entity, DateTime.UtcNow);
-            }
-
-            await this._dbContext.SaveChangesAsync();
-
-            return await Task.FromResult(_mapper.Map<TResponse>(entity));
+            return _mapper.Map<TResponse>(entity);
         }
 
-        /// <summary>
-        /// Deletes an entity from the data source by id.
-        /// </summary>
         public virtual async Task DeleteAsync(int id)
         {
-            var entity = await this._dbContext.Set<TEntity>().FindAsync(id);
-
-            if (entity == null)
+            var entity = await _dbContext.Set<TEntity>().FindAsync(id);
+            if (entity is null)
+            {
                 throw new NotFoundException(typeof(TEntity).Name, id);
+            }
 
-            this._dbContext.Set<TEntity>().Remove(entity);
-            await this._dbContext.SaveChangesAsync();
+            _dbContext.Set<TEntity>().Remove(entity);
+            await _dbContext.SaveChangesAsync();
         }
     }
 }

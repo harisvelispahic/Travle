@@ -26,30 +26,34 @@ namespace Travle.Services
         }
 
 
-        protected override IEnumerable<User> ApplyFilters(IEnumerable<User> query, UserSearch? search)
+        protected override IQueryable<User> ApplyFilters(IQueryable<User> query, UserSearch? search)
         {
-            if (search != null)
+            if (search == null)
             {
-                if (!string.IsNullOrWhiteSpace(search.Email))
-                {
-                    query = query.Where(u => u.Email.Contains(search.Email, StringComparison.OrdinalIgnoreCase));
-                }
+                return query;
+            }
 
-                if (!string.IsNullOrWhiteSpace(search.Username))
-                {
-                    query = query.Where(u => u.Username.Contains(search.Username, StringComparison.OrdinalIgnoreCase));
-                }
+            // String matching runs in SQL (LIKE) and is case-insensitive under the default SQL Server
+            // collation, so no StringComparison overload is needed (nor would it translate).
+            if (!string.IsNullOrWhiteSpace(search.Email))
+            {
+                query = query.Where(u => u.Email.Contains(search.Email));
+            }
 
-                if (!string.IsNullOrWhiteSpace(search.Name))
-                {
-                    query = query.Where(u => u.FirstName.Contains(search.Name, StringComparison.OrdinalIgnoreCase)
-                                          || u.LastName.Contains(search.Name, StringComparison.OrdinalIgnoreCase));
-                }
+            if (!string.IsNullOrWhiteSpace(search.Username))
+            {
+                query = query.Where(u => u.Username.Contains(search.Username));
+            }
 
-                if (search.IsActive.HasValue)
-                {
-                    query = query.Where(u => u.IsActive == search.IsActive.Value);
-                }
+            if (!string.IsNullOrWhiteSpace(search.Name))
+            {
+                query = query.Where(u => u.FirstName.Contains(search.Name)
+                                      || u.LastName.Contains(search.Name));
+            }
+
+            if (search.IsActive.HasValue)
+            {
+                query = query.Where(u => u.IsActive == search.IsActive.Value);
             }
 
             return query;
@@ -85,7 +89,6 @@ namespace Travle.Services
             }
 
             var entity = MapInsertRequestToEntity(request);
-            entity.CreatedAt = DateTime.UtcNow;
 
             _dbContext.Users.Add(entity);
             await _dbContext.SaveChangesAsync();
