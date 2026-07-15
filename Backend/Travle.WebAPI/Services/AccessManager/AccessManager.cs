@@ -31,16 +31,17 @@ namespace Travle.WebAPI.Services.AccessManager
         {
             var user = await _userService.GetByUsernameAsync(request.Username);
 
-
+            // Same generic message whether the username is unknown or the password is wrong,
+            // so the endpoint cannot be used to enumerate valid usernames.
             if (user == null)
             {
-                throw new Exception($"User with {request.Username} doesn't exist");
+                throw new UnauthorizedException("Invalid username or password.");
             }
 
             var validPassword = _cryptoService.Verify(user.PasswordHash, user.PasswordSalt, request.Password);
             if (!validPassword)
             {
-                throw new Exception("Wrong credential");
+                throw new UnauthorizedException("Invalid username or password.");
             }
 
             var accessToken = GenerateToken(user);
@@ -66,31 +67,31 @@ namespace Travle.WebAPI.Services.AccessManager
         {
             if (string.IsNullOrEmpty(request.RefreshToken))
             {
-                throw new ClientException("Refresh token is required");
+                throw new BusinessRuleException("Refresh token is required.");
             }
 
             var refreshToken = await _refreshTokenService.GetStoredTokenAsync(request.RefreshToken);
 
             if (refreshToken == null)
             {
-                throw new ClientException("Invalid refresh token");
+                throw new UnauthorizedException("Invalid refresh token.");
             }
 
             if (refreshToken.ExpiresAt < DateTime.UtcNow)
             {
-                throw new ClientException("Refresh token has expired");
+                throw new UnauthorizedException("Refresh token has expired.");
             }
 
             var user = await _userService.GetWithRoleByIdAsync(refreshToken.UserId);
 
             if (user == null)
             {
-                throw new ClientException("User not found");
+                throw new UnauthorizedException("Invalid refresh token.");
             }
 
             if (!user.IsActive)
             {
-                throw new ClientException("User is not active");
+                throw new ForbiddenException("This account is not active.");
             }
 
             await _refreshTokenService.DeleteAllUserRefreshTokensAsync(user.Id);

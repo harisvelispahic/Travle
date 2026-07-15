@@ -55,7 +55,7 @@ public abstract class BaseEntity
 - Timestamps set centrally (a `SaveChanges` override/interceptor in `TravleDbContext`) — never manually per service.
 - Do **not** put `IsDeleted` on BaseEntity — soft flags are per-entity and named for their meaning (`IsRemoved` on reviews, `IsSuspended` on users), see §6a.
 
-## 3. Exception handling
+## 3. Exception handling — IMPLEMENTED (full detail: `09-exception-handling.md`)
 
 Hierarchy in `Travle.Model/Exceptions`:
 ```
@@ -63,7 +63,22 @@ TravleException (abstract; HttpStatusCode + error key)
 ├── NotFoundException 404 · BusinessRuleException 400 · ConflictException 409
 ├── UnauthorizedException 401 · ForbiddenException 403 · PaymentException 402/400
 ```
-Single `ExceptionMiddleware` first in the pipeline: `TravleException` → mapped status + `{ "message", "errors": { key: [msgs] } }` (same JSON shape the template's Flutter helpers expect); `FluentValidation.ValidationException` → 400 per-property; everything else → 500, fully logged (`ILogger<ExceptionMiddleware>`), standardized client message; stack traces only in Development. Services throw; controllers contain zero try/catch.
+A **chain of `IExceptionHandler`s** registered via `AddExceptionHandler<>` and wrapped by
+`app.UseExceptionHandler()` (first middleware), invoked in registration order — most specific first,
+generic last, exactly like `try/catch/catch`:
+1. **`TravleExceptionHandler`** — the whole `TravleException` hierarchy (each exception carries its
+   own status + error key) → mapped status + `{ "message", "errors": { key: [msgs] }, "traceId", "details" }`
+   (the `message`/`errors` shape the template's Flutter helpers expect, plus additive `traceId` and
+   dev-only `details`).
+2. **`ValidationExceptionHandler`** — `FluentValidation.ValidationException` → 400, `errors` keyed
+   per-property. Validators auto-registered via `AddValidatorsFromAssemblyContaining<>`;
+   `[ApiController]` model-binding 400s reuse the same shape via `InvalidModelStateResponseFactory`.
+3. **`GlobalExceptionHandler`** (fallback, last) — everything else → 500, fully logged
+   (`ILogger<GlobalExceptionHandler>`), standardized client message; **stack traces (`details`) only
+   in Development**. Always returns `true` so nothing escapes the chain.
+
+Services throw; controllers contain zero try/catch. Replaces the template's `ExceptionFilter` +
+`ClientException`.
 
 ## 4. EF Core — per-entity configurations (decided)
 

@@ -5,17 +5,18 @@ using Travle.Services;
 using Travle.Services.Database;
 using Travle.Services.ProductStateMachine;
 using Travle.Services.Validators;
-using Travle.WebAPI.Filters;
+using Travle.WebAPI.Middleware;
 using Travle.WebAPI.Services;
 using Travle.WebAPI.Services.AccessManager;
 using FluentValidation;
 using Mapster;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using Scalar.AspNetCore;
+using System.Diagnostics;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -25,9 +26,38 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IAuthenticatedUserAccessor, HttpAuthenticatedUserAccessor>();
 
-builder.Services.AddControllers(
-   options => options.Filters.Add<ExceptionFilter>()
-);
+// Global exception-handling pipeline: a chain of IExceptionHandler implementations invoked in
+// registration order (specific first, generic last — the try/catch/catch mental model). The
+// fallback GlobalExceptionHandler is registered last and always handles. See
+// docs/context/09-exception-handling.md.
+builder.Services.AddExceptionHandler<TravleExceptionHandler>();
+builder.Services.AddExceptionHandler<ValidationExceptionHandler>();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
+
+builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        // Keep model-binding / [ApiController] validation failures in the same ErrorResponse
+        // shape the exception handlers produce, so clients only ever parse one error format.
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var errors = context.ModelState
+                .Where(kvp => kvp.Value is { Errors.Count: > 0 })
+                .ToDictionary(
+                    kvp => string.IsNullOrEmpty(kvp.Key) ? "request" : kvp.Key,
+                    kvp => kvp.Value!.Errors.Select(e => e.ErrorMessage).ToArray());
+
+            var body = new ErrorResponse
+            {
+                Message = errors.Values.SelectMany(v => v).FirstOrDefault() ?? "One or more validation errors occurred.",
+                Errors = errors,
+                TraceId = Activity.Current?.Id ?? context.HttpContext.TraceIdentifier
+            };
+
+            return new BadRequestObjectResult(body) { ContentTypes = { "application/json" } };
+        };
+    });
 
 // Add Entity Framework Core DbContext
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -84,18 +114,9 @@ builder.Services.AddScoped<ICryptoService, CryptoService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IProductReviewService, ProductReviewService>();
 
-builder.Services.AddScoped<IValidator<ProductTypeInsertRequest>, ProductTypeInsertValidator>();
-builder.Services.AddScoped<IValidator<ProductTypeUpdateRequest>, ProductTypeUpdateValidator>();
-builder.Services.AddScoped<IValidator<UnitOfMeasureInsertRequest>, UnitOfMeasureInsertValidator>();
-builder.Services.AddScoped<IValidator<UnitOfMeasureUpdateRequest>, UnitOfMeasureUpdateValidator>();
-builder.Services.AddScoped<IValidator<CategoriesInsertRequest>, CategoryInsertValidator>();
-builder.Services.AddScoped<IValidator<CategoriesUpdateRequest>, CategoryUpdateValidator>();
-builder.Services.AddScoped<IValidator<UserInsertRequest>, UserInsertValidator>();
-builder.Services.AddScoped<IValidator<UserUpdateRequest>, UserUpdateValidator>();
-builder.Services.AddScoped<IValidator<AssetInsertRequest>, AssetInsertValidator>();
-builder.Services.AddScoped<IValidator<AssetUpdateRequest>, AssetUpdateValidator>();
-builder.Services.AddScoped<IValidator<ProductReviewInsertRequest>, ProductReviewInsertValidator>();
-builder.Services.AddScoped<IValidator<ProductReviewUpdateRequest>, ProductReviewUpdateValidator>();
+// Register every FluentValidation validator in the Travle.Services assembly (Scoped) in one
+// sweep, so new validators are picked up automatically without editing Program.cs.
+builder.Services.AddValidatorsFromAssemblyContaining<UserInsertValidator>();
 
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
@@ -153,6 +174,10 @@ builder.Services.AddSwaggerGen(
     });
 
 var app = builder.Build();
+
+// Must be the first middleware so it wraps the entire pipeline: any exception thrown downstream
+// is routed through the registered IExceptionHandler chain.
+app.UseExceptionHandler();
 
 // Configure the HTTP request pipeline.
 //if (app.Environment.IsDevelopment())

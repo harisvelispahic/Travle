@@ -1,7 +1,7 @@
+using Travle.Model.Exceptions;
 using Travle.Model.SearchObjects;
 using Travle.Services.Database;
 using FluentValidation;
-using FluentValidation.Results;
 
 namespace Travle.Services
 {
@@ -50,10 +50,9 @@ namespace Travle.Services
         public virtual async Task<TResponse> InsertAsync(TInsertRequest request)
         {
             var validationResult = await _insertValidator.ValidateAsync(request);
-            if (validationResult.IsValid == false)
+            if (!validationResult.IsValid)
             {
-                var errors = validationResult.Errors.Select(e => _mapper.Map<ValidationFailure>(e));
-                throw new FluentValidation.ValidationException(errors);
+                throw new ValidationException(validationResult.Errors);
             }
 
             var entity = MapInsertRequestToEntity(request);
@@ -82,17 +81,15 @@ namespace Travle.Services
         public virtual async Task<TResponse> UpdateAsync(int id, TUpdateRequest request)
         {
             var validationResult = await _updateValidator.ValidateAsync(request);
-            if (validationResult.IsValid == false)
+            if (!validationResult.IsValid)
             {
-                var errors = validationResult.Errors.Select(e => _mapper.Map<ValidationFailure>(e));
-                throw new FluentValidation.ValidationException(errors);
+                throw new ValidationException(validationResult.Errors);
             }
 
-           
-            var entity = this._dbContext.Set<TEntity>().Find(id);
+            var entity = await this._dbContext.Set<TEntity>().FindAsync(id);
 
             if (entity == null)
-                throw new KeyNotFoundException($"{typeof(TEntity).Name} with id {id} not found.");
+                throw new NotFoundException(typeof(TEntity).Name, id);
 
             MapUpdateRequestToEntity(request, entity);
 
@@ -113,10 +110,10 @@ namespace Travle.Services
         /// </summary>
         public virtual async Task DeleteAsync(int id)
         {
-            var entity = this._dbContext.Set<TEntity>().Find(id);
+            var entity = await this._dbContext.Set<TEntity>().FindAsync(id);
 
             if (entity == null)
-                throw new KeyNotFoundException($"{typeof(TEntity).Name} with id {id} not found.");
+                throw new NotFoundException(typeof(TEntity).Name, id);
 
             this._dbContext.Set<TEntity>().Remove(entity);
             await this._dbContext.SaveChangesAsync();

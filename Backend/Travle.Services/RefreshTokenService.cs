@@ -26,7 +26,7 @@ namespace Travle.Services
 
             if (token == null)
             {
-                throw new ClientException("Refresh token not found.");
+                throw new UnauthorizedException("Invalid refresh token.");
             }
 
             return token;

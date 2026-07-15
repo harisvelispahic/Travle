@@ -1,7 +1,8 @@
+using Travle.Model.Exceptions;
 using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
-using Travle.Services.Database;
 using System.Linq.Dynamic.Core;
+using Travle.Services.Database;
 
 namespace Travle.Services
 {
@@ -74,13 +75,13 @@ namespace Travle.Services
 
         public virtual async Task<TResponse> GetByIdAsync(int id)
         {
-            var entity = this._dbContext.Set<TEntity>().Find(id);
+            var entity = await this._dbContext.Set<TEntity>().FindAsync(id);
             if (entity == null)
             {
-                throw new KeyNotFoundException($"{typeof(TEntity).Name} with id {id} not found.");
+                throw new NotFoundException(typeof(TEntity).Name, id);
             }
 
-            return await Task.FromResult(_mapper.Map<TResponse>(entity));
+            return _mapper.Map<TResponse>(entity);
         }
     }
 }

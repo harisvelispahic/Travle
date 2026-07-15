@@ -59,7 +59,7 @@ public class OrderService : BaseReadService<Order, OrderResponse, OrderSearchObj
         var userId = _userAccessor.GetUserId();
         if (!userId.HasValue)
         {
-            throw new KeyNotFoundException($"{typeof(Order).Name} with id {id} not found.");
+            throw new NotFoundException($"{typeof(Order).Name} with id {id} not found.");
         }
 
         var order = await _dbContext.Orders
@@ -70,7 +70,7 @@ public class OrderService : BaseReadService<Order, OrderResponse, OrderSearchObj
 
         if (order == null)
         {
-            throw new KeyNotFoundException($"{typeof(Order).Name} with id {id} not found.");
+            throw new NotFoundException($"{typeof(Order).Name} with id {id} not found.");
         }
 
         return _mapper.Map<OrderResponse>(order);
@@ -83,7 +83,7 @@ public class OrderService : BaseReadService<Order, OrderResponse, OrderSearchObj
 
         if (request.Items == null || request.Items.Count == 0)
         {
-            throw new ClientException("Cart is empty.");
+            throw new BusinessRuleException("Cart is empty.");
         }
 
         await using var tx = await _dbContext.Database.BeginTransactionAsync();
@@ -115,17 +115,17 @@ public class OrderService : BaseReadService<Order, OrderResponse, OrderSearchObj
                 var product = await _dbContext.Products.FindAsync(line.ProductId);
                 if (product == null)
                 {
-                    throw new ClientException($"Product {line.ProductId} was not found.");
+                    throw new BusinessRuleException($"Product {line.ProductId} was not found.");
                 }
 
                 if (!product.IsActive)
                 {
-                    throw new ClientException($"Product '{product.Name}' is not available.");
+                    throw new BusinessRuleException($"Product '{product.Name}' is not available.");
                 }
 
                 if (product.StockQuantity < line.Quantity)
                 {
-                    throw new ClientException($"Insufficient stock for '{product.Name}'.");
+                    throw new BusinessRuleException($"Insufficient stock for '{product.Name}'.");
                 }
 
                 var unitPrice = product.Price;

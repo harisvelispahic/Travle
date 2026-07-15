@@ -12,8 +12,9 @@ You are working on **Travle**, a tourist-destination discovery and tour-booking 
 6. `06-template-adoption-guide.md` — exact rename/purge steps for turning the course template into Travle (Phase 0 only).
 7. `07-mobile-app-structure.md` — mobile screen map and navigation (all Flutter mobile work).
 8. `08-ui-design-system.md` — design tokens, the shared `travle_ui` package, widget catalogue, theming rules (all Flutter UI work).
-9. `../TRAVLE-SPECIFICATION.md — the full functional spec (what to build).
-10. `../00-ANALYSIS-AND-OPEN-QUESTIONS.md` — the complete decision log (reconciliation is finished; no open items). Stretch features live in its §3 and are touched only after Phase 11.
+9. `09-exception-handling.md` — the global exception-handling pipeline: custom exception hierarchy, the chained `IExceptionHandler` design, `ErrorResponse` contract, FluentValidation wiring.
+10. `../TRAVLE-SPECIFICATION.md — the full functional spec (what to build).
+11. `../00-ANALYSIS-AND-OPEN-QUESTIONS.md` — the complete decision log (reconciliation is finished; no open items). Stretch features live in its §3 and are touched only after Phase 11.
 
 ## Project facts (memorize)
 

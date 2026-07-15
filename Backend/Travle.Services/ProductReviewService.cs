@@ -102,17 +102,17 @@ public class ProductReviewService
 
         if (order == null)
         {
-            throw new ClientException("Order not found.");
+            throw new BusinessRuleException("Order not found.");
         }
 
         if (order.Status == OrderStatus.Cancelled)
         {
-            throw new ClientException("Cannot review items from a cancelled order.");
+            throw new BusinessRuleException("Cannot review items from a cancelled order.");
         }
 
         if (order.OrderItems.All(oi => oi.ProductId != request.ProductId))
         {
-            throw new ClientException("This product is not part of the selected order.");
+            throw new BusinessRuleException("This product is not part of the selected order.");
         }
 
         var duplicate = await _dbContext.ProductReviews.AnyAsync(r =>
@@ -120,7 +120,7 @@ public class ProductReviewService
 
         if (duplicate)
         {
-            throw new ClientException("You have already reviewed this product for this order.");
+            throw new BusinessRuleException("You have already reviewed this product for this order.");
         }
 
         var review = new ProductReview
@@ -158,7 +158,7 @@ public class ProductReviewService
         var isAdmin = _userAccessor.IsInRole(AdminRole);
         if (review == null || (!isAdmin && review.UserId != userId))
         {
-            throw new KeyNotFoundException($"{nameof(ProductReview)} with id {id} not found.");
+            throw new NotFoundException($"{nameof(ProductReview)} with id {id} not found.");
         }
 
         return _mapper.Map<ProductReviewResponse>(review);
@@ -179,12 +179,12 @@ public class ProductReviewService
         var entity = await _dbContext.ProductReviews.FindAsync(id);
         if (entity == null)
         {
-            throw new KeyNotFoundException($"{nameof(ProductReview)} with id {id} not found.");
+            throw new NotFoundException($"{nameof(ProductReview)} with id {id} not found.");
         }
 
         if (entity.UserId != userId)
         {
-            throw new KeyNotFoundException($"{nameof(ProductReview)} with id {id} not found.");
+            throw new NotFoundException($"{nameof(ProductReview)} with id {id} not found.");
         }
 
         MapUpdateRequestToEntity(request, entity);
@@ -206,12 +206,12 @@ public class ProductReviewService
         var entity = await _dbContext.ProductReviews.FindAsync(id);
         if (entity == null)
         {
-            throw new KeyNotFoundException($"{nameof(ProductReview)} with id {id} not found.");
+            throw new NotFoundException($"{nameof(ProductReview)} with id {id} not found.");
         }
 
         if (entity.UserId != userId)
         {
-            throw new KeyNotFoundException($"{nameof(ProductReview)} with id {id} not found.");
+            throw new NotFoundException($"{nameof(ProductReview)} with id {id} not found.");
         }
 
         _dbContext.ProductReviews.Remove(entity);

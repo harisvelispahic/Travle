@@ -69,19 +69,19 @@ namespace Travle.Services
 
         public override async Task<UserResponse> InsertAsync(UserInsertRequest request)
         {
-            // let FluentValidation throw if the request isn't valid; the exception filter will
-            // convert the resulting ValidationException into the standard error format.
+            // let FluentValidation throw if the request isn't valid; the ValidationExceptionHandler
+            // converts the resulting ValidationException into the standard error format.
             await _insertValidator.ValidateAndThrowAsync(request);
 
             // Check if email or username already exists
             if (await _dbContext.Users.AnyAsync(u => u.Email == request.Email))
             {
-                throw new InvalidOperationException($"Email '{request.Email}' is already in use.");
+                throw new ConflictException($"Email '{request.Email}' is already in use.");
             }
 
             if (await _dbContext.Users.AnyAsync(u => u.Username == request.Username))
             {
-                throw new InvalidOperationException($"Username '{request.Username}' is already in use.");
+                throw new ConflictException($"Username '{request.Username}' is already in use.");
             }
 
             var entity = MapInsertRequestToEntity(request);
@@ -101,18 +101,18 @@ namespace Travle.Services
             var entity = await _dbContext.Users.FindAsync(id);
             if (entity == null)
             {
-                throw new KeyNotFoundException($"User with id {id} not found.");
+                throw new NotFoundException("User", id);
             }
 
             // Check if email or username already exists
             if (await _dbContext.Users.AnyAsync(u => u.Email == request.Email && u.Id != id))
             {
-                throw new InvalidOperationException($"Email '{request.Email}' is already in use.");
+                throw new ConflictException($"Email '{request.Email}' is already in use.");
             }
 
             if (await _dbContext.Users.AnyAsync(u => u.Username == request.Username && u.Id != id))
             {
-                throw new InvalidOperationException($"Username '{request.Username}' is already in use.");
+                throw new ConflictException($"Username '{request.Username}' is already in use.");
             }
 
             MapUpdateRequestToEntity(request, entity);
@@ -128,7 +128,7 @@ namespace Travle.Services
             var entity = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == id);
             if (entity == null)
             {
-                throw new KeyNotFoundException($"User with id {id} not found.");
+                throw new NotFoundException("User", id);
             }
 
             _dbContext.Users.Remove(entity);
@@ -175,16 +175,16 @@ namespace Travle.Services
 
         public async Task ChangePasswordAsync(UserPasswordChangeRequest request)
         {
-            var user = _dbContext.Users.FirstOrDefault(u => u.Id == request.Id);
+            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == request.Id);
 
             if (user == null)
-                throw new Exception("User not found");
+                throw new NotFoundException("User", request.Id);
 
             if (!_cryptoService.Verify(user.PasswordHash, user.PasswordSalt, request.Password))
-                throw new Exception("Wrong credential");
+                throw new BusinessRuleException("Current password is incorrect.");
 
             if (!request.NewPassword.Equals(request.ConfirmNewPassword))
-                throw new Exception("Password confimation doen't match new password");
+                throw new BusinessRuleException("Password confirmation does not match the new password.");
 
             user.PasswordSalt = _cryptoService.GenerateSlat();
             user.PasswordHash = _cryptoService.GenerateHash(request.NewPassword, user.PasswordSalt);
