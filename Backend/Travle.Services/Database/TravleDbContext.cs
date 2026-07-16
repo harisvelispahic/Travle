@@ -8,15 +8,49 @@ namespace Travle.Services.Database
         {
         }
 
+        // Auth / template entities (not yet rebased on BaseEntity — see Phase 1).
         public DbSet<User> Users { get; set; }
         public DbSet<Role> Roles { get; set; }
         public DbSet<UserRole> UserRoles { get; set; }
         public DbSet<RefreshToken> RefreshTokens { get; set; }
 
+        // Reference data
+        public DbSet<Country> Countries { get; set; }
+        public DbSet<Region> Regions { get; set; }
+        public DbSet<City> Cities { get; set; }
+        public DbSet<DestinationCategory> DestinationCategories { get; set; }
+        public DbSet<TourType> TourTypes { get; set; }
+        public DbSet<Tag> Tags { get; set; }
+        public DbSet<DestinationTag> DestinationTags { get; set; }
+        public DbSet<TourDestination> TourDestinations { get; set; }
+        public DbSet<BookingStatus> BookingStatuses { get; set; }
+        public DbSet<RefundPolicyTier> RefundPolicyTiers { get; set; }
+
+        // Main domain
+        public DbSet<RoleApplication> RoleApplications { get; set; }
+        public DbSet<Destination> Destinations { get; set; }
+        public DbSet<DestinationImage> DestinationImages { get; set; }
+        public DbSet<Tour> Tours { get; set; }
+        public DbSet<TourSchedule> TourSchedules { get; set; }
+        public DbSet<Booking> Bookings { get; set; }
+        public DbSet<Payment> Payments { get; set; }
+        public DbSet<Refund> Refunds { get; set; }
+        public DbSet<DestinationReview> DestinationReviews { get; set; }
+        public DbSet<TourReview> TourReviews { get; set; }
+        public DbSet<Favorite> Favorites { get; set; }
+        public DbSet<Notification> Notifications { get; set; }
+        public DbSet<UserInteraction> UserInteractions { get; set; }
+        public DbSet<PasswordResetCode> PasswordResetCodes { get; set; }
+        public DbSet<RecommendationLog> RecommendationLogs { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
 
+            // Per-entity IEntityTypeConfiguration<T> classes in Database/Configurations.
+            modelBuilder.ApplyConfigurationsFromAssembly(typeof(TravleDbContext).Assembly);
+
+            // Manual relationships for the template auth entities (they have no configuration class yet).
             CreateConfiguration(modelBuilder);
             CreateSeed(modelBuilder);
         }
