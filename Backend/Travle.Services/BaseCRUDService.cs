@@ -45,6 +45,29 @@ namespace Travle.Services
         protected virtual void MapUpdateRequestToEntity(TUpdateRequest request, TEntity entity)
             => _mapper.Map(request, entity);
 
+        /// <summary>
+        /// Business-rule hook invoked after field validation and mapping but before the insert is saved.
+        /// Override to enforce cross-row rules the FluentValidation validator cannot express without the
+        /// database — e.g. uniqueness or the existence of a referenced parent — throwing the appropriate
+        /// <c>TravleException</c> (usually <see cref="ConflictException"/> or
+        /// <see cref="BusinessRuleException"/>). Default: no-op.
+        /// </summary>
+        protected virtual Task OnBeforeInsertAsync(TInsertRequest request, TEntity entity) => Task.CompletedTask;
+
+        /// <summary>
+        /// Business-rule hook invoked after the entity is loaded and validated but before the update is
+        /// mapped and saved. Override for uniqueness/parent-existence checks (excluding the row itself).
+        /// Default: no-op.
+        /// </summary>
+        protected virtual Task OnBeforeUpdateAsync(int id, TUpdateRequest request, TEntity entity) => Task.CompletedTask;
+
+        /// <summary>
+        /// Business-rule hook invoked after the entity is loaded but before it is removed. Override to
+        /// block deletion of reference data that is still in use, surfacing a counted
+        /// <see cref="ConflictException"/> (03 §3 delete strategy). Default: no-op.
+        /// </summary>
+        protected virtual Task OnBeforeDeleteAsync(TEntity entity) => Task.CompletedTask;
+
         public virtual async Task<TResponse> InsertAsync(TInsertRequest request)
         {
             // ValidateAndThrowAsync raises a ValidationException, which the ValidationExceptionHandler
@@ -53,8 +76,14 @@ namespace Travle.Services
 
             var entity = MapInsertRequestToEntity(request);
 
+            await OnBeforeInsertAsync(request, entity);
+
             _dbContext.Set<TEntity>().Add(entity);
             await _dbContext.SaveChangesAsync();
+
+            // Only the FK was set during mapping; load the response's navigations (e.g. the parent whose
+            // name the DTO flattens) so a created entity comes back with the same shape as a fetched one.
+            await LoadResponseNavigationsAsync(entity);
 
             return _mapper.Map<TResponse>(entity);
         }
@@ -69,8 +98,14 @@ namespace Travle.Services
                 throw new NotFoundException(typeof(TEntity).Name, id);
             }
 
+            await OnBeforeUpdateAsync(id, request, entity);
+
             MapUpdateRequestToEntity(request, entity);
             await _dbContext.SaveChangesAsync();
+
+            // Reload the response's navigations (the update loaded the row without includes, and the FK
+            // may have changed) so the flattened parent name reflects the saved state.
+            await LoadResponseNavigationsAsync(entity);
 
             return _mapper.Map<TResponse>(entity);
         }
@@ -82,6 +117,8 @@ namespace Travle.Services
             {
                 throw new NotFoundException(typeof(TEntity).Name, id);
             }
+
+            await OnBeforeDeleteAsync(entity);
 
             _dbContext.Set<TEntity>().Remove(entity);
             await _dbContext.SaveChangesAsync();

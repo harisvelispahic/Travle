@@ -78,6 +78,16 @@ builder.Services.AddScoped<IRefreshTokenService, RefreshTokenService>();
 builder.Services.AddScoped<IAccessManager, AccessManager>();
 builder.Services.AddScoped<ICryptoService, CryptoService>();
 
+// Reference-data CRUD services (Country → Region → City chaining + catalog lookups).
+builder.Services.AddScoped<ICountryService, CountryService>();
+builder.Services.AddScoped<IRegionService, RegionService>();
+builder.Services.AddScoped<ICityService, CityService>();
+builder.Services.AddScoped<IDestinationCategoryService, DestinationCategoryService>();
+builder.Services.AddScoped<ITourTypeService, TourTypeService>();
+builder.Services.AddScoped<ITagService, TagService>();
+builder.Services.AddScoped<IRefundPolicyTierService, RefundPolicyTierService>();
+builder.Services.AddScoped<IBookingStatusService, BookingStatusService>();
+
 // Register every FluentValidation validator in the Travle.Services assembly (Scoped) in one
 // sweep, so new validators are picked up automatically without editing Program.cs.
 builder.Services.AddValidatorsFromAssemblyContaining<UserInsertValidator>();

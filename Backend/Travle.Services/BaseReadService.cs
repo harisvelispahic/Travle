@@ -67,8 +67,21 @@ namespace Travle.Services
                 throw new NotFoundException(typeof(TEntity).Name, id);
             }
 
+            await LoadResponseNavigationsAsync(entity);
+
             return _mapper.Map<TResponse>(entity);
         }
+
+        /// <summary>
+        /// Loads navigation properties on a single tracked entity that the response DTO needs — e.g. a
+        /// parent whose name the response flattens (<c>Region.Name → RegionName</c>). Override with
+        /// <c>_dbContext.Entry(entity).Reference(...).LoadAsync()</c>. This is the single-entity
+        /// counterpart of <see cref="ApplyIncludes"/> (which handles the list path as a JOIN): it is
+        /// invoked by <see cref="GetByIdAsync"/> and by the CRUD service's Insert/Update, so a created
+        /// or updated entity comes back with the same shape as a fetched one — where the mapper only has
+        /// the surrogate FK in memory otherwise, the flattened name would be null. Default: no-op.
+        /// </summary>
+        protected virtual Task LoadResponseNavigationsAsync(TEntity entity) => Task.CompletedTask;
 
         /// <summary>
         /// Adds search-specific <c>WHERE</c> clauses. Override in derived services. The query must stay
