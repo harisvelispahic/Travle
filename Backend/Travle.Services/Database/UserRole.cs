@@ -1,26 +1,16 @@
-using System;
-using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
-
 namespace Travle.Services.Database
 {
+    /// <summary>
+    /// Many-to-many link between <see cref="User"/> and <see cref="Role"/>. A bare join table
+    /// (composite key <c>(UserId, RoleId)</c>, no surrogate key or timestamps) per 03 §2 / 02 §2b —
+    /// it carries no meaningful attributes of its own.
+    /// </summary>
     public class UserRole
     {
-        [Key]
-        public int Id { get; set; }
-        
-        // User
         public int UserId { get; set; }
-        
-        [ForeignKey("UserId")]
         public User User { get; set; } = null!;
-        
-        // Role
+
         public int RoleId { get; set; }
-        
-        [ForeignKey("RoleId")]
         public Role Role { get; set; } = null!;
-        
-        public DateTime DateAssigned { get; set; } = DateTime.UtcNow;
     }
-} 
+}

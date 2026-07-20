@@ -67,6 +67,7 @@ services:
       - JwtToken__Issuer=${JWT_ISSUER}
       - JwtToken__Audience=${JWT_AUDIENCE}
       - JwtToken__DurationInMinutes=${JWT_DURATION_MINUTES}
+      - JwtToken__RefreshTokenDays=${JWT_REFRESH_TOKEN_DAYS:-7}
     ports:
       - "${API_HOST_PORT}:5121"
     depends_on:

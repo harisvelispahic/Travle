@@ -3,9 +3,9 @@ using FluentValidation;
 
 namespace Travle.Services.Validators
 {
-    public class UserInsertValidator : AbstractValidator<UserInsertRequest>
+    public class UserRegisterValidator : AbstractValidator<UserRegisterRequest>
     {
-        public UserInsertValidator()
+        public UserRegisterValidator()
         {
             RuleFor(x => x.FirstName)
                 .NotEmpty().WithMessage("First name is required.")
@@ -27,7 +27,7 @@ namespace Travle.Services.Validators
 
             RuleFor(x => x.Password)
                 .NotEmpty().WithMessage("Password is required.")
-                .MinimumLength(6).WithMessage("Password must be at least 6 characters.")
+                .MinimumLength(8).WithMessage("Password must be at least 8 characters.")
                 .MaximumLength(100).WithMessage("Password cannot exceed 100 characters.");
 
             RuleFor(x => x.PhoneNumber)

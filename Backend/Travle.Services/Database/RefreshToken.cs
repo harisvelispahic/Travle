@@ -1,28 +1,20 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
 namespace Travle.Services.Database
 {
-    public class RefreshToken
+    /// <summary>
+    /// A stored refresh token. The raw token is returned to the client once and never persisted —
+    /// only its SHA-256 hash lives here (so a DB leak can't be replayed). Rotation on refresh marks
+    /// the used token <see cref="IsRevoked"/>; logout and suspension delete all of a user's tokens.
+    /// </summary>
+    public class RefreshToken : BaseEntity
     {
-        [Key]
-        public int Id { get; set; }
-
-        [Required]
-        [MaxLength(500)]
-        public string Token { get; set; } = string.Empty;
+        public string TokenHash { get; set; } = string.Empty;
 
         public DateTime ExpiresAt { get; set; }
 
-        // Foreign key to User
-        public int UserId { get; set; }
+        public bool IsRevoked { get; set; }
+        public DateTime? RevokedAt { get; set; }
 
-        [ForeignKey("UserId")]
+        public int UserId { get; set; }
         public User User { get; set; } = null!;
     }
 }

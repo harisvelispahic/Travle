@@ -1,21 +1,27 @@
-using Travle.Common.Services.CryptoService;
+using Travle.Model.Constants;
 using Travle.Model.Requests;
 using Travle.Model.Responses;
 using Travle.Services;
+using Travle.Services.Authorization;
 using Travle.Services.Database;
+using Travle.Services.Security;
 using Travle.Services.Validators;
+using Travle.WebAPI.Authorization;
 using Travle.WebAPI.Middleware;
+using Travle.WebAPI.OpenApi;
+using Travle.WebAPI.Options;
 using Travle.WebAPI.Services;
 using Travle.WebAPI.Services.AccessManager;
 using FluentValidation;
 using Mapster;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi;
 using Scalar.AspNetCore;
 using System.Diagnostics;
+using System.Security.Claims;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -24,6 +30,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IAuthenticatedUserAccessor, HttpAuthenticatedUserAccessor>();
+builder.Services.AddScoped<IAppAuthorizationService, AppAuthorizationService>();
 
 // Global exception-handling pipeline: a chain of IExceptionHandler implementations invoked in
 // registration order (specific first, generic last — the try/catch/catch mental model). The
@@ -68,14 +75,18 @@ builder.Services.AddDbContext<TravleDbContext>(options =>
 builder.Services.AddMapster();
 
 // Explicit Mapster rules. Same-named properties map automatically; these add the custom behaviour
-// the User mappings need (ignore nulls so partial update requests don't overwrite with null).
-TypeAdapterConfig<User, UserResponse>.NewConfig().IgnoreNullValues(true);
+// the User mappings need: flatten the roles and city name on the way out, and ignore nulls on a
+// partial profile update so an unspecified field never overwrites the stored value.
+TypeAdapterConfig<User, UserResponse>.NewConfig()
+    .Map(dest => dest.Roles, src => src.UserRoles.Select(ur => ur.Role.Name).ToList())
+    .Map(dest => dest.CityName, src => src.City != null ? src.City.Name : null);
 TypeAdapterConfig<UserUpdateRequest, User>.NewConfig().IgnoreNullValues(true);
 
 // register application services
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IRefreshTokenService, RefreshTokenService>();
 builder.Services.AddScoped<IAccessManager, AccessManager>();
+builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<ICryptoService, CryptoService>();
 
 // Reference-data CRUD services (Country → Region → City chaining + catalog lookups).
@@ -90,12 +101,25 @@ builder.Services.AddScoped<IBookingStatusService, BookingStatusService>();
 
 // Register every FluentValidation validator in the Travle.Services assembly (Scoped) in one
 // sweep, so new validators are picked up automatically without editing Program.cs.
-builder.Services.AddValidatorsFromAssemblyContaining<UserInsertValidator>();
+builder.Services.AddValidatorsFromAssemblyContaining<UserRegisterValidator>();
 
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+// OpenAPI document (Microsoft.AspNetCore.OpenApi) + a transformer that declares the JWT bearer
+// scheme, so Scalar shows an auth field you fill once. Learn more: https://aka.ms/aspnet/openapi
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
+});
 
-builder.Services.AddAuthentication(options => // dodavanje authentfikacije i autorizacije u projekat
+// JWT settings bound once and validated at startup (fail fast on a missing or too-short key).
+builder.Services.AddOptions<JwtOptions>()
+    .Bind(builder.Configuration.GetSection(JwtOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
+    ?? throw new InvalidOperationException($"Missing '{JwtOptions.SectionName}' configuration section.");
+
+builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
     options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -104,48 +128,25 @@ builder.Services.AddAuthentication(options => // dodavanje authentfikacije i aut
 {
     o.TokenValidationParameters = new TokenValidationParameters
     {
-        ValidIssuer = builder.Configuration["JwtToken:Issuer"],
-        ValidAudience = builder.Configuration["JwtToken:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["JwtToken:SecretKey"] ?? string.Empty)),
+        ValidIssuer = jwtOptions.Issuer,
+        ValidAudience = jwtOptions.Audience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SecretKey)),
         ValidateIssuer = true,
         ValidateAudience = true,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        ClockSkew = TimeSpan.Zero
+        ClockSkew = TimeSpan.Zero,
+        RoleClaimType = ClaimTypes.Role,
+        NameClaimType = ClaimTypes.NameIdentifier
     };
 });
-builder.Services.AddAuthorization();
 
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(AuthPolicies.Authenticated, policy => policy.RequireAuthenticatedUser());
+    options.AddPolicy(AuthPolicies.AdminOnly, policy => policy.RequireRole(RoleNames.Admin));
+});
 
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(
-    options =>
-    {
-        options.SwaggerDoc("v1", new OpenApiInfo
-        {
-            Version = "v1",
-            Title = "Travle API",
-            Description = "API for the Travle tourist-destination discovery and tour-booking marketplace"
-        });
-
-        var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
-        options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, xmlFile));
-
-        var jwtSecurityScheme = new OpenApiSecurityScheme
-        {
-            BearerFormat = "JWT",
-            Name = "JWT Authentication",
-            In = ParameterLocation.Header,
-            Type = SecuritySchemeType.Http,
-            Scheme = JwtBearerDefaults.AuthenticationScheme,
-        };
-
-        options.AddSecurityDefinition(JwtBearerDefaults.AuthenticationScheme, jwtSecurityScheme);
-        options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
-                {
-                    { new OpenApiSecuritySchemeReference(JwtBearerDefaults.AuthenticationScheme, document), new List<string>() }
-                });
-    });
 
 var app = builder.Build();
 
@@ -153,16 +154,14 @@ var app = builder.Build();
 // is routed through the registered IExceptionHandler chain.
 app.UseExceptionHandler();
 
-// Configure the HTTP request pipeline.
-//if (app.Environment.IsDevelopment())
+// Configure the HTTP request pipeline. OpenAPI JSON + Scalar API reference (Scalar reads the
+// document from MapOpenApi; the bearer scheme added by the transformer gives it an auth field).
+app.MapOpenApi();
+app.MapScalarApiReference(options =>
 {
-    app.MapOpenApi();
-    app.MapScalarApiReference();
-
-
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+    options.WithTitle("Travle API")
+           .AddPreferredSecuritySchemes("Bearer");
+});
 
 //app.UseHttpsRedirection();
 

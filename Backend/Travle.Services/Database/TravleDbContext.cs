@@ -8,7 +8,7 @@ namespace Travle.Services.Database
         {
         }
 
-        // Auth / template entities (not yet rebased on BaseEntity — see Phase 1).
+        // Auth / identity
         public DbSet<User> Users { get; set; }
         public DbSet<Role> Roles { get; set; }
         public DbSet<UserRole> UserRoles { get; set; }
@@ -47,11 +47,10 @@ namespace Travle.Services.Database
         {
             base.OnModelCreating(modelBuilder);
 
-            // Per-entity IEntityTypeConfiguration<T> classes in Database/Configurations.
+            // Per-entity IEntityTypeConfiguration<T> classes in Database/Configurations (auth entities
+            // included — User/Role/UserRole/RefreshToken now have their own configuration classes).
             modelBuilder.ApplyConfigurationsFromAssembly(typeof(TravleDbContext).Assembly);
 
-            // Manual relationships for the template auth entities (they have no configuration class yet).
-            CreateConfiguration(modelBuilder);
             CreateSeed(modelBuilder);
         }
 

@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\Travle.Common.Services\Travle.Common.Services.csproj" />
     <ProjectReference Include="..\Travle.Model\Travle.Model.csproj" />
   </ItemGroup>
 

@@ -1,3 +1,4 @@
+using Travle.Model.Constants;
 using Microsoft.EntityFrameworkCore;
 
 namespace Travle.Services.Database
@@ -47,162 +48,58 @@ namespace Travle.Services.Database
 
         private void SeedRoles(ModelBuilder modelBuilder)
         {
-            // Seed Roles - deterministic Ids: 1 = Admin, 2 = Customer
+            // Deterministic Ids; the names are load-bearing (JWT role claims + authorization
+            // policies), so they mirror RoleNames exactly and are never renamed.
             modelBuilder.Entity<Role>().HasData(
-                new
-                {
-                    Id = 1,
-                    Name = "Admin",
-                    Description = "Administrator role with full permissions",
-                    IsActive = true,
-                    CreatedAt = new DateTime(2026, 3, 9, 0, 0, 0, DateTimeKind.Utc)
-                },
-                new
-                {
-                    Id = 2,
-                    Name = "Customer",
-                    Description = "Default customer role",
-                    IsActive = true,
-                    CreatedAt = new DateTime(2026, 3, 9, 0, 0, 0, DateTimeKind.Utc)
-                },
-                // Travle domain roles (referenced by RoleApplications and by tours/destinations
-                // ownership). Traveler-vs-Customer renaming and the four demo accounts are Phase 1 work.
-                new
-                {
-                    Id = 3,
-                    Name = "Curator",
-                    Description = "Submits and curates tourist destinations",
-                    IsActive = true,
-                    CreatedAt = new DateTime(2026, 3, 9, 0, 0, 0, DateTimeKind.Utc)
-                },
-                new
-                {
-                    Id = 4,
-                    Name = "Organizer",
-                    Description = "Creates and manages tours and schedules",
-                    IsActive = true,
-                    CreatedAt = new DateTime(2026, 3, 9, 0, 0, 0, DateTimeKind.Utc)
-                }
+                new { Id = 1, Name = RoleNames.Admin, Description = "Full administrative access.", CreatedAt = SeedDate },
+                new { Id = 2, Name = RoleNames.Traveler, Description = "Browses destinations and books tours.", CreatedAt = SeedDate },
+                new { Id = 3, Name = RoleNames.Curator, Description = "Submits and curates tourist destinations.", CreatedAt = SeedDate },
+                new { Id = 4, Name = RoleNames.Organizer, Description = "Creates and manages tours and schedules.", CreatedAt = SeedDate }
             );
         }
 
         private void SeedUsers(ModelBuilder modelBuilder)
         {
-            // Seed Users - 3 admins (Ids 1-3) and 2 customers (Ids 4-5)
+            // The four graded demo logins (all password "test") + one filler traveler. Ids are stable
+            // and referenced across the whole domain seed below. Password hashes are PBKDF2 produced
+            // with the exact CryptoService parameters (600k iterations, SHA-256, 32-byte key) so seeded
+            // and runtime-created accounts share one hash format (course §E).
+            //   desktop   = Admin
+            //   organizer = Organizer
+            //   curator   = Curator + Traveler  (multi-role demo)
+            //   mobile    = Traveler            (rich interaction history)
+            //   traveler2 = Traveler            (pending Curator applicant)
             modelBuilder.Entity<User>().HasData(
-                new
-                {
-                    Id = 1,
-                    FirstName = "Alice",
-                    LastName = "Admin",
-                    Email = "admin1@gmail.com",
-                    Username = "admin1",
-                    PasswordHash = "5kRBQg4Ufcx4hAknG7P9zhfLPvY=", // Test123
-                    PasswordSalt = "FmvmUwPsJyRRffhNRQvbrA==",
-                    IsActive = true,
-                    CreatedAt = new DateTime(2026, 3, 9, 0, 0, 0, DateTimeKind.Utc),
-                    LastLoginAt = (DateTime?)null,
-                    PhoneNumber = (string?)null
-                },
-                new
-                {
-                    Id = 2,
-                    FirstName = "Bob",
-                    LastName = "Admin",
-                    Email = "admin2@gmail.com",
-                    Username = "admin2",
-                    PasswordHash = "GBoyh1WP+OMgGjqRj6vK6L1+oGc=", // Test123
-                    PasswordSalt = "0AXpKx6xRp9xM42jCf/PiA==",
-                    IsActive = true,
-                    CreatedAt = new DateTime(2026, 3, 9, 0, 0, 0, DateTimeKind.Utc),
-                    LastLoginAt = (DateTime?)null,
-                    PhoneNumber = (string?)null
-                },
-                new
-                {
-                    Id = 3,
-                    FirstName = "Carol",
-                    LastName = "Admin",
-                    Email = "admin3@gmail.com",
-                    Username = "admin3",
-                    PasswordHash = "x6JHKCTQywdAzTcZxGWFvrKPORM=", // Test123
-                    PasswordSalt = "IwhTfKQNgyqWfOlTqCDXrg==",
-                    IsActive = true,
-                    CreatedAt = new DateTime(2026, 3, 9, 0, 0, 0, DateTimeKind.Utc),
-                    LastLoginAt = (DateTime?)null,
-                    PhoneNumber = (string?)null
-                },
-                new
-                {
-                    Id = 4,
-                    FirstName = "Dave",
-                    LastName = "Customer",
-                    Email = "customer1@gmail.com",
-                    Username = "customer1",
-                    PasswordHash = "E0fA2/f9GZvIRRt/cgqQemG/Cog=", // Test123
-                    PasswordSalt = "TiJxWTJcd7sBSiWNbhK9Vw==",
-                    IsActive = true,
-                    CreatedAt = new DateTime(2026, 3, 9, 0, 0, 0, DateTimeKind.Utc),
-                    LastLoginAt = (DateTime?)null,
-                    PhoneNumber = (string?)null
-                },
-                new
-                {
-                    Id = 5,
-                    FirstName = "Eve",
-                    LastName = "Customer",
-                    Email = "customer2@gmail.com",
-                    Username = "customer2",
-                    PasswordHash = "Ov4LxpWKXXV9dwMYvBgqODdzIt0=", // Test123
-                    PasswordSalt = "KtWF6g7SemBqs4nVWV4Ziw==",
-                    IsActive = true,
-                    CreatedAt = new DateTime(2026, 3, 9, 0, 0, 0, DateTimeKind.Utc),
-                    LastLoginAt = (DateTime?)null,
-                    PhoneNumber = (string?)null
-                }
+                new { Id = 1, FirstName = "Amela", LastName = "Admin", Email = "admin@travle.com", Username = "desktop",
+                      PasswordHash = "1EVueVHdk4so5MFyamTbvYtJIOZQBqVz17bdKL68+fE=", PasswordSalt = "QBCWe5Y16por+IPYrz4PCg==",
+                      IsSuspended = false, CreatedAt = SeedDate },
+                new { Id = 2, FirstName = "Omar", LastName = "Organizer", Email = "organizer@travle.com", Username = "organizer",
+                      PasswordHash = "2FRMSidG5N9i/hqW9AXpRDLhOJq5DBQlRdE7MGBsaLU=", PasswordSalt = "d38hQJKnSdlVdlDAUMRJAA==",
+                      IsSuspended = false, CreatedAt = SeedDate },
+                new { Id = 3, FirstName = "Kenan", LastName = "Curator", Email = "curator@travle.com", Username = "curator",
+                      PasswordHash = "VigKcI3V2KhAjucf6Np5oT1QTlltgk78SvFWGSn4IVY=", PasswordSalt = "/Y0ggC+zJv76k/v7hlrJ4A==",
+                      IsSuspended = false, CreatedAt = SeedDate },
+                new { Id = 4, FirstName = "Mirza", LastName = "Traveler", Email = "mobile@travle.com", Username = "mobile",
+                      PasswordHash = "mqX31t67ZRUhpDRZkVinVjNOykscpP9AvCMqJsmEKpo=", PasswordSalt = "Uec/2alRNtONG/bGAHzssQ==",
+                      IsSuspended = false, CreatedAt = SeedDate },
+                new { Id = 5, FirstName = "Lejla", LastName = "Traveler", Email = "traveler2@travle.com", Username = "traveler2",
+                      PasswordHash = "OpluSY5uW8/O3RJjS37BjZaNnNBrwUb79gkix1bctqE=", PasswordSalt = "YuNDqqKGZWVIVJGM3s+jjQ==",
+                      IsSuspended = false, CreatedAt = SeedDate }
             );
         }
 
         private void SeedUserRoles(ModelBuilder modelBuilder)
         {
-            // Map users to roles (UserRole has its own Id PK)
-            // Admin role = RoleId 1, Customer role = RoleId 2
+            // Bare composite-key link (UserId, RoleId). curator (3) is deliberately multi-role
+            // (Curator + Traveler) to exercise several role claims on one account.
+            // Roles: 1 Admin · 2 Traveler · 3 Curator · 4 Organizer.
             modelBuilder.Entity<UserRole>().HasData(
-                new
-                {
-                    Id = 1,
-                    UserId = 1,
-                    RoleId = 1,
-                    DateAssigned = new DateTime(2026, 3, 9, 0, 0, 0, DateTimeKind.Utc)
-                },
-                new
-                {
-                    Id = 2,
-                    UserId = 2,
-                    RoleId = 1,
-                    DateAssigned = new DateTime(2026, 3, 9, 0, 0, 0, DateTimeKind.Utc)
-                },
-                new
-                {
-                    Id = 3,
-                    UserId = 3,
-                    RoleId = 1,
-                    DateAssigned = new DateTime(2026, 3, 9, 0, 0, 0, DateTimeKind.Utc)
-                },
-                new
-                {
-                    Id = 4,
-                    UserId = 4,
-                    RoleId = 2,
-                    DateAssigned = new DateTime(2026, 3, 9, 0, 0, 0, DateTimeKind.Utc)
-                },
-                new
-                {
-                    Id = 5,
-                    UserId = 5,
-                    RoleId = 2,
-                    DateAssigned = new DateTime(2026, 3, 9, 0, 0, 0, DateTimeKind.Utc)
-                }
+                new { UserId = 1, RoleId = 1 }, // desktop   -> Admin
+                new { UserId = 2, RoleId = 4 }, // organizer -> Organizer
+                new { UserId = 3, RoleId = 3 }, // curator   -> Curator
+                new { UserId = 3, RoleId = 2 }, // curator   -> Traveler (multi-role)
+                new { UserId = 4, RoleId = 2 }, // mobile    -> Traveler
+                new { UserId = 5, RoleId = 2 }  // traveler2 -> Traveler
             );
         }
 
@@ -328,19 +225,19 @@ namespace Travle.Services.Database
             // curator/organizer accounts arrive in Phase 1. Denormalized AverageRating matches the
             // seeded reviews below; ViewCount gives the popularity term something to work with.
             modelBuilder.Entity<Destination>().HasData(
-                new { Id = 1, Name = "Stari Most", Description = "The iconic 16th-century Ottoman bridge over the Neretva in Mostar, rebuilt after 1993 and a UNESCO World Heritage Site.", CategoryId = 1, CityId = 2, Latitude = 43.3373, Longitude = 17.8149, SubmittedByUserId = 4, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = true, AverageRating = 4.5, ViewCount = 320, CreatedAt = SeedDate },
-                new { Id = 2, Name = "Kravice Waterfalls", Description = "A wide natural amphitheatre of waterfalls on the Trebižat river, popular for swimming in summer.", CategoryId = 2, CityId = 2, Latitude = 43.1583, Longitude = 17.6000, SubmittedByUserId = 4, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = true, AverageRating = 5.0, ViewCount = 210, CreatedAt = SeedDate },
-                new { Id = 3, Name = "Vrelo Bosne", Description = "The spring of the river Bosna at the foot of Mount Igman, a landscaped park near Sarajevo.", CategoryId = 2, CityId = 1, Latitude = 43.8200, Longitude = 18.2600, SubmittedByUserId = 5, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 95, CreatedAt = SeedDate },
-                new { Id = 4, Name = "Ostrožac Castle", Description = "A layered medieval-to-Ottoman fortress above the Una near Cazin.", CategoryId = 1, CityId = 7, Latitude = 44.9200, Longitude = 15.9800, SubmittedByUserId = 4, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 40, CreatedAt = SeedDate },
-                new { Id = 5, Name = "Bihać Old Town", Description = "The historic core of Bihać on the Una, with the Fethija mosque and Captain's Tower.", CategoryId = 7, CityId = 6, Latitude = 44.8100, Longitude = 15.8700, SubmittedByUserId = 5, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 55, CreatedAt = SeedDate },
-                new { Id = 6, Name = "Srebrenik Fortress", Description = "A 13th-century fortress on a rock spur, one of the best-preserved in Bosnia.", CategoryId = 1, CityId = 12, Latitude = 44.7000, Longitude = 18.4900, SubmittedByUserId = 4, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 30, CreatedAt = SeedDate },
-                new { Id = 7, Name = "Blagaj Tekija", Description = "A 16th-century dervish monastery built against a cliff at the source of the Buna river.", CategoryId = 3, CityId = 3, Latitude = 43.2570, Longitude = 17.8880, SubmittedByUserId = 5, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = true, AverageRating = 5.0, ViewCount = 180, CreatedAt = SeedDate },
-                new { Id = 8, Name = "Počitelj", Description = "A stepped Ottoman-era village and fortress overlooking the Neretva valley.", CategoryId = 7, CityId = 4, Latitude = 43.1300, Longitude = 17.7300, SubmittedByUserId = 4, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 70, CreatedAt = SeedDate },
-                new { Id = 9, Name = "Jajce Waterfall", Description = "A 20-metre waterfall where the Pliva meets the Vrbas in the heart of Jajce.", CategoryId = 2, CityId = 10, Latitude = 44.3400, Longitude = 17.2700, SubmittedByUserId = 5, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = true, AverageRating = 0.0, ViewCount = 240, CreatedAt = SeedDate },
-                new { Id = 10, Name = "Una National Park", Description = "Protected river canyons, rapids and waterfalls around the upper Una — Bosnia's rafting heartland.", CategoryId = 2, CityId = 6, Latitude = 44.6500, Longitude = 16.1500, SubmittedByUserId = 4, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 130, CreatedAt = SeedDate },
-                new { Id = 11, Name = "Baščaršija", Description = "Sarajevo's 15th-century Ottoman bazaar and cultural heart, full of coppersmiths and cafés.", CategoryId = 7, CityId = 1, Latitude = 43.8596, Longitude = 18.4306, SubmittedByUserId = 5, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = true, AverageRating = 4.0, ViewCount = 260, CreatedAt = SeedDate },
+                new { Id = 1, Name = "Stari Most", Description = "The iconic 16th-century Ottoman bridge over the Neretva in Mostar, rebuilt after 1993 and a UNESCO World Heritage Site.", CategoryId = 1, CityId = 2, Latitude = 43.3373, Longitude = 17.8149, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = true, AverageRating = 4.5, ViewCount = 320, CreatedAt = SeedDate },
+                new { Id = 2, Name = "Kravice Waterfalls", Description = "A wide natural amphitheatre of waterfalls on the Trebižat river, popular for swimming in summer.", CategoryId = 2, CityId = 2, Latitude = 43.1583, Longitude = 17.6000, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = true, AverageRating = 5.0, ViewCount = 210, CreatedAt = SeedDate },
+                new { Id = 3, Name = "Vrelo Bosne", Description = "The spring of the river Bosna at the foot of Mount Igman, a landscaped park near Sarajevo.", CategoryId = 2, CityId = 1, Latitude = 43.8200, Longitude = 18.2600, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 95, CreatedAt = SeedDate },
+                new { Id = 4, Name = "Ostrožac Castle", Description = "A layered medieval-to-Ottoman fortress above the Una near Cazin.", CategoryId = 1, CityId = 7, Latitude = 44.9200, Longitude = 15.9800, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 40, CreatedAt = SeedDate },
+                new { Id = 5, Name = "Bihać Old Town", Description = "The historic core of Bihać on the Una, with the Fethija mosque and Captain's Tower.", CategoryId = 7, CityId = 6, Latitude = 44.8100, Longitude = 15.8700, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 55, CreatedAt = SeedDate },
+                new { Id = 6, Name = "Srebrenik Fortress", Description = "A 13th-century fortress on a rock spur, one of the best-preserved in Bosnia.", CategoryId = 1, CityId = 12, Latitude = 44.7000, Longitude = 18.4900, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 30, CreatedAt = SeedDate },
+                new { Id = 7, Name = "Blagaj Tekija", Description = "A 16th-century dervish monastery built against a cliff at the source of the Buna river.", CategoryId = 3, CityId = 3, Latitude = 43.2570, Longitude = 17.8880, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = true, AverageRating = 5.0, ViewCount = 180, CreatedAt = SeedDate },
+                new { Id = 8, Name = "Počitelj", Description = "A stepped Ottoman-era village and fortress overlooking the Neretva valley.", CategoryId = 7, CityId = 4, Latitude = 43.1300, Longitude = 17.7300, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 70, CreatedAt = SeedDate },
+                new { Id = 9, Name = "Jajce Waterfall", Description = "A 20-metre waterfall where the Pliva meets the Vrbas in the heart of Jajce.", CategoryId = 2, CityId = 10, Latitude = 44.3400, Longitude = 17.2700, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = true, AverageRating = 0.0, ViewCount = 240, CreatedAt = SeedDate },
+                new { Id = 10, Name = "Una National Park", Description = "Protected river canyons, rapids and waterfalls around the upper Una — Bosnia's rafting heartland.", CategoryId = 2, CityId = 6, Latitude = 44.6500, Longitude = 16.1500, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 130, CreatedAt = SeedDate },
+                new { Id = 11, Name = "Baščaršija", Description = "Sarajevo's 15th-century Ottoman bazaar and cultural heart, full of coppersmiths and cafés.", CategoryId = 7, CityId = 1, Latitude = 43.8596, Longitude = 18.4306, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = true, AverageRating = 4.0, ViewCount = 260, CreatedAt = SeedDate },
                 // One Pending submission so the moderation queue is non-empty on first run.
-                new { Id = 12, Name = "Vranduk Fortress", Description = "A small medieval fortress guarding the Bosna gorge north of Zenica.", CategoryId = 1, CityId = 13, Latitude = 44.2800, Longitude = 17.9800, SubmittedByUserId = 5, Status = DestinationStatus.Pending, ModeratedByUserId = (int?)null, ModeratedAt = (DateTime?)null, IsFeatured = false, AverageRating = 0.0, ViewCount = 0, CreatedAt = SeedDate }
+                new { Id = 12, Name = "Vranduk Fortress", Description = "A small medieval fortress guarding the Bosna gorge north of Zenica.", CategoryId = 1, CityId = 13, Latitude = 44.2800, Longitude = 17.9800, SubmittedByUserId = 3, Status = DestinationStatus.Pending, ModeratedByUserId = (int?)null, ModeratedAt = (DateTime?)null, IsFeatured = false, AverageRating = 0.0, ViewCount = 0, CreatedAt = SeedDate }
             );
         }
 
@@ -366,11 +263,11 @@ namespace Travle.Services.Database
         private void SeedTours(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<Tour>().HasData(
-                new { Id = 1, OrganizerId = 4, Name = "Mostar Old Town Walking Tour", Description = "A guided walk across Stari Most and through the old bazaar, ending at Blagaj Tekija.", DurationMinutes = 120, PricePerPerson = 25.00m, Capacity = 15, TourTypeId = 1, IsActive = true, CreatedAt = SeedDate },
-                new { Id = 2, OrganizerId = 4, Name = "Kravice Waterfalls Day Trip", Description = "A full-day excursion to the Kravice waterfalls with a stop in Počitelj.", DurationMinutes = 300, PricePerPerson = 45.00m, Capacity = 12, TourTypeId = 3, IsActive = true, CreatedAt = SeedDate },
-                new { Id = 3, OrganizerId = 5, Name = "Sarajevo Cultural Heritage Tour", Description = "From Vrelo Bosne to Baščaršija — the natural and Ottoman heritage around Sarajevo.", DurationMinutes = 180, PricePerPerson = 30.00m, Capacity = 20, TourTypeId = 2, IsActive = true, CreatedAt = SeedDate },
-                new { Id = 4, OrganizerId = 5, Name = "Una National Park Rafting", Description = "A guided rafting descent of the upper Una with a visit to Bihać old town.", DurationMinutes = 240, PricePerPerson = 60.00m, Capacity = 10, TourTypeId = 3, IsActive = true, CreatedAt = SeedDate },
-                new { Id = 5, OrganizerId = 4, Name = "Blagaj & Počitelj Excursion", Description = "A half-day cultural excursion to the Buna spring and the fortress village of Počitelj.", DurationMinutes = 360, PricePerPerson = 40.00m, Capacity = 16, TourTypeId = 2, IsActive = true, CreatedAt = SeedDate }
+                new { Id = 1, OrganizerId = 2, Name = "Mostar Old Town Walking Tour", Description = "A guided walk across Stari Most and through the old bazaar, ending at Blagaj Tekija.", DurationMinutes = 120, PricePerPerson = 25.00m, Capacity = 15, TourTypeId = 1, IsActive = true, CreatedAt = SeedDate },
+                new { Id = 2, OrganizerId = 2, Name = "Kravice Waterfalls Day Trip", Description = "A full-day excursion to the Kravice waterfalls with a stop in Počitelj.", DurationMinutes = 300, PricePerPerson = 45.00m, Capacity = 12, TourTypeId = 3, IsActive = true, CreatedAt = SeedDate },
+                new { Id = 3, OrganizerId = 2, Name = "Sarajevo Cultural Heritage Tour", Description = "From Vrelo Bosne to Baščaršija — the natural and Ottoman heritage around Sarajevo.", DurationMinutes = 180, PricePerPerson = 30.00m, Capacity = 20, TourTypeId = 2, IsActive = true, CreatedAt = SeedDate },
+                new { Id = 4, OrganizerId = 2, Name = "Una National Park Rafting", Description = "A guided rafting descent of the upper Una with a visit to Bihać old town.", DurationMinutes = 240, PricePerPerson = 60.00m, Capacity = 10, TourTypeId = 3, IsActive = true, CreatedAt = SeedDate },
+                new { Id = 5, OrganizerId = 2, Name = "Blagaj & Počitelj Excursion", Description = "A half-day cultural excursion to the Buna spring and the fortress village of Počitelj.", DurationMinutes = 360, PricePerPerson = 40.00m, Capacity = 16, TourTypeId = 2, IsActive = true, CreatedAt = SeedDate }
             );
         }
 
@@ -411,12 +308,13 @@ namespace Travle.Services.Database
         private void SeedBookings(ModelBuilder modelBuilder)
         {
             // One booking in each of the demonstrable statuses (Completed, Confirmed, Cancelled, Pending),
-            // so the state machine, reviews, refunds and history screens all have data.
+            // so the state machine, reviews, refunds and history screens all have data. Travelers book
+            // (mobile = 4, traveler2 = 5); the organizer (2) owns every tour, so confirmations are by 2.
             modelBuilder.Entity<Booking>().HasData(
-                new { Id = 1, UserId = 5, TourScheduleId = 1, NumberOfPeople = 2, TotalAmount = 50.00m, StatusId = 4, StatusChangedAt = new DateTime(2026, 6, 20, 12, 30, 0, DateTimeKind.Utc), ConfirmedByUserId = (int?)4, CreatedAt = new DateTime(2026, 6, 15, 9, 0, 0, DateTimeKind.Utc) },
-                new { Id = 2, UserId = 4, TourScheduleId = 6, NumberOfPeople = 1, TotalAmount = 30.00m, StatusId = 3, StatusChangedAt = new DateTime(2026, 7, 10, 11, 0, 0, DateTimeKind.Utc), ConfirmedByUserId = (int?)5, CreatedAt = new DateTime(2026, 7, 9, 15, 0, 0, DateTimeKind.Utc) },
+                new { Id = 1, UserId = 4, TourScheduleId = 1, NumberOfPeople = 2, TotalAmount = 50.00m, StatusId = 4, StatusChangedAt = new DateTime(2026, 6, 20, 12, 30, 0, DateTimeKind.Utc), ConfirmedByUserId = (int?)2, CreatedAt = new DateTime(2026, 6, 15, 9, 0, 0, DateTimeKind.Utc) },
+                new { Id = 2, UserId = 4, TourScheduleId = 6, NumberOfPeople = 1, TotalAmount = 30.00m, StatusId = 3, StatusChangedAt = new DateTime(2026, 7, 10, 11, 0, 0, DateTimeKind.Utc), ConfirmedByUserId = (int?)2, CreatedAt = new DateTime(2026, 7, 9, 15, 0, 0, DateTimeKind.Utc) },
                 new { Id = 3, UserId = 5, TourScheduleId = 9, NumberOfPeople = 3, TotalAmount = 120.00m, StatusId = 5, StatusChangedAt = new DateTime(2026, 7, 5, 10, 0, 0, DateTimeKind.Utc), CancelledByUserId = (int?)5, CancellationReason = "Change of travel plans.", CreatedAt = new DateTime(2026, 7, 1, 12, 0, 0, DateTimeKind.Utc) },
-                new { Id = 4, UserId = 5, TourScheduleId = 4, NumberOfPeople = 2, TotalAmount = 90.00m, StatusId = 2, StatusChangedAt = new DateTime(2026, 7, 14, 8, 0, 0, DateTimeKind.Utc), CreatedAt = new DateTime(2026, 7, 14, 8, 0, 0, DateTimeKind.Utc) }
+                new { Id = 4, UserId = 4, TourScheduleId = 4, NumberOfPeople = 2, TotalAmount = 90.00m, StatusId = 2, StatusChangedAt = new DateTime(2026, 7, 14, 8, 0, 0, DateTimeKind.Utc), CreatedAt = new DateTime(2026, 7, 14, 8, 0, 0, DateTimeKind.Utc) }
             );
         }
 
@@ -453,9 +351,9 @@ namespace Travle.Services.Database
 
         private void SeedTourReviews(ModelBuilder modelBuilder)
         {
-            // Gated to a Completed booking: user 5's completed booking 1 on tour 1.
+            // Gated to a Completed booking: mobile (4) reviewing their completed booking 1 on tour 1.
             modelBuilder.Entity<TourReview>().HasData(
-                new { Id = 1, TourId = 1, BookingId = 1, UserId = 5, Rating = 5, Comment = "Fantastic guide and a perfect route across the old town.", IsRemoved = false, CreatedAt = new DateTime(2026, 6, 21, 10, 0, 0, DateTimeKind.Utc) }
+                new { Id = 1, TourId = 1, BookingId = 1, UserId = 4, Rating = 5, Comment = "Fantastic guide and a perfect route across the old town.", IsRemoved = false, CreatedAt = new DateTime(2026, 6, 21, 10, 0, 0, DateTimeKind.Utc) }
             );
         }
 
@@ -472,9 +370,9 @@ namespace Travle.Services.Database
 
         private void SeedUserInteractions(ModelBuilder modelBuilder)
         {
-            // Rich, explained history for user 4 (onboarding + views + searches + favorites) so first-run
-            // recommendations are non-trivial; plus completion/high-review signals for user 5. Weights
-            // match docs/context/04-recommender-spec.md §2.
+            // Rich, explained history for mobile (user 4): onboarding + views + searches + favorites, plus
+            // the completion/high-review signals from their own completed booking and review — so first-run
+            // recommendations are non-trivial. Weights match docs/context/04-recommender-spec.md §2.
             modelBuilder.Entity<UserInteraction>().HasData(
                 new { Id = 1, UserId = 4, InteractionType = InteractionType.OnboardingInterest, Weight = 2.0, CategoryId = (int?)2, CreatedAt = new DateTime(2026, 6, 1, 8, 0, 0, DateTimeKind.Utc) },
                 new { Id = 2, UserId = 4, InteractionType = InteractionType.OnboardingInterest, Weight = 2.0, CategoryId = (int?)1, CreatedAt = new DateTime(2026, 6, 1, 8, 0, 0, DateTimeKind.Utc) },
@@ -486,8 +384,8 @@ namespace Travle.Services.Database
                 new { Id = 8, UserId = 4, InteractionType = InteractionType.Search, Weight = 1.0, SearchTerm = "old town", CategoryId = (int?)7, CreatedAt = new DateTime(2026, 6, 9, 12, 0, 0, DateTimeKind.Utc) },
                 new { Id = 9, UserId = 4, InteractionType = InteractionType.Favorite, Weight = 3.0, DestinationId = (int?)1, CreatedAt = new DateTime(2026, 6, 10, 12, 0, 0, DateTimeKind.Utc) },
                 new { Id = 10, UserId = 4, InteractionType = InteractionType.Favorite, Weight = 3.0, DestinationId = (int?)7, CreatedAt = new DateTime(2026, 6, 11, 12, 0, 0, DateTimeKind.Utc) },
-                new { Id = 11, UserId = 5, InteractionType = InteractionType.BookingCompleted, Weight = 5.0, DestinationId = (int?)1, CreatedAt = new DateTime(2026, 6, 20, 13, 0, 0, DateTimeKind.Utc) },
-                new { Id = 12, UserId = 5, InteractionType = InteractionType.ReviewHigh, Weight = 3.0, DestinationId = (int?)1, CreatedAt = new DateTime(2026, 6, 21, 9, 30, 0, DateTimeKind.Utc) }
+                new { Id = 11, UserId = 4, InteractionType = InteractionType.BookingCompleted, Weight = 5.0, DestinationId = (int?)1, CreatedAt = new DateTime(2026, 6, 20, 13, 0, 0, DateTimeKind.Utc) },
+                new { Id = 12, UserId = 4, InteractionType = InteractionType.ReviewHigh, Weight = 3.0, DestinationId = (int?)1, CreatedAt = new DateTime(2026, 6, 21, 9, 30, 0, DateTimeKind.Utc) }
             );
         }
 
@@ -502,8 +400,8 @@ namespace Travle.Services.Database
         private void SeedNotifications(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<Notification>().HasData(
-                new { Id = 1, UserId = 5, Title = "Booking confirmed", Text = "Your booking for 'Mostar Old Town Walking Tour' has been confirmed.", Type = NotificationType.BookingConfirmed, IsRead = true, ReadAt = (DateTime?)new DateTime(2026, 6, 16, 8, 0, 0, DateTimeKind.Utc), RelatedEntityId = (int?)1, CreatedAt = new DateTime(2026, 6, 15, 9, 5, 0, DateTimeKind.Utc) },
-                new { Id = 2, UserId = 5, Title = "Tour completed", Text = "Your tour is completed. Share your experience by leaving a review!", Type = NotificationType.BookingCompleted, IsRead = false, RelatedEntityId = (int?)1, CreatedAt = new DateTime(2026, 6, 20, 13, 0, 0, DateTimeKind.Utc) },
+                new { Id = 1, UserId = 4, Title = "Booking confirmed", Text = "Your booking for 'Mostar Old Town Walking Tour' has been confirmed.", Type = NotificationType.BookingConfirmed, IsRead = true, ReadAt = (DateTime?)new DateTime(2026, 6, 16, 8, 0, 0, DateTimeKind.Utc), RelatedEntityId = (int?)1, CreatedAt = new DateTime(2026, 6, 15, 9, 5, 0, DateTimeKind.Utc) },
+                new { Id = 2, UserId = 4, Title = "Tour completed", Text = "Your tour is completed. Share your experience by leaving a review!", Type = NotificationType.BookingCompleted, IsRead = false, RelatedEntityId = (int?)1, CreatedAt = new DateTime(2026, 6, 20, 13, 0, 0, DateTimeKind.Utc) },
                 new { Id = 3, UserId = 4, Title = "Booking confirmed", Text = "Your booking for 'Sarajevo Cultural Heritage Tour' has been confirmed.", Type = NotificationType.BookingConfirmed, IsRead = false, RelatedEntityId = (int?)2, CreatedAt = new DateTime(2026, 7, 10, 11, 5, 0, DateTimeKind.Utc) },
                 new { Id = 4, UserId = 5, Title = "Refund issued", Text = "A refund of 120.00 KM has been issued for your cancelled booking.", Type = NotificationType.RefundIssued, IsRead = false, RelatedEntityId = (int?)3, CreatedAt = new DateTime(2026, 7, 5, 10, 5, 0, DateTimeKind.Utc) }
             );

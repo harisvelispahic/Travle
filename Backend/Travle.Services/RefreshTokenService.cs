@@ -1,47 +1,40 @@
-﻿using Travle.Model.Exceptions;
 using Travle.Services.Database;
 using Microsoft.EntityFrameworkCore;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Travle.Services
 {
     public class RefreshTokenService : IRefreshTokenService
     {
-        private readonly TravleDbContext _context;
-        private readonly DbSet<RefreshToken> _refreshTokens;
+        private readonly TravleDbContext _dbContext;
 
-        public RefreshTokenService(TravleDbContext context)
+        public RefreshTokenService(TravleDbContext dbContext)
         {
-            _context = context;
-            _refreshTokens = _context.RefreshTokens;
+            _dbContext = dbContext;
         }
 
-        public async Task<RefreshToken> GetStoredTokenAsync(string refreshToken)
+        public Task<RefreshToken?> GetActiveByHashAsync(string tokenHash)
+            => _dbContext.RefreshTokens.FirstOrDefaultAsync(rt => rt.TokenHash == tokenHash && !rt.IsRevoked);
+
+        public async Task AddAsync(RefreshToken token)
         {
-            var token = await _refreshTokens.FirstOrDefaultAsync(rt => rt.Token == refreshToken);
-
-            if (token == null)
-            {
-                throw new UnauthorizedException("Invalid refresh token.");
-            }
-
-            return token;
+            _dbContext.RefreshTokens.Add(token);
+            await _dbContext.SaveChangesAsync();
         }
 
-        public async Task InsertAsync(RefreshToken refreshToken)
+        public async Task RotateAsync(RefreshToken current, RefreshToken replacement)
         {
-            await _context.RefreshTokens.AddAsync(refreshToken);
-            await _context.SaveChangesAsync();
+            current.IsRevoked = true;
+            current.RevokedAt = DateTime.UtcNow;
+            _dbContext.RefreshTokens.Add(replacement);
+
+            // Revoke + insert in a single SaveChanges → one implicit transaction.
+            await _dbContext.SaveChangesAsync();
         }
 
-        public Task DeleteAllUserRefreshTokensAsync(int userId)
+        public async Task DeleteAllForUserAsync(int userId)
         {
-            _refreshTokens.RemoveRange(_refreshTokens.Where(rt => rt.UserId == userId));
-            return _context.SaveChangesAsync();
+            _dbContext.RefreshTokens.RemoveRange(_dbContext.RefreshTokens.Where(rt => rt.UserId == userId));
+            await _dbContext.SaveChangesAsync();
         }
     }
 }

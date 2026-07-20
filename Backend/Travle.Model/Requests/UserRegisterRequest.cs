@@ -1,8 +1,10 @@
-using System.ComponentModel.DataAnnotations;
-
 namespace Travle.Model.Requests
 {
-    public class UserInsertRequest
+    /// <summary>
+    /// Self-service registration. The client supplies only profile data — never a role or any
+    /// privileged flag (course §J); the service always assigns the Traveler role.
+    /// </summary>
+    public class UserRegisterRequest
     {
         public string FirstName { get; set; } = string.Empty;
         public string LastName { get; set; } = string.Empty;
@@ -10,7 +12,6 @@ namespace Travle.Model.Requests
         public string Username { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
         public string? PhoneNumber { get; set; }
-        public bool IsActive { get; set; } = true;
-        public string? ProfileImageBase64 { get; set; }
+        public int? CityId { get; set; }
     }
 }

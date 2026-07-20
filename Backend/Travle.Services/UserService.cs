@@ -1,40 +1,51 @@
-using Travle.Common.Services.CryptoService;
-using Travle.Model.Access;
+using Travle.Model.Constants;
 using Travle.Model.Exceptions;
 using Travle.Model.Requests;
 using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
+using Travle.Services.Authorization;
 using Travle.Services.Database;
+using Travle.Services.Security;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Travle.Services
 {
-    public class UserService : BaseCRUDService<User, UserResponse, UserSearch, UserInsertRequest, UserUpdateRequest>, IUserService
+    public class UserService : BaseReadService<User, UserResponse, UserSearch>, IUserService
     {
         private readonly ICryptoService _cryptoService;
-        public UserService(TravleDbContext dbContext, MapsterMapper.IMapper mapper, IValidator<UserInsertRequest> insertValidator, IValidator<UserUpdateRequest> updateValidator, ICryptoService cryptoService)
-            : base(dbContext, mapper, insertValidator, updateValidator)
+        private readonly IAppAuthorizationService _authorization;
+        private readonly IValidator<UserRegisterRequest> _registerValidator;
+        private readonly IValidator<UserUpdateRequest> _updateValidator;
+        private readonly IValidator<UserPasswordChangeRequest> _passwordChangeValidator;
+        private readonly IValidator<UserSuspendRequest> _suspendValidator;
+
+        public UserService(
+            TravleDbContext dbContext,
+            MapsterMapper.IMapper mapper,
+            ICryptoService cryptoService,
+            IAppAuthorizationService authorization,
+            IValidator<UserRegisterRequest> registerValidator,
+            IValidator<UserUpdateRequest> updateValidator,
+            IValidator<UserPasswordChangeRequest> passwordChangeValidator,
+            IValidator<UserSuspendRequest> suspendValidator)
+            : base(mapper, dbContext)
         {
             _cryptoService = cryptoService;
+            _authorization = authorization;
+            _registerValidator = registerValidator;
+            _updateValidator = updateValidator;
+            _passwordChangeValidator = passwordChangeValidator;
+            _suspendValidator = suspendValidator;
         }
-
 
         protected override IQueryable<User> ApplyFilters(IQueryable<User> query, UserSearch? search)
         {
-            if (search == null)
+            if (search is null)
             {
                 return query;
             }
 
-            // String matching runs in SQL (LIKE) and is case-insensitive under the default SQL Server
-            // collation, so no StringComparison overload is needed (nor would it translate).
             if (!string.IsNullOrWhiteSpace(search.Email))
             {
                 query = query.Where(u => u.Email.Contains(search.Email));
@@ -51,33 +62,35 @@ namespace Travle.Services
                                       || u.LastName.Contains(search.Name));
             }
 
-            if (search.IsActive.HasValue)
+            if (search.IsSuspended.HasValue)
             {
-                query = query.Where(u => u.IsActive == search.IsActive.Value);
+                query = query.Where(u => u.IsSuspended == search.IsSuspended.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(search.RoleName))
+            {
+                query = query.Where(u => u.UserRoles.Any(ur => ur.Role.Name == search.RoleName));
             }
 
             return query;
         }
 
-        protected override User MapInsertRequestToEntity(UserInsertRequest request)
+        // List path: hydrate roles + city so the DTO's Roles/CityName are populated (JOIN, not N+1).
+        protected override IQueryable<User> ApplyIncludes(IQueryable<User> query, UserSearch? search)
+            => query.Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
+                    .Include(u => u.City);
+
+        // Single-entity path (admin GetById): load the same navigations the DTO flattens.
+        protected override async Task LoadResponseNavigationsAsync(User entity)
         {
-            var entity = base.MapInsertRequestToEntity(request);
-
-            // Handle password hashing for User entity
-            var salt = _cryptoService.GenerateSlat();
-            entity.PasswordSalt = salt;
-            entity.PasswordHash = _cryptoService.GenerateHash(request.Password, salt);
-
-            return entity;
+            await _dbContext.Entry(entity).Collection(u => u.UserRoles).Query().Include(ur => ur.Role).LoadAsync();
+            await _dbContext.Entry(entity).Reference(u => u.City).LoadAsync();
         }
 
-        public override async Task<UserResponse> InsertAsync(UserInsertRequest request)
+        public async Task<UserResponse> RegisterAsync(UserRegisterRequest request)
         {
-            // let FluentValidation throw if the request isn't valid; the ValidationExceptionHandler
-            // converts the resulting ValidationException into the standard error format.
-            await _insertValidator.ValidateAndThrowAsync(request);
+            await _registerValidator.ValidateAndThrowAsync(request);
 
-            // Check if email or username already exists
             if (await _dbContext.Users.AnyAsync(u => u.Email == request.Email))
             {
                 throw new ConflictException($"Email '{request.Email}' is already in use.");
@@ -88,113 +101,159 @@ namespace Travle.Services
                 throw new ConflictException($"Username '{request.Username}' is already in use.");
             }
 
-            var entity = MapInsertRequestToEntity(request);
+            var travelerRole = await _dbContext.Roles.FirstOrDefaultAsync(r => r.Name == RoleNames.Traveler)
+                ?? throw new BusinessRuleException("The Traveler role is not configured.");
 
-            _dbContext.Users.Add(entity);
+            var salt = _cryptoService.GenerateSalt();
+
+            var user = new User
+            {
+                FirstName = request.FirstName,
+                LastName = request.LastName,
+                Email = request.Email,
+                Username = request.Username,
+                PhoneNumber = request.PhoneNumber,
+                CityId = request.CityId,
+                PasswordSalt = salt,
+                PasswordHash = _cryptoService.GenerateHash(request.Password, salt),
+                UserRoles = new List<UserRole> { new() { RoleId = travelerRole.Id } }
+            };
+
+            _dbContext.Users.Add(user);
             await _dbContext.SaveChangesAsync();
 
-            return _mapper.Map<UserResponse>(entity);
+            return await RequireWithRolesAsync(user.Id);
         }
 
-
-        public override async Task<UserResponse> UpdateAsync(int id, UserUpdateRequest request)
+        public async Task<UserResponse> UpdateProfileAsync(int id, UserUpdateRequest request)
         {
+            _authorization.EnsureSelfOrAdmin(id, "profile");
+
             await _updateValidator.ValidateAndThrowAsync(request);
 
-            var entity = await _dbContext.Users.FindAsync(id);
-            if (entity == null)
-            {
-                throw new NotFoundException("User", id);
-            }
+            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == id)
+                ?? throw new NotFoundException("User", id);
 
-            // Check if email or username already exists
-            if (await _dbContext.Users.AnyAsync(u => u.Email == request.Email && u.Id != id))
+            if (request.Email is not null && await _dbContext.Users.AnyAsync(u => u.Email == request.Email && u.Id != id))
             {
                 throw new ConflictException($"Email '{request.Email}' is already in use.");
             }
 
-            if (await _dbContext.Users.AnyAsync(u => u.Username == request.Username && u.Id != id))
+            if (request.Username is not null && await _dbContext.Users.AnyAsync(u => u.Username == request.Username && u.Id != id))
             {
                 throw new ConflictException($"Username '{request.Username}' is already in use.");
             }
 
-            MapUpdateRequestToEntity(request, entity);
+            // Null members are ignored (Mapster IgnoreNullValues) so unspecified fields keep their value.
+            _mapper.Map(request, user);
 
-            _dbContext.Users.Update(entity);
             await _dbContext.SaveChangesAsync();
 
-            return _mapper.Map<UserResponse>(entity);
-        }
-
-        public override async Task DeleteAsync(int id)
-        {
-            var entity = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == id);
-            if (entity == null)
-            {
-                throw new NotFoundException("User", id);
-            }
-
-            _dbContext.Users.Remove(entity);
-            await _dbContext.SaveChangesAsync();
-        }
-
-        public async Task<UserSensitveResponse?> GetByUsernameAsync(string username)
-        {
-            var user = await _dbContext.Users
-                .AsNoTracking()
-                .Include(u => u.UserRoles)
-                .ThenInclude(ur => ur.Role)
-                .FirstOrDefaultAsync(u => u.Username == username);
-
-            UserSensitveResponse? response = null;
-
-            if (user != null)
-            {
-                response = _mapper.Map<UserSensitveResponse>(user);
-                response.Role = user.UserRoles.FirstOrDefault()?.Role.Name;
-            }
-
-            return response;
-        }
-
-        public async Task<UserResponse?> GetWithRoleByIdAsync(int id)
-        {
-            var user = await _dbContext.Users
-               .AsNoTracking()
-               .Include(u => u.UserRoles)
-               .ThenInclude(ur => ur.Role)
-               .FirstOrDefaultAsync(u => u.Id == id);
-
-            UserResponse? response = null;
-
-            if (user != null)
-            {
-                response = _mapper.Map<UserResponse>(user);
-                response.Role = user.UserRoles.First().Role.Name;
-            }
-
-            return response;
+            return await RequireWithRolesAsync(id);
         }
 
         public async Task ChangePasswordAsync(UserPasswordChangeRequest request)
         {
-            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == request.Id);
+            var userId = _authorization.RequireUserId();
 
-            if (user == null)
-                throw new NotFoundException("User", request.Id);
+            await _passwordChangeValidator.ValidateAndThrowAsync(request);
 
-            if (!_cryptoService.Verify(user.PasswordHash, user.PasswordSalt, request.Password))
+            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId)
+                ?? throw new NotFoundException("User", userId);
+
+            if (!_cryptoService.Verify(user.PasswordHash, user.PasswordSalt, request.CurrentPassword))
+            {
                 throw new BusinessRuleException("Current password is incorrect.");
+            }
 
-            if (!request.NewPassword.Equals(request.ConfirmNewPassword))
-                throw new BusinessRuleException("Password confirmation does not match the new password.");
-
-            user.PasswordSalt = _cryptoService.GenerateSlat();
+            user.PasswordSalt = _cryptoService.GenerateSalt();
             user.PasswordHash = _cryptoService.GenerateHash(request.NewPassword, user.PasswordSalt);
 
-
-            _dbContext.Users.Update(user);
             await _dbContext.SaveChangesAsync();
         }
+
+        public async Task<UserResponse> SuspendAsync(int id, UserSuspendRequest request)
+        {
+            await _suspendValidator.ValidateAndThrowAsync(request);
+
+            var adminId = _authorization.RequireUserId();
+
+            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == id)
+                ?? throw new NotFoundException("User", id);
+
+            if (user.Id == adminId)
+            {
+                throw new BusinessRuleException("You cannot suspend your own account.");
+            }
+
+            if (user.IsSuspended)
+            {
+                throw new BusinessRuleException("This user is already suspended.");
+            }
+
+            user.IsSuspended = true;
+            user.SuspendedAt = DateTime.UtcNow;
+            user.SuspendedByUserId = adminId;
+            user.SuspensionReason = request.Reason;
+
+            // Suspending revokes access immediately: drop all of the user's refresh tokens.
+            _dbContext.RefreshTokens.RemoveRange(_dbContext.RefreshTokens.Where(rt => rt.UserId == id));
+
+            await _dbContext.SaveChangesAsync();
+
+            return await RequireWithRolesAsync(id);
+        }
+
+        public async Task<UserResponse> UnsuspendAsync(int id)
+        {
+            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == id)
+                ?? throw new NotFoundException("User", id);
+
+            if (!user.IsSuspended)
+            {
+                throw new BusinessRuleException("This user is not suspended.");
+            }
+
+            user.IsSuspended = false;
+            user.SuspendedAt = null;
+            user.SuspendedByUserId = null;
+            user.SuspensionReason = null;
+
+            await _dbContext.SaveChangesAsync();
+
+            return await RequireWithRolesAsync(id);
+        }
+
+        public async Task<UserResponse?> ValidateCredentialsAsync(string username, string password)
+        {
+            var user = await _dbContext.Users
+                .AsNoTracking()
+                .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
+                .FirstOrDefaultAsync(u => u.Username == username);
+
+            // Same negative result for unknown user and wrong password (no username enumeration).
+            if (user is null || !_cryptoService.Verify(user.PasswordHash, user.PasswordSalt, password))
+            {
+                return null;
+            }
+
+            return _mapper.Map<UserResponse>(user);
+        }
+
+        public async Task<UserResponse?> GetWithRolesByIdAsync(int id)
+        {
+            var user = await _dbContext.Users
+                .AsNoTracking()
+                .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
+                .Include(u => u.City)
+                .FirstOrDefaultAsync(u => u.Id == id);
+
+            return user is null ? null : _mapper.Map<UserResponse>(user);
+        }
+
+        // Re-reads the just-mutated user with roles + city so the response DTO is fully populated.
+        // This is data loading, not authorization — it stays in the user service.
+        private async Task<UserResponse> RequireWithRolesAsync(int id)
+            => await GetWithRolesByIdAsync(id) ?? throw new NotFoundException("User", id);
     }
 }

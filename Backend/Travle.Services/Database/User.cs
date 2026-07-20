@@ -1,50 +1,38 @@
-using System;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
-
 namespace Travle.Services.Database
 {
-    public class User
+    /// <summary>
+    /// An application account. A user may hold several roles at once (Traveler + Curator on one
+    /// account is expected — see 03 §2), so role membership is the many-to-many
+    /// <see cref="UserRoles"/>. Users are never hard-deleted; "removal" is suspension
+    /// (<see cref="IsSuspended"/> + the audit fields), which also revokes their refresh tokens.
+    /// </summary>
+    public class User : BaseEntity
     {
-        [Key]
-        public int Id { get; set; }
-        
-        [Required]
-        [MaxLength(50)]
         public string FirstName { get; set; } = string.Empty;
-        
-        [Required]
-        [MaxLength(50)]
         public string LastName { get; set; } = string.Empty;
-        
-        [Required]
-        [MaxLength(100)]
-        [EmailAddress]
         public string Email { get; set; } = string.Empty;
-        
-        [Required]
-        [MaxLength(100)]
         public string Username { get; set; } = string.Empty;
-        
+
         public string PasswordHash { get; set; } = string.Empty;
-        
         public string PasswordSalt { get; set; } = string.Empty;
-        
-        public bool IsActive { get; set; } = true;
-        
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-        
-        public DateTime? LastLoginAt { get; set; }
-        
-        [Phone]
-        [MaxLength(20)]
+
         public string? PhoneNumber { get; set; }
 
-        public string? ProfileImageBase64 { get; set; }
+        /// <summary>Full-size profile image bytes. Kept out of list DTOs (12/§8.2 — thumbnails only).</summary>
+        public byte[]? ProfileImage { get; set; }
 
-        // Navigation property for the many-to-many relationship with Role
+        // Suspension = domain flag + audit (not on BaseEntity, per 02 §2b/§6a).
+        public bool IsSuspended { get; set; }
+        public DateTime? SuspendedAt { get; set; }
+        public int? SuspendedByUserId { get; set; }
+        public User? SuspendedByUser { get; set; }
+        public string? SuspensionReason { get; set; }
+
+        // Optional home city (recommender signal + profile detail).
+        public int? CityId { get; set; }
+        public City? City { get; set; }
+
         public ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
-
         public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
     }
-} 
+}

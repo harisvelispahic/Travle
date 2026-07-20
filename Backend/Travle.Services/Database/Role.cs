@@ -1,26 +1,15 @@
-using System;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
-
 namespace Travle.Services.Database
 {
-    public class Role
+    /// <summary>
+    /// Reference table of application roles (Admin, Traveler, Curator, Organizer). Seeded with fixed
+    /// Ids and names; the names are load-bearing (they appear as JWT role claims and in authorization
+    /// policies), so they are never renamed or deleted.
+    /// </summary>
+    public class Role : BaseEntity
     {
-        [Key]
-        public int Id { get; set; }
-        
-        [Required]
-        [MaxLength(50)]
         public string Name { get; set; } = string.Empty;
-        
-        [MaxLength(200)]
         public string Description { get; set; } = string.Empty;
-        
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-        
-        public bool IsActive { get; set; } = true;
-        
-        // Navigation property for the many-to-many relationship with User
+
         public ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
     }
-} 
+}
