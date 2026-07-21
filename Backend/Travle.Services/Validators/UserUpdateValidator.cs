@@ -1,4 +1,5 @@
 using Travle.Model.Requests;
+using Travle.Services.Security;
 using FluentValidation;
 
 namespace Travle.Services.Validators
@@ -9,6 +10,9 @@ namespace Travle.Services.Validators
     /// </summary>
     public class UserUpdateValidator : AbstractValidator<UserUpdateRequest>
     {
+        // Cap the stored image so a request can't post an unbounded byte[] (5 MB).
+        private const int MaxProfileImageBytes = 5 * 1024 * 1024;
+
         public UserUpdateValidator()
         {
             RuleFor(x => x.FirstName)
@@ -35,6 +39,25 @@ namespace Travle.Services.Validators
             RuleFor(x => x.PhoneNumber)
                 .MaximumLength(20).WithMessage("Phone number cannot exceed 20 characters.")
                 .When(x => !string.IsNullOrEmpty(x.PhoneNumber));
+
+            // Profile image (optional). When bytes are supplied, the declared type is required, must be
+            // an allowed image type, and the payload is size-capped; the service then confirms the bytes
+            // genuinely match the type via magic-byte sniffing.
+            RuleFor(x => x.ProfileImageContentType)
+                .NotEmpty().WithMessage("An image type is required when uploading a profile image.")
+                .Must(ct => FileSignatureValidator.ImageContentTypes.Contains(ct, StringComparer.OrdinalIgnoreCase))
+                    .WithMessage("The profile image must be a JPEG or PNG.")
+                .When(x => x.ProfileImage is { Length: > 0 });
+
+            RuleFor(x => x.ProfileImage)
+                .Must(img => img!.Length <= MaxProfileImageBytes)
+                    .WithMessage("The profile image must be 5 MB or smaller.")
+                .When(x => x.ProfileImage is { Length: > 0 });
+
+            // A declared image type with no bytes is not a valid partial update (would set a dangling type).
+            RuleFor(x => x.ProfileImage)
+                .NotNull().WithMessage("Image bytes are required when an image type is provided.")
+                .When(x => !string.IsNullOrEmpty(x.ProfileImageContentType));
         }
     }
 }

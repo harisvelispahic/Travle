@@ -17,6 +17,7 @@ namespace Travle.Services.Database.Configurations
             builder.Property(u => u.PasswordSalt).IsRequired().HasMaxLength(100);
             builder.Property(u => u.PhoneNumber).HasMaxLength(20);
             builder.Property(u => u.SuspensionReason).HasMaxLength(500);
+            builder.Property(u => u.ProfileImageContentType).HasMaxLength(100);
 
             builder.HasIndex(u => u.Username).IsUnique();
             builder.HasIndex(u => u.Email).IsUnique();

@@ -14,5 +14,9 @@ namespace Travle.Model.Requests
         public string? PhoneNumber { get; set; }
         public int? CityId { get; set; }
         public byte[]? ProfileImage { get; set; }
+
+        /// <summary>MIME type of <see cref="ProfileImage"/>. Required when an image is supplied; must be
+        /// image/jpeg or image/png, and the bytes are verified against it (magic-byte check).</summary>
+        public string? ProfileImageContentType { get; set; }
     }
 }

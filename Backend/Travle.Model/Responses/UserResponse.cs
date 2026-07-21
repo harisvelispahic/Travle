@@ -27,6 +27,7 @@ namespace Travle.Model.Responses
         public bool IsOnboarded { get; set; }
 
         public byte[]? ProfileImage { get; set; }
+        public string? ProfileImageContentType { get; set; }
 
         public DateTime CreatedAt { get; set; }
         public DateTime? ModifiedAt { get; set; }

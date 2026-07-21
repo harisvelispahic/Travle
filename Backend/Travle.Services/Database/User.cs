@@ -21,6 +21,9 @@ namespace Travle.Services.Database
         /// <summary>Full-size profile image bytes. Kept out of list DTOs (12/§8.2 — thumbnails only).</summary>
         public byte[]? ProfileImage { get; set; }
 
+        /// <summary>Declared MIME type of <see cref="ProfileImage"/> (image/jpeg or image/png), verified against the bytes on upload.</summary>
+        public string? ProfileImageContentType { get; set; }
+
         // Suspension = domain flag + audit (not on BaseEntity, per 02 §2b/§6a).
         public bool IsSuspended { get; set; }
         public DateTime? SuspendedAt { get; set; }

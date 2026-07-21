@@ -139,6 +139,14 @@ namespace Travle.Services
 
             await _updateValidator.ValidateAndThrowAsync(request);
 
+            // Trust the bytes, not the declared type: a profile image must actually be a JPEG/PNG by its
+            // magic bytes (course §I). Shape (type present, allowed, size) is covered by the validator.
+            if (request.ProfileImage is { Length: > 0 }
+                && !FileSignatureValidator.IsValid(request.ProfileImage, request.ProfileImageContentType, FileSignatureValidator.ImageContentTypes))
+            {
+                throw new BusinessRuleException("The profile image must be a valid JPEG or PNG file.");
+            }
+
             var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == id)
                 ?? throw new NotFoundException("User", id);
 

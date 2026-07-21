@@ -20,6 +20,24 @@ namespace Travle.Services.Security
         /// <summary>The content types this validator recognises (for building an allow-list message).</summary>
         public static IReadOnlyCollection<string> AllowedContentTypes => Signatures.Keys;
 
+        /// <summary>The subset of recognised types that are images — the allow-list for a profile picture.</summary>
+        public static IReadOnlyList<string> ImageContentTypes { get; } = new[] { "image/jpeg", "image/png" };
+
+        /// <summary>
+        /// Overload that first restricts the accepted type to <paramref name="allowedContentTypes"/>
+        /// (e.g. images only) before checking the signature, so a valid-but-unwanted type — a PDF where
+        /// an image is expected — is rejected.
+        /// </summary>
+        public static bool IsValid(byte[]? content, string? contentType, IReadOnlyCollection<string> allowedContentTypes)
+        {
+            if (contentType is null || !allowedContentTypes.Contains(contentType.Trim(), StringComparer.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return IsValid(content, contentType);
+        }
+
         /// <summary>
         /// True when <paramref name="content"/> is non-empty, <paramref name="contentType"/> is a
         /// recognised type, and the content's leading bytes match that type's signature.
