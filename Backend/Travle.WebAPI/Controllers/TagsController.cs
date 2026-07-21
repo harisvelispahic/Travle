@@ -9,7 +9,7 @@ namespace Travle.WebAPI.Controllers;
 [ApiController]
 [Route("[controller]")]
 public class TagsController
-    : BaseCRUDController<TagResponse, TagSearch, TagInsertRequest, TagUpdateRequest, ITagService>
+    : ReferenceCrudController<TagResponse, TagSearch, TagInsertRequest, TagUpdateRequest, ITagService>
 {
     public TagsController(ITagService service) : base(service)
     {

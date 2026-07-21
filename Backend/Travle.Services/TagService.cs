@@ -2,6 +2,7 @@ using Travle.Model.Exceptions;
 using Travle.Model.Requests;
 using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
+using Travle.Services.Authorization;
 using Travle.Services.Database;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
@@ -9,15 +10,16 @@ using Microsoft.EntityFrameworkCore;
 namespace Travle.Services
 {
     public class TagService
-        : BaseCRUDService<Tag, TagResponse, TagSearch, TagInsertRequest, TagUpdateRequest>,
+        : ReferenceCrudService<Tag, TagResponse, TagSearch, TagInsertRequest, TagUpdateRequest>,
           ITagService
     {
         public TagService(
             TravleDbContext dbContext,
             MapsterMapper.IMapper mapper,
             IValidator<TagInsertRequest> insertValidator,
-            IValidator<TagUpdateRequest> updateValidator)
-            : base(dbContext, mapper, insertValidator, updateValidator)
+            IValidator<TagUpdateRequest> updateValidator,
+            IAppAuthorizationService authorization)
+            : base(dbContext, mapper, insertValidator, updateValidator, authorization)
         {
         }
 

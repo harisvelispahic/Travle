@@ -2,6 +2,7 @@ using Travle.Model.Exceptions;
 using Travle.Model.Requests;
 using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
+using Travle.Services.Authorization;
 using Travle.Services.Database;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
@@ -9,15 +10,16 @@ using Microsoft.EntityFrameworkCore;
 namespace Travle.Services
 {
     public class TourTypeService
-        : BaseCRUDService<TourType, TourTypeResponse, TourTypeSearch, TourTypeInsertRequest, TourTypeUpdateRequest>,
+        : ReferenceCrudService<TourType, TourTypeResponse, TourTypeSearch, TourTypeInsertRequest, TourTypeUpdateRequest>,
           ITourTypeService
     {
         public TourTypeService(
             TravleDbContext dbContext,
             MapsterMapper.IMapper mapper,
             IValidator<TourTypeInsertRequest> insertValidator,
-            IValidator<TourTypeUpdateRequest> updateValidator)
-            : base(dbContext, mapper, insertValidator, updateValidator)
+            IValidator<TourTypeUpdateRequest> updateValidator,
+            IAppAuthorizationService authorization)
+            : base(dbContext, mapper, insertValidator, updateValidator, authorization)
         {
         }
 

@@ -2,6 +2,7 @@ using Travle.Model.Exceptions;
 using Travle.Model.Requests;
 using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
+using Travle.Services.Authorization;
 using Travle.Services.Database;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
@@ -9,15 +10,16 @@ using Microsoft.EntityFrameworkCore;
 namespace Travle.Services
 {
     public class CityService
-        : BaseCRUDService<City, CityResponse, CitySearch, CityInsertRequest, CityUpdateRequest>,
+        : ReferenceCrudService<City, CityResponse, CitySearch, CityInsertRequest, CityUpdateRequest>,
           ICityService
     {
         public CityService(
             TravleDbContext dbContext,
             MapsterMapper.IMapper mapper,
             IValidator<CityInsertRequest> insertValidator,
-            IValidator<CityUpdateRequest> updateValidator)
-            : base(dbContext, mapper, insertValidator, updateValidator)
+            IValidator<CityUpdateRequest> updateValidator,
+            IAppAuthorizationService authorization)
+            : base(dbContext, mapper, insertValidator, updateValidator, authorization)
         {
         }
 

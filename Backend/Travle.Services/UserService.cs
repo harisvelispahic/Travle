@@ -182,6 +182,10 @@ namespace Travle.Services
 
         public async Task<UserResponse> SuspendAsync(int id, UserSuspendRequest request)
         {
+            // Admin-only. The controller policy is the first gate; this makes the service its own
+            // boundary so the check holds regardless of how the method is reached.
+            _authorization.EnsureInRole(RoleNames.Admin);
+
             await _suspendValidator.ValidateAndThrowAsync(request);
 
             var adminId = _authorization.RequireUserId();
@@ -214,6 +218,8 @@ namespace Travle.Services
 
         public async Task<UserResponse> UnsuspendAsync(int id)
         {
+            _authorization.EnsureInRole(RoleNames.Admin);
+
             var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == id)
                 ?? throw new NotFoundException("User", id);
 
@@ -261,6 +267,9 @@ namespace Travle.Services
 
         public async Task<UserResponse> CompleteOnboardingAsync(UserOnboardingRequest request)
         {
+            // Onboarding is a traveler-only, self-scoped action. Mirror the controller's TravelerOnly
+            // policy here so the service stays its own authorization boundary.
+            _authorization.EnsureInRole(RoleNames.Traveler);
             var userId = _authorization.RequireUserId();
             await _onboardingValidator.ValidateAndThrowAsync(request);
 

@@ -9,7 +9,7 @@ namespace Travle.WebAPI.Controllers;
 [ApiController]
 [Route("[controller]")]
 public class CountriesController
-    : BaseCRUDController<CountryResponse, CountrySearch, CountryInsertRequest, CountryUpdateRequest, ICountryService>
+    : ReferenceCrudController<CountryResponse, CountrySearch, CountryInsertRequest, CountryUpdateRequest, ICountryService>
 {
     public CountriesController(ICountryService service) : base(service)
     {

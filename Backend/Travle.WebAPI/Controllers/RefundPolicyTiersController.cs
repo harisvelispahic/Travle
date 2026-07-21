@@ -9,7 +9,7 @@ namespace Travle.WebAPI.Controllers;
 [ApiController]
 [Route("[controller]")]
 public class RefundPolicyTiersController
-    : BaseCRUDController<RefundPolicyTierResponse, RefundPolicyTierSearch, RefundPolicyTierInsertRequest, RefundPolicyTierUpdateRequest, IRefundPolicyTierService>
+    : ReferenceCrudController<RefundPolicyTierResponse, RefundPolicyTierSearch, RefundPolicyTierInsertRequest, RefundPolicyTierUpdateRequest, IRefundPolicyTierService>
 {
     public RefundPolicyTiersController(IRefundPolicyTierService service) : base(service)
     {

@@ -9,7 +9,7 @@ namespace Travle.WebAPI.Controllers;
 [ApiController]
 [Route("[controller]")]
 public class TourTypesController
-    : BaseCRUDController<TourTypeResponse, TourTypeSearch, TourTypeInsertRequest, TourTypeUpdateRequest, ITourTypeService>
+    : ReferenceCrudController<TourTypeResponse, TourTypeSearch, TourTypeInsertRequest, TourTypeUpdateRequest, ITourTypeService>
 {
     public TourTypesController(ITourTypeService service) : base(service)
     {

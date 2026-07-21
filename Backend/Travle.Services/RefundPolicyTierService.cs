@@ -1,21 +1,23 @@
 using Travle.Model.Requests;
 using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
+using Travle.Services.Authorization;
 using Travle.Services.Database;
 using FluentValidation;
 
 namespace Travle.Services
 {
     public class RefundPolicyTierService
-        : BaseCRUDService<RefundPolicyTier, RefundPolicyTierResponse, RefundPolicyTierSearch, RefundPolicyTierInsertRequest, RefundPolicyTierUpdateRequest>,
+        : ReferenceCrudService<RefundPolicyTier, RefundPolicyTierResponse, RefundPolicyTierSearch, RefundPolicyTierInsertRequest, RefundPolicyTierUpdateRequest>,
           IRefundPolicyTierService
     {
         public RefundPolicyTierService(
             TravleDbContext dbContext,
             MapsterMapper.IMapper mapper,
             IValidator<RefundPolicyTierInsertRequest> insertValidator,
-            IValidator<RefundPolicyTierUpdateRequest> updateValidator)
-            : base(dbContext, mapper, insertValidator, updateValidator)
+            IValidator<RefundPolicyTierUpdateRequest> updateValidator,
+            IAppAuthorizationService authorization)
+            : base(dbContext, mapper, insertValidator, updateValidator, authorization)
         {
         }
 

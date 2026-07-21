@@ -9,7 +9,7 @@ namespace Travle.WebAPI.Controllers;
 [ApiController]
 [Route("[controller]")]
 public class RegionsController
-    : BaseCRUDController<RegionResponse, RegionSearch, RegionInsertRequest, RegionUpdateRequest, IRegionService>
+    : ReferenceCrudController<RegionResponse, RegionSearch, RegionInsertRequest, RegionUpdateRequest, IRegionService>
 {
     public RegionsController(IRegionService service) : base(service)
     {
