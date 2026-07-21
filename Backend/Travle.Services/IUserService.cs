@@ -22,6 +22,12 @@ namespace Travle.Services
         Task<UserResponse> UnsuspendAsync(int id);
 
         /// <summary>
+        /// Records the current user's onboarding interest picks as OnboardingInterest interactions and
+        /// marks them onboarded. Callable once; an empty request is a valid skip (04 §5).
+        /// </summary>
+        Task<UserResponse> CompleteOnboardingAsync(UserOnboardingRequest request);
+
+        /// <summary>
         /// Verifies a username/password pair for the login flow. Returns the user (with roles) on
         /// success or <c>null</c> on unknown user or wrong password — the hash/salt never leave the
         /// service. Suspension is not judged here; the caller decides.

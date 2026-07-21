@@ -6,6 +6,7 @@ using Travle.Services;
 using Travle.Services.Authorization;
 using Travle.Services.Database;
 using Travle.Services.Messaging;
+using Travle.Services.Recommender;
 using Travle.Services.Security;
 using Travle.Services.Validators;
 using Travle.WebAPI.Authorization;
@@ -100,6 +101,11 @@ builder.Services.AddOptions<RabbitMqOptions>()
 builder.Services.AddSingleton<RabbitMqConnection>();
 builder.Services.AddSingleton<IEmailPublisher, RabbitMqEmailPublisher>();
 builder.Services.AddScoped<IPasswordResetService, PasswordResetService>();
+
+// Recommender tuning (signal weights = the "model" per 04 §2; onboarding cap). Defaults in the
+// options class match the doc; the Recommender config section overrides them.
+builder.Services.AddOptions<RecommenderOptions>()
+    .Bind(builder.Configuration.GetSection(RecommenderOptions.SectionName));
 
 // Reference-data CRUD services (Country → Region → City chaining + catalog lookups).
 builder.Services.AddScoped<ICountryService, CountryService>();

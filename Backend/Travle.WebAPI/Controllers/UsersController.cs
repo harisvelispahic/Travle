@@ -42,6 +42,14 @@ public class UsersController : BaseReadController<UserResponse, UserSearch, IUse
         return NoContent();
     }
 
+    // Post-registration interest picks (04 §5). Travelers only — other roles don't use the app for
+    // travel, so onboarding (which seeds travel recommendations) doesn't apply. Current user from the
+    // JWT; an empty body is a skip. A multi-role Curator+Traveler still qualifies (holds Traveler).
+    [Authorize(Policy = AuthPolicies.TravelerOnly)]
+    [HttpPost("onboarding-interests")]
+    public async Task<ActionResult<UserResponse>> OnboardingInterests([FromBody] UserOnboardingRequest request)
+        => Ok(await _service.CompleteOnboardingAsync(request));
+
     [Authorize(Policy = AuthPolicies.AdminOnly)]
     [HttpPost("{id}/Suspend")]
     public async Task<ActionResult<UserResponse>> Suspend(int id, [FromBody] UserSuspendRequest request)

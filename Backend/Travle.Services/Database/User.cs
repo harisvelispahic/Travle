@@ -32,6 +32,12 @@ namespace Travle.Services.Database
         public int? CityId { get; set; }
         public City? City { get; set; }
 
+        /// <summary>
+        /// True once the user has either submitted onboarding interests or explicitly skipped, so the
+        /// onboarding step is shown at most once (04 §5 "callable once, skippable").
+        /// </summary>
+        public bool IsOnboarded { get; set; }
+
         public ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
         public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
     }

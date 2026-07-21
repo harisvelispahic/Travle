@@ -5,9 +5,11 @@ using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
 using Travle.Services.Database;
+using Travle.Services.Recommender;
 using Travle.Services.Security;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Travle.Services
 {
@@ -15,28 +17,34 @@ namespace Travle.Services
     {
         private readonly ICryptoService _cryptoService;
         private readonly IAppAuthorizationService _authorization;
+        private readonly RecommenderOptions _recommenderOptions;
         private readonly IValidator<UserRegisterRequest> _registerValidator;
         private readonly IValidator<UserUpdateRequest> _updateValidator;
         private readonly IValidator<UserPasswordChangeRequest> _passwordChangeValidator;
         private readonly IValidator<UserSuspendRequest> _suspendValidator;
+        private readonly IValidator<UserOnboardingRequest> _onboardingValidator;
 
         public UserService(
             TravleDbContext dbContext,
             MapsterMapper.IMapper mapper,
             ICryptoService cryptoService,
             IAppAuthorizationService authorization,
+            IOptions<RecommenderOptions> recommenderOptions,
             IValidator<UserRegisterRequest> registerValidator,
             IValidator<UserUpdateRequest> updateValidator,
             IValidator<UserPasswordChangeRequest> passwordChangeValidator,
-            IValidator<UserSuspendRequest> suspendValidator)
+            IValidator<UserSuspendRequest> suspendValidator,
+            IValidator<UserOnboardingRequest> onboardingValidator)
             : base(mapper, dbContext)
         {
             _cryptoService = cryptoService;
             _authorization = authorization;
+            _recommenderOptions = recommenderOptions.Value;
             _registerValidator = registerValidator;
             _updateValidator = updateValidator;
             _passwordChangeValidator = passwordChangeValidator;
             _suspendValidator = suspendValidator;
+            _onboardingValidator = onboardingValidator;
         }
 
         protected override IQueryable<User> ApplyFilters(IQueryable<User> query, UserSearch? search)
@@ -249,6 +257,68 @@ namespace Travle.Services
                 .FirstOrDefaultAsync(u => u.Id == id);
 
             return user is null ? null : _mapper.Map<UserResponse>(user);
+        }
+
+        public async Task<UserResponse> CompleteOnboardingAsync(UserOnboardingRequest request)
+        {
+            var userId = _authorization.RequireUserId();
+            await _onboardingValidator.ValidateAndThrowAsync(request);
+
+            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId)
+                ?? throw new NotFoundException("User", userId);
+
+            // Callable once (04 §5): a skip also sets the flag, so a skipper isn't re-prompted forever.
+            if (user.IsOnboarded)
+            {
+                throw new BusinessRuleException("Onboarding has already been completed.");
+            }
+
+            var categoryIds = (request.CategoryIds ?? new List<int>()).Distinct().ToList();
+            var tagIds = (request.TagIds ?? new List<int>()).Distinct().ToList();
+
+            // Verify the picks exist so a bad id surfaces as a friendly 400, not an FK failure.
+            if (categoryIds.Count > 0
+                && await _dbContext.DestinationCategories.CountAsync(c => categoryIds.Contains(c.Id)) != categoryIds.Count)
+            {
+                throw new BusinessRuleException("One or more selected categories do not exist.");
+            }
+
+            if (tagIds.Count > 0
+                && await _dbContext.Tags.CountAsync(t => tagIds.Contains(t.Id)) != tagIds.Count)
+            {
+                throw new BusinessRuleException("One or more selected tags do not exist.");
+            }
+
+            // One OnboardingInterest row per pick (weight from RecommenderOptions, no DestinationId —
+            // 04 §2/§3). An empty request writes none and just marks the user onboarded (a skip).
+            foreach (var categoryId in categoryIds)
+            {
+                _dbContext.UserInteractions.Add(new UserInteraction
+                {
+                    UserId = userId,
+                    InteractionType = InteractionType.OnboardingInterest,
+                    Weight = _recommenderOptions.Weights.OnboardingInterest,
+                    CategoryId = categoryId
+                });
+            }
+
+            foreach (var tagId in tagIds)
+            {
+                _dbContext.UserInteractions.Add(new UserInteraction
+                {
+                    UserId = userId,
+                    InteractionType = InteractionType.OnboardingInterest,
+                    Weight = _recommenderOptions.Weights.OnboardingInterest,
+                    TagId = tagId
+                });
+            }
+
+            user.IsOnboarded = true;
+
+            // Interactions + the flag in one SaveChanges → a single transaction.
+            await _dbContext.SaveChangesAsync();
+
+            return await RequireWithRolesAsync(userId);
         }
 
         // Re-reads the just-mutated user with roles + city so the response DTO is fully populated.
