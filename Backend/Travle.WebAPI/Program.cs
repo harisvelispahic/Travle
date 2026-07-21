@@ -85,8 +85,20 @@ TypeAdapterConfig<User, UserResponse>.NewConfig()
     .Map(dest => dest.CityName, src => src.City != null ? src.City.Name : null);
 TypeAdapterConfig<UserUpdateRequest, User>.NewConfig().IgnoreNullValues(true);
 
+// Role application: flatten the applicant/role/region/decider names and the status enum on the way
+// out, and expose only whether a document exists (its bytes ship via the dedicated download endpoint).
+TypeAdapterConfig<RoleApplication, RoleApplicationResponse>.NewConfig()
+    .Map(dest => dest.Username, src => src.User != null ? src.User.Username : null)
+    .Map(dest => dest.ApplicantName, src => src.User != null ? src.User.FirstName + " " + src.User.LastName : null)
+    .Map(dest => dest.RoleName, src => src.Role != null ? src.Role.Name : null)
+    .Map(dest => dest.RegionName, src => src.Region != null ? src.Region.Name : null)
+    .Map(dest => dest.DecidedByUsername, src => src.DecidedByUser != null ? src.DecidedByUser.Username : null)
+    .Map(dest => dest.HasDocument, src => src.Document != null)
+    .Map(dest => dest.Status, src => src.Status.ToString());
+
 // register application services
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IRoleApplicationService, RoleApplicationService>();
 builder.Services.AddScoped<IRefreshTokenService, RefreshTokenService>();
 builder.Services.AddScoped<IAccessManager, AccessManager>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
