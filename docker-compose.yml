@@ -49,6 +49,13 @@ services:
       - RabbitMq__Port=${RABBITMQ_PORT}
       - RabbitMq__Username=${RABBITMQ_USERNAME}
       - RabbitMq__Password=${RABBITMQ_PASSWORD}
+      - Smtp__Host=${SMTP_HOST}
+      - Smtp__Port=${SMTP_PORT:-587}
+      - Smtp__Username=${SMTP_USERNAME}
+      - Smtp__Password=${SMTP_PASSWORD}
+      - Smtp__From=${SMTP_FROM:-no-reply@travle.com}
+      - Smtp__FromName=${SMTP_FROM_NAME:-Travle}
+      - Smtp__UseStartTls=${SMTP_USE_STARTTLS:-true}
     depends_on:
       - travle-sqlserver
       - travle-rabbitmq
@@ -68,6 +75,10 @@ services:
       - JwtToken__Audience=${JWT_AUDIENCE}
       - JwtToken__DurationInMinutes=${JWT_DURATION_MINUTES}
       - JwtToken__RefreshTokenDays=${JWT_REFRESH_TOKEN_DAYS:-7}
+      - RabbitMq__Host=${RABBITMQ_HOST}
+      - RabbitMq__Port=${RABBITMQ_PORT}
+      - RabbitMq__Username=${RABBITMQ_USERNAME}
+      - RabbitMq__Password=${RABBITMQ_PASSWORD}
     ports:
       - "${API_HOST_PORT}:5121"
     depends_on:

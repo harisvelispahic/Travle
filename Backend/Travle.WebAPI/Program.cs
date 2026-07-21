@@ -1,9 +1,11 @@
 using Travle.Model.Constants;
+using Travle.Model.Messaging;
 using Travle.Model.Requests;
 using Travle.Model.Responses;
 using Travle.Services;
 using Travle.Services.Authorization;
 using Travle.Services.Database;
+using Travle.Services.Messaging;
 using Travle.Services.Security;
 using Travle.Services.Validators;
 using Travle.WebAPI.Authorization;
@@ -89,6 +91,16 @@ builder.Services.AddScoped<IAccessManager, AccessManager>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<ICryptoService, CryptoService>();
 
+// Messaging: one long-lived RabbitMQ connection (singleton) + the email publisher the API uses to
+// enqueue mail for the worker. RabbitMq settings come from the RabbitMq section (env in compose).
+builder.Services.AddOptions<RabbitMqOptions>()
+    .Bind(builder.Configuration.GetSection(RabbitMqOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton<RabbitMqConnection>();
+builder.Services.AddSingleton<IEmailPublisher, RabbitMqEmailPublisher>();
+builder.Services.AddScoped<IPasswordResetService, PasswordResetService>();
+
 // Reference-data CRUD services (Country → Region → City chaining + catalog lookups).
 builder.Services.AddScoped<ICountryService, CountryService>();
 builder.Services.AddScoped<IRegionService, RegionService>();
@@ -145,6 +157,9 @@ builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy(AuthPolicies.Authenticated, policy => policy.RequireAuthenticatedUser());
     options.AddPolicy(AuthPolicies.AdminOnly, policy => policy.RequireRole(RoleNames.Admin));
+    options.AddPolicy(AuthPolicies.OrganizerOnly, policy => policy.RequireRole(RoleNames.Organizer));
+    options.AddPolicy(AuthPolicies.CuratorOnly, policy => policy.RequireRole(RoleNames.Curator));
+    options.AddPolicy(AuthPolicies.TravelerOnly, policy => policy.RequireRole(RoleNames.Traveler));
 });
 
 

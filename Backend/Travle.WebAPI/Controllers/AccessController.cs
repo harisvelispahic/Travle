@@ -17,15 +17,18 @@ namespace Travle.WebAPI.Controllers
     {
         private readonly IAccessManager _accessManager;
         private readonly IUserService _userService;
+        private readonly IPasswordResetService _passwordResetService;
         private readonly IAppAuthorizationService _authorization;
 
         public AccessController(
             IAccessManager accessManager,
             IUserService userService,
+            IPasswordResetService passwordResetService,
             IAppAuthorizationService authorization)
         {
             _accessManager = accessManager;
             _userService = userService;
+            _passwordResetService = passwordResetService;
             _authorization = authorization;
         }
 
@@ -44,6 +47,23 @@ namespace Travle.WebAPI.Controllers
         [HttpPost("RefreshToken")]
         public async Task<ActionResult<UserLoginResponse>> RefreshToken([FromBody] RefreshAccessTokenRequest request)
             => Ok(await _accessManager.RefreshAsync(request));
+
+        // Always 200 with the same message whether or not the email is registered (anti-enumeration).
+        [AllowAnonymous]
+        [HttpPost("ForgotPassword")]
+        public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request, CancellationToken cancellationToken)
+        {
+            await _passwordResetService.RequestResetAsync(request, cancellationToken);
+            return Ok(new { message = "If an account exists for that email, a reset code has been sent." });
+        }
+
+        [AllowAnonymous]
+        [HttpPost("ResetPassword")]
+        public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
+        {
+            await _passwordResetService.ResetPasswordAsync(request);
+            return Ok(new { message = "Your password has been updated. Please sign in with your new password." });
+        }
 
         [Authorize(Policy = AuthPolicies.Authenticated)]
         [HttpPost("Logout")]
