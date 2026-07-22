@@ -3,6 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
+import 'forgot_password_screen.dart';
+import 'register_screen.dart';
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -121,6 +124,34 @@ class _LoginScreenState extends State<LoginScreen> {
                                       CircularProgressIndicator(strokeWidth: 2),
                                 )
                               : const Text('Sign in'),
+                        ),
+                        const SizedBox(height: TravleTokens.space8),
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            TextButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () => Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) => const RegisterScreen(),
+                                        ),
+                                      ),
+                              child: const Text('Create account'),
+                            ),
+                            TextButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () => Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              const ForgotPasswordScreen(),
+                                        ),
+                                      ),
+                              child: const Text('Forgot password?'),
+                            ),
+                          ],
                         ),
                       ],
                     ),

@@ -1,0 +1,13 @@
+# Dart/Flutter tool & build artifacts (regenerated; never commit).
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+
+# IDE
+*.iml
+.idea/
+
+# OS
+.DS_Store

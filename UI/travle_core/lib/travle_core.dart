@@ -3,6 +3,10 @@
 library;
 
 export 'src/app_config.dart';
+export 'src/models/forgot_password_request.dart';
+export 'src/models/reset_password_request.dart';
+export 'src/models/user_register_request.dart';
+export 'src/models/user_response.dart';
 export 'src/network/api_error.dart';
 export 'src/network/search_result.dart';
 export 'src/network/base_search_object.dart';

@@ -7,6 +7,9 @@ import 'package:http/http.dart' as http;
 import 'package:jwt_decoder/jwt_decoder.dart';
 
 import '../app_config.dart';
+import '../models/forgot_password_request.dart';
+import '../models/reset_password_request.dart';
+import '../models/user_register_request.dart';
 import '../network/api_error.dart';
 
 /// Owns the authenticated session: tokens, the decoded JWT, and the user's
@@ -113,6 +116,54 @@ class AuthProvider extends ChangeNotifier {
       ApiErrorParser.messageFromBody(response.body) ??
           'Sign in failed. Please try again.',
     );
+  }
+
+  /// Registers a new account (server assigns the Traveler role) and signs in
+  /// immediately, so the onboarding step can write interactions authenticated.
+  Future<void> register(UserRegisterRequest request) async {
+    final response = await http.post(
+      Uri.parse('${AppConfig.baseUrl}Access/Register'),
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode(request.toJson()),
+    );
+    if (!_isSuccess(response)) {
+      throw ApiClientException(
+        ApiErrorParser.messageFromBody(response.body) ??
+            'Registration failed. Please try again.',
+      );
+    }
+    await login(request.username, request.password);
+  }
+
+  /// Requests a password-reset code by email. The server always responds the
+  /// same way (anti-enumeration), so this succeeds regardless of the address.
+  Future<void> forgotPassword(String email) async {
+    final response = await http.post(
+      Uri.parse('${AppConfig.baseUrl}Access/ForgotPassword'),
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode(ForgotPasswordRequest(email: email).toJson()),
+    );
+    if (!_isSuccess(response)) {
+      throw ApiClientException(
+        ApiErrorParser.messageFromBody(response.body) ??
+            'Could not start the password reset. Please try again.',
+      );
+    }
+  }
+
+  /// Completes a password reset with the emailed code and the new password.
+  Future<void> resetPassword(ResetPasswordRequest request) async {
+    final response = await http.post(
+      Uri.parse('${AppConfig.baseUrl}Access/ResetPassword'),
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode(request.toJson()),
+    );
+    if (!_isSuccess(response)) {
+      throw ApiClientException(
+        ApiErrorParser.messageFromBody(response.body) ??
+            'Could not reset your password. Please check the code and try again.',
+      );
+    }
   }
 
   /// Exchanges the refresh token for a fresh access token. On failure the
