@@ -16,6 +16,7 @@ UserResponse _$UserResponseFromJson(Map<String, dynamic> json) => UserResponse(
   isSuspended: json['isSuspended'] as bool,
   isOnboarded: json['isOnboarded'] as bool,
   createdAt: DateTime.parse(json['createdAt'] as String),
+  onboardingPromptCount: (json['onboardingPromptCount'] as num?)?.toInt() ?? 0,
   phoneNumber: json['phoneNumber'] as String?,
   suspendedAt: json['suspendedAt'] == null
       ? null
@@ -45,6 +46,7 @@ Map<String, dynamic> _$UserResponseToJson(UserResponse instance) =>
       'cityId': instance.cityId,
       'cityName': instance.cityName,
       'isOnboarded': instance.isOnboarded,
+      'onboardingPromptCount': instance.onboardingPromptCount,
       'profileImage': instance.profileImage,
       'profileImageContentType': instance.profileImageContentType,
       'createdAt': instance.createdAt.toIso8601String(),

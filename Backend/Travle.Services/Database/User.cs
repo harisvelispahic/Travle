@@ -36,10 +36,16 @@ namespace Travle.Services.Database
         public City? City { get; set; }
 
         /// <summary>
-        /// True once the user has either submitted onboarding interests or explicitly skipped, so the
-        /// onboarding step is shown at most once (04 §5 "callable once, skippable").
+        /// True once onboarding should no longer be shown — either the user submitted interests, or the
+        /// prompt cap (<see cref="Travle.Services.Recommender.RecommenderOptions.MaxOnboardingPrompts"/>)
+        /// was reached across launches. Drives the client's first-run routing.
         /// </summary>
         public bool IsOnboarded { get; set; }
+
+        /// <summary>How many times the onboarding step has been shown to this user. Incremented once
+        /// per display; when it reaches the configured cap, <see cref="IsOnboarded"/> is set so the
+        /// step stops appearing even if the user never picks interests.</summary>
+        public int OnboardingPromptCount { get; set; }
 
         public ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
         public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();

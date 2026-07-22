@@ -65,7 +65,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
               _phone.text.trim().isEmpty ? null : _phone.text.trim(),
         ),
       );
-      // Registered + signed in → return to the shell (AuthGate rebuilt already).
+      // Registered + signed in → back to the gate, which now routes to the
+      // onboarding step (the account is a fresh, not-yet-onboarded traveler).
       navigator.popUntil((route) => route.isFirst);
     } on ApiClientException catch (e) {
       if (!mounted) return;

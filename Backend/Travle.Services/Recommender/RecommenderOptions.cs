@@ -16,6 +16,10 @@ namespace Travle.Services.Recommender
 
         /// <summary>Upper bound on how many interests a user may pick during onboarding.</summary>
         public int MaxOnboardingSelections { get; set; } = 30;
+
+        /// <summary>How many times the onboarding step is shown before giving up and marking the user
+        /// onboarded (the per-display prompt cap). Overridable via the <c>Recommender</c> config section.</summary>
+        public int MaxOnboardingPrompts { get; set; } = 3;
     }
 
     /// <summary>Weight of each recorded signal (04 §2). Stronger intent = higher weight.</summary>

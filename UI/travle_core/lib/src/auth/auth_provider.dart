@@ -10,26 +10,25 @@ import '../app_config.dart';
 import '../models/forgot_password_request.dart';
 import '../models/reset_password_request.dart';
 import '../models/user_register_request.dart';
+import '../models/user_response.dart';
 import '../network/api_error.dart';
+import 'app_role.dart';
 
-/// Owns the authenticated session: tokens, the decoded JWT, and the user's
-/// roles. The access token is kept in a static field so [BaseProvider] can read
-/// it without a widget context, and a static [instance] pointer lets the
-/// provider request a silent refresh on a 401.
+/// Owns the authenticated session: tokens, the decoded JWT, the user's roles,
+/// and the current user profile (from `GET /Access/Me`). The access token is
+/// kept in a static field so [BaseProvider] can read it without a widget
+/// context, and a static [instance] pointer lets the provider request a silent
+/// refresh on a 401.
 ///
-/// The **refresh token is persisted** in OS-encrypted storage (Android
-/// Keystore / Windows Credential Locker), so relaunching the app restores the
-/// session by silently exchanging it for a fresh access token. Backend refresh
-/// tokens rotate, so the newest one is re-persisted on every refresh. Errors are
-/// surfaced as [ApiClientException] for the screens to present.
+/// The refresh token is persisted in OS-encrypted storage, so relaunching the
+/// app restores the session. After every login/restore the profile is fetched
+/// so the app can route a not-yet-onboarded traveler to onboarding.
 class AuthProvider extends ChangeNotifier {
   AuthProvider() {
     instance = this;
     unawaited(_restore());
   }
 
-  /// The single registered instance, used by [BaseProvider] (which has no
-  /// context) to trigger [tryRefresh] on a 401.
   static AuthProvider? instance;
 
   static const FlutterSecureStorage _storage = FlutterSecureStorage(
@@ -37,9 +36,6 @@ class AuthProvider extends ChangeNotifier {
   );
   static const String _refreshKey = 'travle_refresh_token';
 
-  // JWT payload keys. The backend writes the short forms via
-  // JwtSecurityTokenHandler's outbound map; the long URIs are kept as
-  // defensive fallbacks in case the token handler is ever swapped.
   static const String _roleClaimShort = 'role';
   static const String _roleClaimUri =
       'http://schemas.microsoft.com/ws/2008/06/identity/claims/role';
@@ -54,14 +50,31 @@ class AuthProvider extends ChangeNotifier {
   List<String> _roles = <String>[];
 
   bool _initializing = true;
+  bool _sessionResolved = false;
+  UserResponse? _currentUser;
+  bool _onboardingActive = false;
 
-  /// True while the app is restoring a persisted session on launch — show a
-  /// splash until this clears, then either the shell or the login screen.
+  /// True while restoring a persisted session on launch — show a splash.
   bool get isInitializing => _initializing;
+
+  /// True once the post-auth profile fetch (`/Me`) has finished. The gate shows
+  /// a splash while this is false for an authenticated user.
+  bool get sessionResolved => _sessionResolved;
+
+  /// The signed-in user's profile, or null before it's fetched / when logged out.
+  UserResponse? get currentUser => _currentUser;
+
+  /// Latched decision (per launch) that the onboarding step should be shown.
+  /// Set from the profile after login/restore; cleared by [finishOnboarding] /
+  /// [snoozeOnboarding]. Kept separate from [UserResponse.isOnboarded] so that
+  /// incrementing the prompt count mid-view can't yank the screen away.
+  bool get onboardingActive => _onboardingActive;
 
   Map<String, dynamic>? get decodedToken => _decodedToken;
   List<String> get roles => List.unmodifiable(_roles);
   bool get isAuthenticated => _accessToken != null;
+
+  bool get _isTraveler => _roles.contains(AppRole.traveler);
 
   String? get username =>
       _decodedToken?[_nameClaimShort] as String? ??
@@ -74,19 +87,17 @@ class AuthProvider extends ChangeNotifier {
     return null;
   }
 
-  /// True when the session holds at least one of [allowed] — the OR-match used
-  /// for per-app login gating (a multi-role account passes if any role fits).
   bool hasAnyRole(Set<String> allowed) => _roles.any(allowed.contains);
 
-  /// Restores a persisted session on launch: reads the stored refresh token and
-  /// silently exchanges it for a fresh access token. A missing/expired/revoked
-  /// token simply leaves the user signed out.
+  /// Restores a persisted session on launch and resolves the profile.
   Future<void> _restore() async {
     try {
       final stored = await _storage.read(key: _refreshKey);
       if (stored != null && stored.isNotEmpty) {
         _refreshToken = stored;
-        await tryRefresh();
+        if (await tryRefresh()) {
+          await _resolveSession();
+        }
       }
     } catch (_) {
       // Any restore failure just falls back to the login screen.
@@ -94,6 +105,39 @@ class AuthProvider extends ChangeNotifier {
       _initializing = false;
       notifyListeners();
     }
+  }
+
+  /// Fetches the current profile and latches whether onboarding is due. Called
+  /// after an interactive login and after a launch restore — never from the
+  /// 401 refresh path, so a mid-session token refresh can't re-trigger it.
+  Future<void> _resolveSession() async {
+    _sessionResolved = false;
+    final me = await _fetchMe();
+    _currentUser = me;
+    _onboardingActive = me != null && _isTraveler && !me.isOnboarded;
+    _sessionResolved = true;
+    notifyListeners();
+  }
+
+  Future<UserResponse?> _fetchMe() async {
+    final token = _accessToken;
+    if (token == null) return null;
+    try {
+      final response = await http.get(
+        Uri.parse('${AppConfig.baseUrl}Access/Me'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (_isSuccess(response)) {
+        return UserResponse.fromJson(
+            jsonDecode(response.body) as Map<String, dynamic>);
+      }
+    } catch (_) {
+      // Non-fatal — the app proceeds without profile-driven routing.
+    }
+    return null;
   }
 
   Future<void> login(String username, String password) async {
@@ -104,6 +148,7 @@ class AuthProvider extends ChangeNotifier {
     );
     if (_isSuccess(response)) {
       _applySession(jsonDecode(response.body) as Map<String, dynamic>);
+      await _resolveSession();
       return;
     }
     if (response.statusCode == 401) {
@@ -119,7 +164,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   /// Registers a new account (server assigns the Traveler role) and signs in
-  /// immediately, so the onboarding step can write interactions authenticated.
+  /// immediately, so onboarding routing kicks in right after.
   Future<void> register(UserRegisterRequest request) async {
     final response = await http.post(
       Uri.parse('${AppConfig.baseUrl}Access/Register'),
@@ -135,8 +180,6 @@ class AuthProvider extends ChangeNotifier {
     await login(request.username, request.password);
   }
 
-  /// Requests a password-reset code by email. The server always responds the
-  /// same way (anti-enumeration), so this succeeds regardless of the address.
   Future<void> forgotPassword(String email) async {
     final response = await http.post(
       Uri.parse('${AppConfig.baseUrl}Access/ForgotPassword'),
@@ -151,7 +194,6 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// Completes a password reset with the emailed code and the new password.
   Future<void> resetPassword(ResetPasswordRequest request) async {
     final response = await http.post(
       Uri.parse('${AppConfig.baseUrl}Access/ResetPassword'),
@@ -167,8 +209,8 @@ class AuthProvider extends ChangeNotifier {
   }
 
   /// Exchanges the refresh token for a fresh access token. On failure the
-  /// session is cleared (listeners notified → the app returns to login).
-  /// Returns whether a new access token was obtained.
+  /// session is cleared. Returns whether a new access token was obtained. Does
+  /// not re-resolve the profile — that's [login]/[_restore]'s job.
   Future<bool> tryRefresh() async {
     final refreshToken = _refreshToken;
     if (refreshToken == null) return false;
@@ -183,14 +225,12 @@ class AuthProvider extends ChangeNotifier {
         return true;
       }
     } catch (_) {
-      // Network/parse failure — treated the same as a rejected refresh below.
+      // Treated the same as a rejected refresh below.
     }
     _clearSession();
     return false;
   }
 
-  /// Best-effort server-side revocation (deletes all refresh tokens), then
-  /// clears the local session and the persisted token regardless of outcome.
   Future<void> logout() async {
     final token = _accessToken;
     if (token != null) {
@@ -207,6 +247,27 @@ class AuthProvider extends ChangeNotifier {
       }
     }
     _clearSession();
+  }
+
+  /// Called when the user completes onboarding (picked interests). Updates the
+  /// profile and clears the latch so the gate advances to the shell.
+  void finishOnboarding(UserResponse user) {
+    _currentUser = user;
+    _onboardingActive = false;
+    notifyListeners();
+  }
+
+  /// Called when the user skips onboarding this launch (client-side dismiss).
+  void snoozeOnboarding() {
+    _onboardingActive = false;
+    notifyListeners();
+  }
+
+  /// Refreshes the held profile (e.g. after the display-prompt increment)
+  /// without touching the onboarding latch.
+  void updateCurrentUser(UserResponse user) {
+    _currentUser = user;
+    notifyListeners();
   }
 
   bool _isSuccess(http.Response response) =>
@@ -229,12 +290,13 @@ class AuthProvider extends ChangeNotifier {
     _refreshToken = null;
     _decodedToken = null;
     _roles = <String>[];
+    _currentUser = null;
+    _onboardingActive = false;
+    _sessionResolved = false;
     unawaited(_storage.delete(key: _refreshKey));
     notifyListeners();
   }
 
-  /// Reads roles from the token, tolerating single-role (String) vs multi-role
-  /// (List) payloads and short-vs-URI claim keys.
   List<String> _extractRoles(Map<String, dynamic> jwt) {
     final result = <String>{};
     for (final claim in [jwt[_roleClaimShort], jwt[_roleClaimUri], jwt['roles']]) {

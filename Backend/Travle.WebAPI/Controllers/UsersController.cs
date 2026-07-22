@@ -50,6 +50,13 @@ public class UsersController : BaseReadController<UserResponse, UserSearch, IUse
     public async Task<ActionResult<UserResponse>> OnboardingInterests([FromBody] UserOnboardingRequest request)
         => Ok(await _service.CompleteOnboardingAsync(request));
 
+    // Records that the onboarding step was shown (per-display prompt cap). Traveler-only; current user
+    // from the JWT. The client calls this each time it displays onboarding on app entry.
+    [Authorize(Policy = AuthPolicies.TravelerOnly)]
+    [HttpPost("onboarding-prompt")]
+    public async Task<ActionResult<UserResponse>> OnboardingPrompt()
+        => Ok(await _service.RegisterOnboardingPromptAsync());
+
     [Authorize(Policy = AuthPolicies.AdminOnly)]
     [HttpPost("{id}/Suspend")]
     public async Task<ActionResult<UserResponse>> Suspend(int id, [FromBody] UserSuspendRequest request)

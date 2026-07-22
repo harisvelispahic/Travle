@@ -17,6 +17,9 @@ class TravleMobileApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => DestinationCategoryProvider()),
+        ChangeNotifierProvider(create: (_) => TagProvider()),
+        ChangeNotifierProvider(create: (_) => UserProvider()),
       ],
       child: MaterialApp(
         title: 'Travle',

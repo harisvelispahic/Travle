@@ -23,8 +23,11 @@ namespace Travle.Model.Responses
         public int? CityId { get; set; }
         public string? CityName { get; set; }
 
-        /// <summary>Whether the onboarding step has been completed or skipped (drives the client's first-run routing).</summary>
+        /// <summary>Whether the onboarding step should still be shown (drives the client's first-run routing).</summary>
         public bool IsOnboarded { get; set; }
+
+        /// <summary>How many times onboarding has been shown to this user (feeds the re-prompt cap).</summary>
+        public int OnboardingPromptCount { get; set; }
 
         public byte[]? ProfileImage { get; set; }
         public string? ProfileImageContentType { get; set; }

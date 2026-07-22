@@ -5,6 +5,7 @@ import 'package:travle_ui/travle_ui.dart';
 
 import '../layouts/bottom_nav_shell.dart';
 import '../screens/auth/login_screen.dart';
+import '../screens/auth/onboarding_screen.dart';
 
 /// Root switch: shows the app shell only for an authenticated account that holds
 /// a mobile role (Traveler/Curator); otherwise the login screen. An organizer/
@@ -17,7 +18,13 @@ class AuthGate extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     if (auth.isInitializing) return const AppSplash();
-    final allowed = auth.isAuthenticated && auth.hasAnyRole(AppRole.mobile);
-    return allowed ? const BottomNavShell() : const LoginScreen();
+    if (!auth.isAuthenticated || !auth.hasAnyRole(AppRole.mobile)) {
+      return const LoginScreen();
+    }
+    // Wait for the post-login profile fetch, then route a not-yet-onboarded
+    // traveler to onboarding before the shell.
+    if (!auth.sessionResolved) return const AppSplash();
+    if (auth.onboardingActive) return const OnboardingScreen();
+    return const BottomNavShell();
   }
 }

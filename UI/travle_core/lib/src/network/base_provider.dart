@@ -67,6 +67,24 @@ abstract class BaseProvider<T> with ChangeNotifier {
     validateResponse(response);
   }
 
+  /// POSTs [body] to `endpoint[/subPath]` and returns the decoded JSON (or null
+  /// for an empty response). Reuses the auth header + 401→refresh pass. For
+  /// action endpoints that aren't plain CRUD (e.g. `Users/onboarding-interests`).
+  Future<dynamic> postAction(String? subPath, [dynamic body]) async {
+    final url =
+        subPath == null ? '$_base$endpoint' : '$_base$endpoint/$subPath';
+    final response = await _send(
+      () => http.post(
+        Uri.parse(url),
+        headers: _headers(),
+        body: body == null ? null : jsonEncode(body),
+      ),
+    );
+    validateResponse(response);
+    if (response.body.isEmpty) return null;
+    return jsonDecode(response.body);
+  }
+
   /// Override in subclasses to build [T] from a decoded JSON object.
   T fromJson(Map<String, dynamic> json) {
     throw UnimplementedError('fromJson not implemented for $runtimeType');

@@ -22,10 +22,18 @@ namespace Travle.Services
         Task<UserResponse> UnsuspendAsync(int id);
 
         /// <summary>
-        /// Records the current user's onboarding interest picks as OnboardingInterest interactions and
-        /// marks them onboarded. Callable once; an empty request is a valid skip (04 §5).
+        /// Records the current traveler's onboarding interest picks as OnboardingInterest interactions
+        /// and marks them onboarded. Idempotent: the display-prompt cap may have already set the flag
+        /// before the picks arrive, so completing stays allowed but never duplicates interests.
         /// </summary>
         Task<UserResponse> CompleteOnboardingAsync(UserOnboardingRequest request);
+
+        /// <summary>
+        /// Records that the onboarding step was shown to the current traveler (increments the prompt
+        /// count). When the count reaches the configured cap the user is marked onboarded so the step
+        /// stops appearing. No-op once already onboarded.
+        /// </summary>
+        Task<UserResponse> RegisterOnboardingPromptAsync();
 
         /// <summary>
         /// Verifies a username/password pair for the login flow. Returns the user (with roles) on

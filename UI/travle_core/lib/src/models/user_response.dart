@@ -17,6 +17,7 @@ class UserResponse {
     required this.isSuspended,
     required this.isOnboarded,
     required this.createdAt,
+    this.onboardingPromptCount = 0,
     this.phoneNumber,
     this.suspendedAt,
     this.suspensionReason,
@@ -40,6 +41,8 @@ class UserResponse {
   final int? cityId;
   final String? cityName;
   final bool isOnboarded;
+  @JsonKey(defaultValue: 0)
+  final int onboardingPromptCount;
   final String? profileImage;
   final String? profileImageContentType;
   final DateTime createdAt;

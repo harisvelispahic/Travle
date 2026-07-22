@@ -284,56 +284,80 @@ namespace Travle.Services
             var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId)
                 ?? throw new NotFoundException("User", userId);
 
-            // Callable once (04 §5): a skip also sets the flag, so a skipper isn't re-prompted forever.
-            if (user.IsOnboarded)
-            {
-                throw new BusinessRuleException("Onboarding has already been completed.");
-            }
-
             var categoryIds = (request.CategoryIds ?? new List<int>()).Distinct().ToList();
             var tagIds = (request.TagIds ?? new List<int>()).Distinct().ToList();
 
-            // Verify the picks exist so a bad id surfaces as a friendly 400, not an FK failure.
-            if (categoryIds.Count > 0
-                && await _dbContext.DestinationCategories.CountAsync(c => categoryIds.Contains(c.Id)) != categoryIds.Count)
-            {
-                throw new BusinessRuleException("One or more selected categories do not exist.");
-            }
+            // Idempotent: the per-display prompt cap may have already set IsOnboarded before the user
+            // finally picks interests, so completing stays allowed — but never duplicate the interests.
+            var alreadyRecorded = await _dbContext.UserInteractions
+                .AnyAsync(i => i.UserId == userId && i.InteractionType == InteractionType.OnboardingInterest);
 
-            if (tagIds.Count > 0
-                && await _dbContext.Tags.CountAsync(t => tagIds.Contains(t.Id)) != tagIds.Count)
+            if (!alreadyRecorded)
             {
-                throw new BusinessRuleException("One or more selected tags do not exist.");
-            }
-
-            // One OnboardingInterest row per pick (weight from RecommenderOptions, no DestinationId —
-            // 04 §2/§3). An empty request writes none and just marks the user onboarded (a skip).
-            foreach (var categoryId in categoryIds)
-            {
-                _dbContext.UserInteractions.Add(new UserInteraction
+                // Verify the picks exist so a bad id surfaces as a friendly 400, not an FK failure.
+                if (categoryIds.Count > 0
+                    && await _dbContext.DestinationCategories.CountAsync(c => categoryIds.Contains(c.Id)) != categoryIds.Count)
                 {
-                    UserId = userId,
-                    InteractionType = InteractionType.OnboardingInterest,
-                    Weight = _recommenderOptions.Weights.OnboardingInterest,
-                    CategoryId = categoryId
-                });
-            }
+                    throw new BusinessRuleException("One or more selected categories do not exist.");
+                }
 
-            foreach (var tagId in tagIds)
-            {
-                _dbContext.UserInteractions.Add(new UserInteraction
+                if (tagIds.Count > 0
+                    && await _dbContext.Tags.CountAsync(t => tagIds.Contains(t.Id)) != tagIds.Count)
                 {
-                    UserId = userId,
-                    InteractionType = InteractionType.OnboardingInterest,
-                    Weight = _recommenderOptions.Weights.OnboardingInterest,
-                    TagId = tagId
-                });
+                    throw new BusinessRuleException("One or more selected tags do not exist.");
+                }
+
+                // One OnboardingInterest row per pick (weight from RecommenderOptions, no DestinationId — 04 §2/§3).
+                foreach (var categoryId in categoryIds)
+                {
+                    _dbContext.UserInteractions.Add(new UserInteraction
+                    {
+                        UserId = userId,
+                        InteractionType = InteractionType.OnboardingInterest,
+                        Weight = _recommenderOptions.Weights.OnboardingInterest,
+                        CategoryId = categoryId
+                    });
+                }
+
+                foreach (var tagId in tagIds)
+                {
+                    _dbContext.UserInteractions.Add(new UserInteraction
+                    {
+                        UserId = userId,
+                        InteractionType = InteractionType.OnboardingInterest,
+                        Weight = _recommenderOptions.Weights.OnboardingInterest,
+                        TagId = tagId
+                    });
+                }
             }
 
             user.IsOnboarded = true;
 
             // Interactions + the flag in one SaveChanges → a single transaction.
             await _dbContext.SaveChangesAsync();
+
+            return await RequireWithRolesAsync(userId);
+        }
+
+        public async Task<UserResponse> RegisterOnboardingPromptAsync()
+        {
+            _authorization.EnsureInRole(RoleNames.Traveler);
+            var userId = _authorization.RequireUserId();
+
+            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId)
+                ?? throw new NotFoundException("User", userId);
+
+            // Count each display; once the cap is reached, mark onboarded so it stops appearing even if
+            // the user never picks interests. No-op once already onboarded.
+            if (!user.IsOnboarded)
+            {
+                user.OnboardingPromptCount += 1;
+                if (user.OnboardingPromptCount >= _recommenderOptions.MaxOnboardingPrompts)
+                {
+                    user.IsOnboarded = true;
+                }
+                await _dbContext.SaveChangesAsync();
+            }
 
             return await RequireWithRolesAsync(userId);
         }
