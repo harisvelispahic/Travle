@@ -43,6 +43,12 @@ dependencies:
   collection: ^1.19.1
   jwt_decoder: ^2.0.1
 
+  # Shared local packages (monorepo path deps — compiled into this app only).
+  travle_core:
+    path: ../travle_core
+  travle_ui:
+    path: ../travle_ui
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

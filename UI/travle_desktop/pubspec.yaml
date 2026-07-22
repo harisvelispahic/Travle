@@ -40,6 +40,12 @@ dependencies:
   flutter_form_builder: ^10.3.0+2
   file_picker: ^11.0.1
 
+  # Shared local packages (monorepo path deps — compiled into this app only).
+  travle_core:
+    path: ../travle_core
+  travle_ui:
+    path: ../travle_ui
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

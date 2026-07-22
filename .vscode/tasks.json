@@ -1,0 +1,19 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "adb reverse (dev 5126)",
+      "detail": "Bridge a USB-connected phone's localhost:5126 to the laptop's API (dotnet run).",
+      "type": "shell",
+      "command": "adb reverse tcp:5126 tcp:5126",
+      "problemMatcher": []
+    },
+    {
+      "label": "adb reverse (docker 5121)",
+      "detail": "Bridge a USB-connected phone's localhost:5121 to the laptop's API (docker compose).",
+      "type": "shell",
+      "command": "adb reverse tcp:5121 tcp:5121",
+      "problemMatcher": []
+    }
+  ]
+}

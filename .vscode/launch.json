@@ -1,0 +1,27 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "mobile • physical device (localhost + adb reverse)",
+      "cwd": "UI/travle_mobile",
+      "request": "launch",
+      "type": "dart",
+      "toolArgs": ["--dart-define-from-file=env.json"]
+    },
+    {
+      "name": "mobile • Android emulator (10.0.2.2)",
+      "cwd": "UI/travle_mobile",
+      "request": "launch",
+      "type": "dart",
+      "toolArgs": ["--dart-define-from-file=env.emulator.json"]
+    },
+    {
+      "name": "desktop • Windows (localhost)",
+      "cwd": "UI/travle_desktop",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "windows",
+      "toolArgs": ["--dart-define-from-file=env.json"]
+    }
+  ]
+}
