@@ -33,13 +33,18 @@
       ]
     },
     {
-      "name": "vector_math",
-      "version": "2.2.0",
+      "name": "lints",
+      "version": "6.1.0",
       "dependencies": []
     },
     {
       "name": "sky_engine",
       "version": "0.0.0",
+      "dependencies": []
+    },
+    {
+      "name": "vector_math",
+      "version": "2.2.0",
       "dependencies": []
     },
     {
@@ -62,11 +67,6 @@
     {
       "name": "characters",
       "version": "1.4.1",
-      "dependencies": []
-    },
-    {
-      "name": "lints",
-      "version": "6.1.0",
       "dependencies": []
     }
   ],

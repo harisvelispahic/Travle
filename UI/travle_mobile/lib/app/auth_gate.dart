@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
+import 'package:travle_ui/travle_ui.dart';
 
 import '../layouts/bottom_nav_shell.dart';
 import '../screens/auth/login_screen.dart';
@@ -15,6 +16,7 @@ class AuthGate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    if (auth.isInitializing) return const AppSplash();
     final allowed = auth.isAuthenticated && auth.hasAnyRole(AppRole.mobile);
     return allowed ? const BottomNavShell() : const LoginScreen();
   }

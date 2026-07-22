@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:jwt_decoder/jwt_decoder.dart';
 
@@ -12,17 +14,25 @@ import '../network/api_error.dart';
 /// it without a widget context, and a static [instance] pointer lets the
 /// provider request a silent refresh on a 401.
 ///
-/// Tokens live in memory only — closing the app ends the session (no
-/// "remember me"). Errors are surfaced as [ApiClientException] so screens can
-/// present them through the shared snackbars/field widgets.
+/// The **refresh token is persisted** in OS-encrypted storage (Android
+/// Keystore / Windows Credential Locker), so relaunching the app restores the
+/// session by silently exchanging it for a fresh access token. Backend refresh
+/// tokens rotate, so the newest one is re-persisted on every refresh. Errors are
+/// surfaced as [ApiClientException] for the screens to present.
 class AuthProvider extends ChangeNotifier {
   AuthProvider() {
     instance = this;
+    unawaited(_restore());
   }
 
   /// The single registered instance, used by [BaseProvider] (which has no
   /// context) to trigger [tryRefresh] on a 401.
   static AuthProvider? instance;
+
+  static const FlutterSecureStorage _storage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
+  static const String _refreshKey = 'travle_refresh_token';
 
   // JWT payload keys. The backend writes the short forms via
   // JwtSecurityTokenHandler's outbound map; the long URIs are kept as
@@ -39,6 +49,12 @@ class AuthProvider extends ChangeNotifier {
   String? _refreshToken;
   Map<String, dynamic>? _decodedToken;
   List<String> _roles = <String>[];
+
+  bool _initializing = true;
+
+  /// True while the app is restoring a persisted session on launch — show a
+  /// splash until this clears, then either the shell or the login screen.
+  bool get isInitializing => _initializing;
 
   Map<String, dynamic>? get decodedToken => _decodedToken;
   List<String> get roles => List.unmodifiable(_roles);
@@ -58,6 +74,24 @@ class AuthProvider extends ChangeNotifier {
   /// True when the session holds at least one of [allowed] — the OR-match used
   /// for per-app login gating (a multi-role account passes if any role fits).
   bool hasAnyRole(Set<String> allowed) => _roles.any(allowed.contains);
+
+  /// Restores a persisted session on launch: reads the stored refresh token and
+  /// silently exchanges it for a fresh access token. A missing/expired/revoked
+  /// token simply leaves the user signed out.
+  Future<void> _restore() async {
+    try {
+      final stored = await _storage.read(key: _refreshKey);
+      if (stored != null && stored.isNotEmpty) {
+        _refreshToken = stored;
+        await tryRefresh();
+      }
+    } catch (_) {
+      // Any restore failure just falls back to the login screen.
+    } finally {
+      _initializing = false;
+      notifyListeners();
+    }
+  }
 
   Future<void> login(String username, String password) async {
     final response = await http.post(
@@ -105,7 +139,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   /// Best-effort server-side revocation (deletes all refresh tokens), then
-  /// clears the local session regardless of the call's outcome.
+  /// clears the local session and the persisted token regardless of outcome.
   Future<void> logout() async {
     final token = _accessToken;
     if (token != null) {
@@ -133,6 +167,9 @@ class AuthProvider extends ChangeNotifier {
     _decodedToken =
         _accessToken != null ? JwtDecoder.decode(_accessToken!) : null;
     _roles = _decodedToken != null ? _extractRoles(_decodedToken!) : <String>[];
+    if (_refreshToken != null) {
+      unawaited(_storage.write(key: _refreshKey, value: _refreshToken));
+    }
     notifyListeners();
   }
 
@@ -141,6 +178,7 @@ class AuthProvider extends ChangeNotifier {
     _refreshToken = null;
     _decodedToken = null;
     _roles = <String>[];
+    unawaited(_storage.delete(key: _refreshKey));
     notifyListeners();
   }
 
