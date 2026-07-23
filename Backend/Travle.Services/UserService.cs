@@ -121,7 +121,6 @@ namespace Travle.Services
                 Email = request.Email,
                 Username = request.Username,
                 PhoneNumber = request.PhoneNumber,
-                CityId = request.CityId,
                 PasswordSalt = salt,
                 PasswordHash = _cryptoService.GenerateHash(request.Password, salt),
                 UserRoles = new List<UserRole> { new() { RoleId = travelerRole.Id } }

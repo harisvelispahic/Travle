@@ -34,6 +34,6 @@ flutter:
 # App launcher icon. Replace assets/icon/app_icon.png with the final artwork,
 # then regenerate: `dart run flutter_launcher_icons`.
 flutter_launcher_icons:
-  image_path: "assets/icon/app_icon.png"
+  image_path: "assets/icon/travle_icon.png"
   android: true
   min_sdk_android: 23

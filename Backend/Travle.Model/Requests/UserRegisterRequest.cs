@@ -12,6 +12,5 @@ namespace Travle.Model.Requests
         public string Username { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
         public string? PhoneNumber { get; set; }
-        public int? CityId { get; set; }
     }
 }

@@ -20,6 +20,9 @@ class TravleMobileApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => DestinationCategoryProvider()),
         ChangeNotifierProvider(create: (_) => TagProvider()),
         ChangeNotifierProvider(create: (_) => UserProvider()),
+        ChangeNotifierProvider(create: (_) => CountryProvider()),
+        ChangeNotifierProvider(create: (_) => RegionProvider()),
+        ChangeNotifierProvider(create: (_) => CityProvider()),
       ],
       child: MaterialApp(
         title: 'Travle',
