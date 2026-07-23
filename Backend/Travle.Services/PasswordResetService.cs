@@ -106,6 +106,14 @@ namespace Travle.Services
                 throw new BusinessRuleException(GenericFailure);
             }
 
+            // A reset must actually change the password (course §4). The user proved control of the
+            // account by supplying a valid code, so rejecting a same-as-current password here leaks
+            // nothing they don't already control.
+            if (_cryptoService.Verify(user.PasswordHash, user.PasswordSalt, request.NewPassword))
+            {
+                throw new BusinessRuleException("Your new password must be different from your old password.");
+            }
+
             user.PasswordSalt = _cryptoService.GenerateSalt();
             user.PasswordHash = _cryptoService.GenerateHash(request.NewPassword, user.PasswordSalt);
             resetCode.UsedAt = now;

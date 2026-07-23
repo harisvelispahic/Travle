@@ -19,9 +19,6 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   final _new = TextEditingController();
   final _confirm = TextEditingController();
 
-  bool _obscureCurrent = true;
-  bool _obscureNew = true;
-  bool _obscureConfirm = true;
   bool _busy = false;
   String? _error;
 
@@ -75,42 +72,29 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   padding: const EdgeInsets.all(TravleTokens.space24),
                   child: Form(
                     key: _formKey,
+                    autovalidateMode: AutovalidateMode.onUnfocus,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        TextFormField(
+                        TravleTextField(
                           controller: _current,
-                          obscureText: _obscureCurrent,
+                          label: 'Current password',
+                          prefixIcon: Icons.lock_outline,
+                          obscure: true,
                           textInputAction: TextInputAction.next,
-                          decoration: InputDecoration(
-                            labelText: 'Current password',
-                            suffixIcon: IconButton(
-                              icon: Icon(_obscureCurrent
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined),
-                              onPressed: () => setState(
-                                  () => _obscureCurrent = !_obscureCurrent),
-                            ),
-                          ),
+                          autofillHints: const [AutofillHints.password],
                           validator: (v) =>
                               Validators.required(v, field: 'Current password'),
                         ),
                         const SizedBox(height: TravleTokens.space16),
-                        TextFormField(
+                        TravleTextField(
                           controller: _new,
-                          obscureText: _obscureNew,
+                          label: 'New password',
+                          prefixIcon: Icons.lock_reset,
+                          helperText: 'At least 8 characters',
+                          obscure: true,
                           textInputAction: TextInputAction.next,
-                          decoration: InputDecoration(
-                            labelText: 'New password',
-                            helperText: 'At least 8 characters',
-                            suffixIcon: IconButton(
-                              icon: Icon(_obscureNew
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined),
-                              onPressed: () =>
-                                  setState(() => _obscureNew = !_obscureNew),
-                            ),
-                          ),
+                          autofillHints: const [AutofillHints.newPassword],
                           validator: (v) {
                             final tooShort =
                                 Validators.password(v, field: 'New password');
@@ -122,21 +106,13 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                           },
                         ),
                         const SizedBox(height: TravleTokens.space16),
-                        TextFormField(
+                        TravleTextField(
                           controller: _confirm,
-                          obscureText: _obscureConfirm,
+                          label: 'Confirm new password',
+                          prefixIcon: Icons.lock_reset,
+                          obscure: true,
                           textInputAction: TextInputAction.done,
-                          onFieldSubmitted: (_) => _submit(),
-                          decoration: InputDecoration(
-                            labelText: 'Confirm new password',
-                            suffixIcon: IconButton(
-                              icon: Icon(_obscureConfirm
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined),
-                              onPressed: () => setState(
-                                  () => _obscureConfirm = !_obscureConfirm),
-                            ),
-                          ),
+                          onSubmitted: (_) => _submit(),
                           validator: (v) => Validators.match(v, _new.text),
                         ),
                         if (_error != null) ...[

@@ -67,6 +67,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   padding: const EdgeInsets.all(TravleTokens.space24),
                   child: Form(
                     key: _formKey,
+                    autovalidateMode: AutovalidateMode.onUnfocus,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -81,26 +82,24 @@ class _LoginScreenState extends State<LoginScreen> {
                             textAlign: TextAlign.center,
                             style: theme.textTheme.bodyMedium),
                         const SizedBox(height: TravleTokens.space24),
-                        TextFormField(
+                        TravleTextField(
                           controller: _username,
+                          label: 'Username',
+                          prefixIcon: Icons.person_outline,
                           textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(
-                            labelText: 'Username',
-                            prefixIcon: Icon(Icons.person_outline),
-                          ),
+                          autofillHints: const [AutofillHints.username],
                           validator: (v) =>
                               Validators.required(v, field: 'Username'),
                         ),
                         const SizedBox(height: TravleTokens.space16),
-                        TextFormField(
+                        TravleTextField(
                           controller: _password,
-                          obscureText: true,
+                          label: 'Password',
+                          prefixIcon: Icons.lock_outline,
+                          obscure: true,
                           textInputAction: TextInputAction.done,
-                          onFieldSubmitted: (_) => _submit(),
-                          decoration: const InputDecoration(
-                            labelText: 'Password',
-                            prefixIcon: Icon(Icons.lock_outline),
-                          ),
+                          autofillHints: const [AutofillHints.password],
+                          onSubmitted: (_) => _submit(),
                           validator: (v) =>
                               Validators.required(v, field: 'Password'),
                         ),

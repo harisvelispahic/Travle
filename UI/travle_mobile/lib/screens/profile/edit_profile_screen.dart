@@ -286,6 +286,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               padding: const EdgeInsets.all(TravleTokens.space24),
               child: Form(
                 key: _formKey,
+                autovalidateMode: AutovalidateMode.onUnfocus,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -313,47 +314,48 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       style: theme.textTheme.titleMedium,
                     ),
                     const SizedBox(height: TravleTokens.space16),
-                    TextFormField(
+                    TravleTextField(
                       controller: _firstName,
+                      label: 'First name',
+                      prefixIcon: Icons.person_outline,
                       textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        labelText: 'First name',
-                      ),
                       validator: (v) =>
                           Validators.required(v, field: 'First name'),
                     ),
                     const SizedBox(height: TravleTokens.space16),
-                    TextFormField(
+                    TravleTextField(
                       controller: _lastName,
+                      label: 'Last name',
+                      prefixIcon: Icons.person_outline,
                       textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(labelText: 'Last name'),
                       validator: (v) =>
                           Validators.required(v, field: 'Last name'),
                     ),
                     const SizedBox(height: TravleTokens.space16),
-                    TextFormField(
+                    TravleTextField(
                       controller: _username,
+                      label: 'Username',
+                      prefixIcon: Icons.badge_outlined,
                       textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(labelText: 'Username'),
                       validator: (v) =>
                           Validators.minLength(v, 3, field: 'Username'),
                     ),
                     const SizedBox(height: TravleTokens.space16),
-                    TextFormField(
+                    TravleTextField(
                       controller: _email,
+                      label: 'Email',
+                      prefixIcon: Icons.mail_outline,
                       keyboardType: TextInputType.emailAddress,
                       textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(labelText: 'Email'),
                       validator: Validators.email,
                     ),
                     const SizedBox(height: TravleTokens.space16),
-                    TextFormField(
+                    TravleTextField(
                       controller: _phone,
+                      label: 'Phone (optional)',
+                      prefixIcon: Icons.phone_outlined,
                       keyboardType: TextInputType.phone,
                       textInputAction: TextInputAction.done,
-                      decoration: const InputDecoration(
-                        labelText: 'Phone (optional)',
-                      ),
                       validator: (v) =>
                           Validators.maxLength(v, 20, field: 'Phone number'),
                     ),

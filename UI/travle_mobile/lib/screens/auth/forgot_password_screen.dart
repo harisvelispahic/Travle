@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
@@ -94,6 +95,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   padding: const EdgeInsets.all(TravleTokens.space24),
                   child: Form(
                     key: _formKey,
+                    autovalidateMode: AutovalidateMode.onUnfocus,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -104,42 +106,56 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           style: theme.textTheme.bodyMedium,
                         ),
                         const SizedBox(height: TravleTokens.space24),
-                        TextFormField(
+                        TravleTextField(
                           controller: _email,
+                          label: 'Email',
+                          prefixIcon: Icons.mail_outline,
                           enabled: !_codeSent,
                           keyboardType: TextInputType.emailAddress,
                           textInputAction: TextInputAction.done,
-                          decoration: const InputDecoration(labelText: 'Email'),
+                          autofillHints: const [AutofillHints.email],
                           validator: Validators.email,
                         ),
                         if (_codeSent) ...[
                           const SizedBox(height: TravleTokens.space16),
-                          TextFormField(
+                          TravleTextField(
                             controller: _code,
+                            label: 'Reset code',
+                            prefixIcon: Icons.pin_outlined,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                            ],
+                            maxLength: 6,
                             textInputAction: TextInputAction.next,
-                            decoration:
-                                const InputDecoration(labelText: 'Reset code'),
-                            validator: (v) => (v == null || v.trim().isEmpty)
-                                ? 'Enter the code from your email'
-                                : null,
+                            validator: (v) {
+                              if (v == null || v.trim().isEmpty) {
+                                return 'Enter the code from your email';
+                              }
+                              return v.trim().length == 6
+                                  ? null
+                                  : 'The reset code is a 6-digit number';
+                            },
                           ),
                           const SizedBox(height: TravleTokens.space16),
-                          TextFormField(
+                          TravleTextField(
                             controller: _password,
-                            obscureText: true,
+                            label: 'New password',
+                            prefixIcon: Icons.lock_outline,
+                            helperText: 'At least 8 characters',
+                            obscure: true,
                             textInputAction: TextInputAction.next,
-                            decoration: const InputDecoration(
-                                labelText: 'New password'),
+                            autofillHints: const [AutofillHints.newPassword],
                             validator: (v) => Validators.password(v),
                           ),
                           const SizedBox(height: TravleTokens.space16),
-                          TextFormField(
+                          TravleTextField(
                             controller: _confirm,
-                            obscureText: true,
+                            label: 'Confirm new password',
+                            prefixIcon: Icons.lock_outline,
+                            obscure: true,
                             textInputAction: TextInputAction.done,
-                            onFieldSubmitted: (_) => _reset(),
-                            decoration: const InputDecoration(
-                                labelText: 'Confirm new password'),
+                            onSubmitted: (_) => _reset(),
                             validator: (v) =>
                                 Validators.match(v, _password.text),
                           ),

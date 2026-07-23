@@ -52,8 +52,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           email: _email.text.trim(),
           username: _username.text.trim(),
           password: _password.text,
-          phoneNumber:
-              _phone.text.trim().isEmpty ? null : _phone.text.trim(),
+          phoneNumber: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
         ),
       );
       // Registered + signed in → back to the gate, which now routes to the
@@ -83,77 +82,124 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   padding: const EdgeInsets.all(TravleTokens.space24),
                   child: Form(
                     key: _formKey,
+                    autovalidateMode: AutovalidateMode.onUnfocus,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        TextFormField(
+                        // Header.
+                        Icon(
+                          Icons.person_add_alt_1,
+                          size: 48,
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(height: TravleTokens.space12),
+                        Text(
+                          'Join Travle',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.headlineSmall,
+                        ),
+                        const SizedBox(height: TravleTokens.space4),
+                        Text(
+                          'Create your account to discover destinations and book tours.',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: TravleTokens.space24),
+
+                        // Your details.
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('Your details',
+                              style: theme.textTheme.titleSmall),
+                        ),
+                        const SizedBox(height: TravleTokens.space12),
+                        TravleTextField(
                           controller: _firstName,
+                          label: 'First name',
+                          prefixIcon: Icons.person_outline,
                           textInputAction: TextInputAction.next,
-                          decoration:
-                              const InputDecoration(labelText: 'First name'),
+                          autofillHints: const [AutofillHints.givenName],
                           validator: (v) =>
                               Validators.required(v, field: 'First name'),
                         ),
                         const SizedBox(height: TravleTokens.space16),
-                        TextFormField(
+                        TravleTextField(
                           controller: _lastName,
+                          label: 'Last name',
+                          prefixIcon: Icons.person_outline,
                           textInputAction: TextInputAction.next,
-                          decoration:
-                              const InputDecoration(labelText: 'Last name'),
+                          autofillHints: const [AutofillHints.familyName],
                           validator: (v) =>
                               Validators.required(v, field: 'Last name'),
                         ),
                         const SizedBox(height: TravleTokens.space16),
-                        TextFormField(
+                        TravleTextField(
                           controller: _username,
+                          label: 'Username',
+                          prefixIcon: Icons.badge_outlined,
                           textInputAction: TextInputAction.next,
-                          decoration:
-                              const InputDecoration(labelText: 'Username'),
+                          autofillHints: const [AutofillHints.newUsername],
                           validator: (v) =>
-                              Validators.required(v, field: 'Username'),
+                              Validators.minLength(v, 3, field: 'Username'),
                         ),
                         const SizedBox(height: TravleTokens.space16),
-                        TextFormField(
+                        TravleTextField(
                           controller: _email,
+                          label: 'Email',
+                          prefixIcon: Icons.mail_outline,
                           keyboardType: TextInputType.emailAddress,
                           textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(labelText: 'Email'),
+                          autofillHints: const [AutofillHints.email],
                           validator: Validators.email,
                         ),
                         const SizedBox(height: TravleTokens.space16),
-                        TextFormField(
+                        TravleTextField(
                           controller: _phone,
+                          label: 'Phone (optional)',
+                          prefixIcon: Icons.phone_outlined,
                           keyboardType: TextInputType.phone,
                           textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(
-                            labelText: 'Phone (optional)',
-                          ),
+                          autofillHints: const [AutofillHints.telephoneNumber],
+                          validator: (v) =>
+                              Validators.maxLength(v, 20, field: 'Phone number'),
                         ),
-                        const SizedBox(height: TravleTokens.space16),
-                        TextFormField(
+                        const SizedBox(height: TravleTokens.space24),
+
+                        // Security.
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('Security',
+                              style: theme.textTheme.titleSmall),
+                        ),
+                        const SizedBox(height: TravleTokens.space12),
+                        TravleTextField(
                           controller: _password,
-                          obscureText: true,
+                          label: 'Password',
+                          prefixIcon: Icons.lock_outline,
+                          helperText: 'At least 8 characters',
+                          obscure: true,
                           textInputAction: TextInputAction.next,
-                          decoration:
-                              const InputDecoration(labelText: 'Password'),
+                          autofillHints: const [AutofillHints.newPassword],
                           validator: (v) => Validators.password(v),
                         ),
                         const SizedBox(height: TravleTokens.space16),
-                        TextFormField(
+                        TravleTextField(
                           controller: _confirm,
-                          obscureText: true,
+                          label: 'Confirm password',
+                          prefixIcon: Icons.lock_outline,
+                          obscure: true,
                           textInputAction: TextInputAction.done,
-                          onFieldSubmitted: (_) => _submit(),
-                          decoration: const InputDecoration(
-                            labelText: 'Confirm password',
-                          ),
+                          onSubmitted: (_) => _submit(),
                           validator: (v) => Validators.match(v, _password.text),
                         ),
                         if (_error != null) ...[
                           const SizedBox(height: TravleTokens.space16),
-                          Text(_error!,
-                              style:
-                                  TextStyle(color: theme.colorScheme.error)),
+                          Text(
+                            _error!,
+                            style: TextStyle(color: theme.colorScheme.error),
+                          ),
                         ],
                         const SizedBox(height: TravleTokens.space24),
                         ElevatedButton(
