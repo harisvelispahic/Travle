@@ -31,12 +31,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     super.dispose();
   }
 
-  String? _emailValidator(String? v) {
-    if (v == null || v.trim().isEmpty) return 'Email is required';
-    final ok = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v.trim());
-    return ok ? null : 'Enter a valid email address';
-  }
-
   Future<void> _sendCode() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() {
@@ -116,7 +110,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           keyboardType: TextInputType.emailAddress,
                           textInputAction: TextInputAction.done,
                           decoration: const InputDecoration(labelText: 'Email'),
-                          validator: _emailValidator,
+                          validator: Validators.email,
                         ),
                         if (_codeSent) ...[
                           const SizedBox(height: TravleTokens.space16),
@@ -136,9 +130,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                             textInputAction: TextInputAction.next,
                             decoration: const InputDecoration(
                                 labelText: 'New password'),
-                            validator: (v) => (v == null || v.length < 8)
-                                ? 'Password must be at least 8 characters'
-                                : null,
+                            validator: (v) => Validators.password(v),
                           ),
                           const SizedBox(height: TravleTokens.space16),
                           TextFormField(
@@ -148,9 +140,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                             onFieldSubmitted: (_) => _reset(),
                             decoration: const InputDecoration(
                                 labelText: 'Confirm new password'),
-                            validator: (v) => (v != _password.text)
-                                ? 'Passwords do not match'
-                                : null,
+                            validator: (v) =>
+                                Validators.match(v, _password.text),
                           ),
                         ],
                         if (_error != null) ...[

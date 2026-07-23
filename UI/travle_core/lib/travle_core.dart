@@ -25,5 +25,7 @@ export 'src/providers/destination_category_provider.dart';
 export 'src/providers/region_provider.dart';
 export 'src/providers/tag_provider.dart';
 export 'src/providers/user_provider.dart';
+export 'src/utils/image_codec.dart';
+export 'src/utils/validators.dart';
 export 'src/auth/app_role.dart';
 export 'src/auth/auth_provider.dart';

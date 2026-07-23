@@ -10,6 +10,11 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # Shared client logic (pure Dart utils/models). The design system consumes
+  # core helpers (e.g. ImageCodec) so all non-widget logic has a single home.
+  travle_core:
+    path: ../travle_core
+
 dev_dependencies:
   flutter_lints: ^6.0.0
 

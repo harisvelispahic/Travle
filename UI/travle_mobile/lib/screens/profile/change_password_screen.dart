@@ -92,9 +92,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                                   () => _obscureCurrent = !_obscureCurrent),
                             ),
                           ),
-                          validator: (v) => (v == null || v.isEmpty)
-                              ? 'Current password is required'
-                              : null,
+                          validator: (v) =>
+                              Validators.required(v, field: 'Current password'),
                         ),
                         const SizedBox(height: TravleTokens.space16),
                         TextFormField(
@@ -113,9 +112,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                             ),
                           ),
                           validator: (v) {
-                            if (v == null || v.length < 8) {
-                              return 'New password must be at least 8 characters';
-                            }
+                            final tooShort =
+                                Validators.password(v, field: 'New password');
+                            if (tooShort != null) return tooShort;
                             if (v == _current.text) {
                               return 'New password must differ from the current one';
                             }
@@ -138,9 +137,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                                   () => _obscureConfirm = !_obscureConfirm),
                             ),
                           ),
-                          validator: (v) => (v != _new.text)
-                              ? 'Passwords do not match'
-                              : null,
+                          validator: (v) => Validators.match(v, _new.text),
                         ),
                         if (_error != null) ...[
                           const SizedBox(height: TravleTokens.space16),

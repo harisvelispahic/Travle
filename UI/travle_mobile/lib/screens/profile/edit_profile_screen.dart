@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -19,8 +17,6 @@ class EditProfileScreen extends StatefulWidget {
 }
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
-  static const int _maxImageBytes = 5 * 1024 * 1024;
-
   final _formKey = GlobalKey<FormState>();
   final _firstName = TextEditingController();
   final _lastName = TextEditingController();
@@ -175,22 +171,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  /// Returns the image MIME type from the leading magic bytes, or null if the
-  /// file is neither PNG nor JPEG (mirrors the server's magic-byte check).
-  String? _imageContentType(List<int> b) {
-    if (b.length >= 4 &&
-        b[0] == 0x89 &&
-        b[1] == 0x50 &&
-        b[2] == 0x4E &&
-        b[3] == 0x47) {
-      return 'image/png';
-    }
-    if (b.length >= 3 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF) {
-      return 'image/jpeg';
-    }
-    return null;
-  }
-
   Future<void> _pickImage() async {
     final result = await FilePicker.pickFiles(
       type: FileType.image,
@@ -201,28 +181,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (bytes == null) return;
     if (!mounted) return;
 
-    final contentType = _imageContentType(bytes);
+    final contentType = ImageCodec.sniffContentType(bytes);
     if (contentType == null) {
       AppSnackbars.error(context, 'Please choose a JPEG or PNG image.');
       return;
     }
-    if (bytes.length > _maxImageBytes) {
+    if (bytes.length > ImageCodec.maxImageBytes) {
       AppSnackbars.error(context, 'The image must be 5 MB or smaller.');
       return;
     }
     setState(() {
-      _pickedImageBase64 = base64Encode(bytes);
+      _pickedImageBase64 = ImageCodec.encode(bytes);
       _pickedContentType = contentType;
     });
-  }
-
-  String? _required(String? v, String label) =>
-      (v == null || v.trim().isEmpty) ? '$label is required' : null;
-
-  String? _emailValidator(String? v) {
-    if (v == null || v.trim().isEmpty) return 'Email is required';
-    final ok = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v.trim());
-    return ok ? null : 'Enter a valid email address';
   }
 
   Future<void> _save() async {
@@ -348,26 +319,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       decoration: const InputDecoration(
                         labelText: 'First name',
                       ),
-                      validator: (v) => _required(v, 'First name'),
+                      validator: (v) =>
+                          Validators.required(v, field: 'First name'),
                     ),
                     const SizedBox(height: TravleTokens.space16),
                     TextFormField(
                       controller: _lastName,
                       textInputAction: TextInputAction.next,
                       decoration: const InputDecoration(labelText: 'Last name'),
-                      validator: (v) => _required(v, 'Last name'),
+                      validator: (v) =>
+                          Validators.required(v, field: 'Last name'),
                     ),
                     const SizedBox(height: TravleTokens.space16),
                     TextFormField(
                       controller: _username,
                       textInputAction: TextInputAction.next,
                       decoration: const InputDecoration(labelText: 'Username'),
-                      validator: (v) {
-                        if (v == null || v.trim().length < 3) {
-                          return 'Username must be at least 3 characters';
-                        }
-                        return null;
-                      },
+                      validator: (v) =>
+                          Validators.minLength(v, 3, field: 'Username'),
                     ),
                     const SizedBox(height: TravleTokens.space16),
                     TextFormField(
@@ -375,7 +344,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       keyboardType: TextInputType.emailAddress,
                       textInputAction: TextInputAction.next,
                       decoration: const InputDecoration(labelText: 'Email'),
-                      validator: _emailValidator,
+                      validator: Validators.email,
                     ),
                     const SizedBox(height: TravleTokens.space16),
                     TextFormField(
@@ -385,9 +354,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       decoration: const InputDecoration(
                         labelText: 'Phone (optional)',
                       ),
-                      validator: (v) => (v != null && v.trim().length > 20)
-                          ? 'Phone number cannot exceed 20 characters'
-                          : null,
+                      validator: (v) =>
+                          Validators.maxLength(v, 20, field: 'Phone number'),
                     ),
                     const SizedBox(height: TravleTokens.space24),
                     Text('Location', style: theme.textTheme.titleMedium),

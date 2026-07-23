@@ -1,7 +1,7 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:travle_core/travle_core.dart';
 
 /// Circular profile avatar. Decodes its base64 source **once** and caches the
 /// bytes (re-decoding only when the source string changes) — never inside
@@ -45,17 +45,9 @@ class _ProfileAvatarState extends State<ProfileAvatar> {
   }
 
   void _decode() {
-    final raw = widget.base64Image;
-    if (raw == null || raw.isEmpty) {
-      _bytes = null;
-      return;
-    }
-    try {
-      _bytes = base64Decode(raw);
-    } catch (_) {
-      // Malformed payload → fall back to the placeholder rather than crash.
-      _bytes = null;
-    }
+    // Decode once here (cached in state) — never inside build; malformed or
+    // empty input yields null and renders the placeholder.
+    _bytes = ImageCodec.decode(widget.base64Image);
   }
 
   @override

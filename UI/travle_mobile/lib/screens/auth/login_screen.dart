@@ -88,9 +88,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             labelText: 'Username',
                             prefixIcon: Icon(Icons.person_outline),
                           ),
-                          validator: (v) => (v == null || v.trim().isEmpty)
-                              ? 'Username is required'
-                              : null,
+                          validator: (v) =>
+                              Validators.required(v, field: 'Username'),
                         ),
                         const SizedBox(height: TravleTokens.space16),
                         TextFormField(
@@ -102,9 +101,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             labelText: 'Password',
                             prefixIcon: Icon(Icons.lock_outline),
                           ),
-                          validator: (v) => (v == null || v.isEmpty)
-                              ? 'Password is required'
-                              : null,
+                          validator: (v) =>
+                              Validators.required(v, field: 'Password'),
                         ),
                         if (_error != null) ...[
                           const SizedBox(height: TravleTokens.space16),

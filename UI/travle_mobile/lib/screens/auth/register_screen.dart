@@ -36,15 +36,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  String? _required(String? v) =>
-      (v == null || v.trim().isEmpty) ? 'This field is required' : null;
-
-  String? _emailValidator(String? v) {
-    if (v == null || v.trim().isEmpty) return 'Email is required';
-    final ok = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v.trim());
-    return ok ? null : 'Enter a valid email address';
-  }
-
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() {
@@ -100,7 +91,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           textInputAction: TextInputAction.next,
                           decoration:
                               const InputDecoration(labelText: 'First name'),
-                          validator: _required,
+                          validator: (v) =>
+                              Validators.required(v, field: 'First name'),
                         ),
                         const SizedBox(height: TravleTokens.space16),
                         TextFormField(
@@ -108,7 +100,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           textInputAction: TextInputAction.next,
                           decoration:
                               const InputDecoration(labelText: 'Last name'),
-                          validator: _required,
+                          validator: (v) =>
+                              Validators.required(v, field: 'Last name'),
                         ),
                         const SizedBox(height: TravleTokens.space16),
                         TextFormField(
@@ -116,7 +109,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           textInputAction: TextInputAction.next,
                           decoration:
                               const InputDecoration(labelText: 'Username'),
-                          validator: _required,
+                          validator: (v) =>
+                              Validators.required(v, field: 'Username'),
                         ),
                         const SizedBox(height: TravleTokens.space16),
                         TextFormField(
@@ -124,7 +118,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           keyboardType: TextInputType.emailAddress,
                           textInputAction: TextInputAction.next,
                           decoration: const InputDecoration(labelText: 'Email'),
-                          validator: _emailValidator,
+                          validator: Validators.email,
                         ),
                         const SizedBox(height: TravleTokens.space16),
                         TextFormField(
@@ -142,9 +136,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           textInputAction: TextInputAction.next,
                           decoration:
                               const InputDecoration(labelText: 'Password'),
-                          validator: (v) => (v == null || v.length < 8)
-                              ? 'Password must be at least 8 characters'
-                              : null,
+                          validator: (v) => Validators.password(v),
                         ),
                         const SizedBox(height: TravleTokens.space16),
                         TextFormField(
@@ -155,9 +147,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           decoration: const InputDecoration(
                             labelText: 'Confirm password',
                           ),
-                          validator: (v) => (v != _password.text)
-                              ? 'Passwords do not match'
-                              : null,
+                          validator: (v) => Validators.match(v, _password.text),
                         ),
                         if (_error != null) ...[
                           const SizedBox(height: TravleTokens.space16),
