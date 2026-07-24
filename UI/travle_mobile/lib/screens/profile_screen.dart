@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
+import 'profile/become_curator_screen.dart';
 import 'profile/change_password_screen.dart';
 import 'profile/edit_profile_screen.dart';
 
@@ -34,6 +35,7 @@ class ProfileScreen extends StatelessWidget {
         ? user.fullName
         : (auth.username ?? 'Signed in');
     final roles = user?.roles ?? auth.roles;
+    final isCurator = roles.contains(AppRole.curator);
 
     return ListView(
       padding: const EdgeInsets.all(TravleTokens.space16),
@@ -125,6 +127,20 @@ class ProfileScreen extends StatelessWidget {
                   ),
                 ),
               ),
+              if (!isCurator) ...[
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.workspace_premium_outlined),
+                  title: const Text('Become a curator'),
+                  subtitle: const Text('Apply to submit destinations'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const BecomeCuratorScreen(),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

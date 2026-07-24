@@ -25,6 +25,8 @@ class TravleTextField extends StatefulWidget {
     this.enabled = true,
     this.autofillHints,
     this.maxLength,
+    this.minLines,
+    this.maxLines = 1,
     this.onSubmitted,
   });
 
@@ -43,6 +45,12 @@ class TravleTextField extends StatefulWidget {
   final bool enabled;
   final Iterable<String>? autofillHints;
   final int? maxLength;
+
+  /// Minimum visible lines (for multi-line inputs like a motivation box).
+  final int? minLines;
+
+  /// Maximum visible lines; defaults to 1 (single line). Ignored when [obscure].
+  final int? maxLines;
   final ValueChanged<String>? onSubmitted;
 
   @override
@@ -70,6 +78,9 @@ class _TravleTextFieldState extends State<TravleTextField> {
       enabled: widget.enabled,
       autofillHints: widget.autofillHints,
       maxLength: widget.maxLength,
+      // An obscured field must stay single-line.
+      minLines: widget.obscure ? 1 : widget.minLines,
+      maxLines: widget.obscure ? 1 : widget.maxLines,
       onFieldSubmitted: widget.onSubmitted,
       decoration: InputDecoration(
         labelText: widget.label,

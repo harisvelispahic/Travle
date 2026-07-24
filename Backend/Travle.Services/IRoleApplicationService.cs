@@ -15,6 +15,13 @@ namespace Travle.Services
         Task<RoleApplicationResponse> SubmitAsync(RoleApplicationSubmitRequest request);
 
         /// <summary>
+        /// The elevated roles (Curator/Organizer) the current user may still apply for — i.e. those they
+        /// neither already hold nor have a pending application for. Lets the client resolve the target
+        /// role id by name (no hardcoded ids) and know whether an application is even possible.
+        /// </summary>
+        Task<List<RoleOptionResponse>> GetApplicableRolesAsync();
+
+        /// <summary>
         /// Admin approves a pending application: grants the role live (adds the UserRole if missing),
         /// records the audit trail, and writes the applicant a notification. The granted role appears
         /// in the applicant's JWT on their next token issuance (refresh or re-login).

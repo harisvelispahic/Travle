@@ -34,6 +34,12 @@ public class RoleApplicationsController
     public async Task<ActionResult<PageResult<RoleApplicationResponse>>> GetMine([FromQuery] RoleApplicationSearch? search)
         => Ok(await _service.GetMineAsync(search));
 
+    // The elevated roles the current user may still apply for (drives the "Become a curator" screen so
+    // the client resolves the target role id by name rather than hardcoding it).
+    [HttpGet("applicable-roles")]
+    public async Task<ActionResult<List<RoleOptionResponse>>> ApplicableRoles()
+        => Ok(await _service.GetApplicableRolesAsync());
+
     [HttpPost]
     public async Task<ActionResult<RoleApplicationResponse>> Submit([FromBody] RoleApplicationSubmitRequest request)
         => Ok(await _service.SubmitAsync(request));

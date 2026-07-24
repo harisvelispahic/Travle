@@ -8,5 +8,6 @@ export 'src/theme/travle_theme.dart';
 export 'src/widgets/app_snackbars.dart';
 export 'src/widgets/app_splash.dart';
 export 'src/widgets/confirm_dialog.dart';
+export 'src/widgets/document_picker_field.dart';
 export 'src/widgets/profile_avatar.dart';
 export 'src/widgets/travle_text_field.dart';

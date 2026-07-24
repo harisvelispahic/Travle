@@ -85,6 +85,31 @@ abstract class BaseProvider<T> with ChangeNotifier {
     return jsonDecode(response.body);
   }
 
+  /// GETs `endpoint[/subPath]` (optionally with a query built from [filter]) and
+  /// returns the decoded JSON (or null for an empty body). Reuses the auth header
+  /// + 401→refresh pass. For read routes that aren't the plain paginated list
+  /// (e.g. `RoleApplications/mine`, `RoleApplications/applicable-roles`).
+  Future<dynamic> getAction(String subPath, {dynamic filter}) async {
+    var url = '$_base$endpoint/$subPath';
+    if (filter != null) {
+      url = '$url?${getQueryString(_asMap(filter))}';
+    }
+    final response = await _send(() => http.get(Uri.parse(url), headers: _headers()));
+    validateResponse(response);
+    if (response.body.isEmpty) return null;
+    return jsonDecode(response.body);
+  }
+
+  /// GETs raw bytes from `endpoint/subPath` (e.g. a document/image download).
+  /// Reuses the auth header + 401→refresh pass.
+  Future<Uint8List> getBytes(String subPath) async {
+    final response = await _send(
+      () => http.get(Uri.parse('$_base$endpoint/$subPath'), headers: _headers()),
+    );
+    validateResponse(response);
+    return response.bodyBytes;
+  }
+
   /// Override in subclasses to build [T] from a decoded JSON object.
   T fromJson(Map<String, dynamic> json) {
     throw UnimplementedError('fromJson not implemented for $runtimeType');

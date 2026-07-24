@@ -3,10 +3,13 @@ import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
+import '../screens/role_applications_review_screen.dart';
+
 /// Persistent chrome for the management app: a left sidebar (brand + navigation
-/// + account/logout) beside a content area. Destinations are placeholders now;
-/// each is filled in by its phase (Reference Data §Phase 2, Destinations §Phase 3,
-/// Tours §Phase 4, Bookings §Phase 5, Users §Phase 1+, Dashboard §Phase 10).
+/// + account/logout) beside a content area. Most destinations are placeholders
+/// now; each is filled in by its phase (Reference Data §Phase 2, Destinations
+/// §Phase 3, Tours §Phase 4, Bookings §Phase 5, Dashboard §Phase 10). Role
+/// Requests (admin-only) is live.
 class SideNavShell extends StatefulWidget {
   const SideNavShell({super.key});
 
@@ -15,22 +18,16 @@ class SideNavShell extends StatefulWidget {
 }
 
 class _NavItem {
-  const _NavItem(this.icon, this.label);
+  const _NavItem(this.icon, this.label, {this.builder});
   final IconData icon;
   final String label;
+
+  /// Content for this destination; null renders the "coming soon" placeholder.
+  final WidgetBuilder? builder;
 }
 
 class _SideNavShellState extends State<SideNavShell> {
   int _index = 0;
-
-  static const List<_NavItem> _items = [
-    _NavItem(Icons.dashboard_outlined, 'Dashboard'),
-    _NavItem(Icons.list_alt_outlined, 'Reference Data'),
-    _NavItem(Icons.place_outlined, 'Destinations'),
-    _NavItem(Icons.tour_outlined, 'Tours'),
-    _NavItem(Icons.event_note_outlined, 'Bookings'),
-    _NavItem(Icons.group_outlined, 'Users'),
-  ];
 
   Future<void> _logout() async {
     final auth = context.read<AuthProvider>();
@@ -51,6 +48,25 @@ class _SideNavShellState extends State<SideNavShell> {
     final theme = Theme.of(context);
     final onPrimary = theme.colorScheme.onPrimary;
     final auth = context.watch<AuthProvider>();
+    final isAdmin = auth.roles.contains(AppRole.admin);
+
+    final items = <_NavItem>[
+      const _NavItem(Icons.dashboard_outlined, 'Dashboard'),
+      const _NavItem(Icons.list_alt_outlined, 'Reference Data'),
+      const _NavItem(Icons.place_outlined, 'Destinations'),
+      const _NavItem(Icons.tour_outlined, 'Tours'),
+      const _NavItem(Icons.event_note_outlined, 'Bookings'),
+      const _NavItem(Icons.group_outlined, 'Users'),
+      // Role application moderation is admin-only (spec §2.4).
+      if (isAdmin)
+        _NavItem(
+          Icons.how_to_reg_outlined,
+          'Role Requests',
+          builder: (_) => const RoleApplicationsReviewScreen(),
+        ),
+    ];
+    final index = _index.clamp(0, items.length - 1);
+    final current = items[index];
 
     return Scaffold(
       body: Row(
@@ -77,12 +93,12 @@ class _SideNavShellState extends State<SideNavShell> {
                 ),
                 Expanded(
                   child: ListView.builder(
-                    itemCount: _items.length,
+                    itemCount: items.length,
                     itemBuilder: (context, i) {
-                      final selected = i == _index;
+                      final selected = i == index;
                       return ListTile(
-                        leading: Icon(_items[i].icon, color: onPrimary),
-                        title: Text(_items[i].label,
+                        leading: Icon(items[i].icon, color: onPrimary),
+                        title: Text(items[i].label,
                             style: TextStyle(color: onPrimary)),
                         selected: selected,
                         selectedTileColor: onPrimary.withValues(alpha: 0.16),
@@ -119,12 +135,16 @@ class _SideNavShellState extends State<SideNavShell> {
                     padding: const EdgeInsets.all(TravleTokens.space16),
                     child: Align(
                       alignment: Alignment.centerLeft,
-                      child: Text(_items[_index].label,
+                      child: Text(current.label,
                           style: theme.textTheme.titleLarge),
                     ),
                   ),
                 ),
-                Expanded(child: _Placeholder(title: _items[_index].label)),
+                Expanded(
+                  child: current.builder != null
+                      ? current.builder!(context)
+                      : _Placeholder(title: current.label),
+                ),
               ],
             ),
           ),

@@ -82,6 +82,30 @@ namespace Travle.Services
             return await GetAllAsync(search);
         }
 
+        public async Task<List<RoleOptionResponse>> GetApplicableRolesAsync()
+        {
+            var userId = _authorization.RequireUserId();
+
+            var applicableNames = new[] { RoleNames.Curator, RoleNames.Organizer };
+
+            // Roles the user already holds, and roles with a still-pending application — both exclude a
+            // role from the applicable set (can't re-apply while pending, or for one you already have).
+            var heldRoleIds = _dbContext.UserRoles
+                .Where(ur => ur.UserId == userId)
+                .Select(ur => ur.RoleId);
+            var pendingRoleIds = _dbContext.RoleApplications
+                .Where(a => a.UserId == userId && a.Status == RoleApplicationStatus.Pending)
+                .Select(a => a.RoleId);
+
+            return await _dbContext.Roles
+                .Where(r => applicableNames.Contains(r.Name)
+                            && !heldRoleIds.Contains(r.Id)
+                            && !pendingRoleIds.Contains(r.Id))
+                .OrderBy(r => r.Name)
+                .Select(r => new RoleOptionResponse { Id = r.Id, Name = r.Name })
+                .ToListAsync();
+        }
+
         public async Task<RoleApplicationResponse> SubmitAsync(RoleApplicationSubmitRequest request)
         {
             var userId = _authorization.RequireUserId();
