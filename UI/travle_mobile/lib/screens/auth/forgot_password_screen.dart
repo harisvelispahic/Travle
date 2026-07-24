@@ -20,8 +20,23 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _password = TextEditingController();
   final _confirm = TextEditingController();
   bool _busy = false;
-  bool _codeSent = false;
+  // Whether the code + new-password fields are shown. Reached two ways: after we
+  // send a code, or when the user taps "I already have a code" (e.g. they closed
+  // the app while waiting and came back with a still-valid code).
+  bool _showResetFields = false;
+  // Lock the email only when WE sent the code to it; the "I already have a code"
+  // path leaves it editable because the returning user still has to enter it.
+  bool _emailLocked = false;
   String? _error;
+
+  String get _introText {
+    if (!_showResetFields) {
+      return 'Enter your email and we\'ll send a reset code.';
+    }
+    return _emailLocked
+        ? 'Enter the code sent to your email and choose a new password.'
+        : 'Enter your email, the reset code you received, and a new password.';
+  }
 
   @override
   void dispose() {
@@ -42,7 +57,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     try {
       await auth.forgotPassword(_email.text.trim());
       if (!mounted) return;
-      setState(() => _codeSent = true);
+      setState(() {
+        _showResetFields = true;
+        _emailLocked = true;
+      });
     } on ApiClientException catch (e) {
       if (!mounted) return;
       setState(() => _error = e.message);
@@ -100,9 +118,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          _codeSent
-                              ? 'Enter the code sent to your email and choose a new password.'
-                              : 'Enter your email and we\'ll send a reset code.',
+                          _introText,
                           style: theme.textTheme.bodyMedium,
                         ),
                         const SizedBox(height: TravleTokens.space24),
@@ -110,13 +126,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           controller: _email,
                           label: 'Email',
                           prefixIcon: Icons.mail_outline,
-                          enabled: !_codeSent,
+                          enabled: !_emailLocked,
                           keyboardType: TextInputType.emailAddress,
                           textInputAction: TextInputAction.done,
                           autofillHints: const [AutofillHints.email],
                           validator: Validators.email,
                         ),
-                        if (_codeSent) ...[
+                        if (_showResetFields) ...[
                           const SizedBox(height: TravleTokens.space16),
                           TravleTextField(
                             controller: _code,
@@ -170,7 +186,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         ElevatedButton(
                           onPressed: _busy
                               ? null
-                              : (_codeSent ? _reset : _sendCode),
+                              : (_showResetFields ? _reset : _sendCode),
                           child: _busy
                               ? const SizedBox(
                                   height: 20,
@@ -178,10 +194,20 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                                   child:
                                       CircularProgressIndicator(strokeWidth: 2),
                                 )
-                              : Text(_codeSent
+                              : Text(_showResetFields
                                   ? 'Reset password'
                                   : 'Send reset code'),
                         ),
+                        // Returning user who already has a code (closed the app
+                        // while waiting): jump straight to the reset fields,
+                        // keeping the email editable so they can enter it.
+                        if (!_showResetFields)
+                          TextButton(
+                            onPressed: _busy
+                                ? null
+                                : () => setState(() => _showResetFields = true),
+                            child: const Text('I already have a code'),
+                          ),
                       ],
                     ),
                   ),
