@@ -3,13 +3,15 @@ import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
+import '../screens/reference/reference_registry.dart';
 import '../screens/role_applications_review_screen.dart';
 
 /// Persistent chrome for the management app: a left sidebar (brand + navigation
-/// + account/logout) beside a content area. Most destinations are placeholders
-/// now; each is filled in by its phase (Reference Data §Phase 2, Destinations
-/// §Phase 3, Tours §Phase 4, Bookings §Phase 5, Dashboard §Phase 10). Role
-/// Requests (admin-only) is live.
+/// + account/logout) beside a content area. "Reference Data" (admin-only) is an
+/// inline expandable group revealing the reference tables; each opens the generic
+/// CRUD screen. The remaining destinations are placeholders filled in by their
+/// phase (Destinations §Phase 3, Tours §Phase 4, Bookings §Phase 5,
+/// Dashboard §Phase 10). Role Requests (admin-only) is live.
 class SideNavShell extends StatefulWidget {
   const SideNavShell({super.key});
 
@@ -17,17 +19,42 @@ class SideNavShell extends StatefulWidget {
   State<SideNavShell> createState() => _SideNavShellState();
 }
 
-class _NavItem {
-  const _NavItem(this.icon, this.label, {this.builder});
+/// A flat sidebar destination (not the Reference Data group).
+class _Leaf {
+  const _Leaf(this.key, this.icon, this.label, {this.builder, this.adminOnly = false});
+  final String key;
   final IconData icon;
   final String label;
 
   /// Content for this destination; null renders the "coming soon" placeholder.
   final WidgetBuilder? builder;
+  final bool adminOnly;
 }
 
 class _SideNavShellState extends State<SideNavShell> {
-  int _index = 0;
+  /// Selected destination: a leaf key, or `ref:<index>` for a reference table.
+  String _selectedKey = 'dashboard';
+  bool _referenceExpanded = false;
+
+  late final _modules = buildReferenceModules();
+
+  // Leaves shown above/below the Reference Data group, in order.
+  static const _topLeaves = <_Leaf>[
+    _Leaf('dashboard', Icons.dashboard_outlined, 'Dashboard'),
+  ];
+  static final _bottomLeaves = <_Leaf>[
+    const _Leaf('destinations', Icons.place_outlined, 'Destinations'),
+    const _Leaf('tours', Icons.tour_outlined, 'Tours'),
+    const _Leaf('bookings', Icons.event_note_outlined, 'Bookings'),
+    const _Leaf('users', Icons.group_outlined, 'Users'),
+    _Leaf(
+      'roleRequests',
+      Icons.how_to_reg_outlined,
+      'Role Requests',
+      builder: (_) => const RoleApplicationsReviewScreen(),
+      adminOnly: true,
+    ),
+  ];
 
   Future<void> _logout() async {
     final auth = context.read<AuthProvider>();
@@ -43,6 +70,9 @@ class _SideNavShellState extends State<SideNavShell> {
     }
   }
 
+  Iterable<_Leaf> _visible(List<_Leaf> leaves, bool isAdmin) =>
+      leaves.where((l) => !l.adminOnly || isAdmin);
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -50,23 +80,7 @@ class _SideNavShellState extends State<SideNavShell> {
     final auth = context.watch<AuthProvider>();
     final isAdmin = auth.roles.contains(AppRole.admin);
 
-    final items = <_NavItem>[
-      const _NavItem(Icons.dashboard_outlined, 'Dashboard'),
-      const _NavItem(Icons.list_alt_outlined, 'Reference Data'),
-      const _NavItem(Icons.place_outlined, 'Destinations'),
-      const _NavItem(Icons.tour_outlined, 'Tours'),
-      const _NavItem(Icons.event_note_outlined, 'Bookings'),
-      const _NavItem(Icons.group_outlined, 'Users'),
-      // Role application moderation is admin-only (spec §2.4).
-      if (isAdmin)
-        _NavItem(
-          Icons.how_to_reg_outlined,
-          'Role Requests',
-          builder: (_) => const RoleApplicationsReviewScreen(),
-        ),
-    ];
-    final index = _index.clamp(0, items.length - 1);
-    final current = items[index];
+    final (title, content) = _resolveContent(context, isAdmin);
 
     return Scaffold(
       body: Row(
@@ -92,19 +106,15 @@ class _SideNavShellState extends State<SideNavShell> {
                   ),
                 ),
                 Expanded(
-                  child: ListView.builder(
-                    itemCount: items.length,
-                    itemBuilder: (context, i) {
-                      final selected = i == index;
-                      return ListTile(
-                        leading: Icon(items[i].icon, color: onPrimary),
-                        title: Text(items[i].label,
-                            style: TextStyle(color: onPrimary)),
-                        selected: selected,
-                        selectedTileColor: onPrimary.withValues(alpha: 0.16),
-                        onTap: () => setState(() => _index = i),
-                      );
-                    },
+                  child: ListView(
+                    padding: EdgeInsets.zero,
+                    children: [
+                      for (final leaf in _visible(_topLeaves, isAdmin))
+                        _navTile(leaf.key, leaf.icon, leaf.label, onPrimary),
+                      if (isAdmin) ..._referenceGroup(onPrimary),
+                      for (final leaf in _visible(_bottomLeaves, isAdmin))
+                        _navTile(leaf.key, leaf.icon, leaf.label, onPrimary),
+                    ],
                   ),
                 ),
                 Divider(color: onPrimary.withValues(alpha: 0.2), height: 1),
@@ -135,22 +145,82 @@ class _SideNavShellState extends State<SideNavShell> {
                     padding: const EdgeInsets.all(TravleTokens.space16),
                     child: Align(
                       alignment: Alignment.centerLeft,
-                      child: Text(current.label,
-                          style: theme.textTheme.titleLarge),
+                      child: Text(title, style: theme.textTheme.titleLarge),
                     ),
                   ),
                 ),
-                Expanded(
-                  child: current.builder != null
-                      ? current.builder!(context)
-                      : _Placeholder(title: current.label),
-                ),
+                Expanded(child: content),
               ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _navTile(
+    String key,
+    IconData icon,
+    String label,
+    Color onPrimary, {
+    bool child = false,
+  }) {
+    final selected = _selectedKey == key;
+    return ListTile(
+      contentPadding: child
+          ? const EdgeInsets.only(left: 40, right: TravleTokens.space16)
+          : null,
+      dense: child,
+      leading: Icon(icon, color: onPrimary, size: child ? 20 : 24),
+      title: Text(label, style: TextStyle(color: onPrimary)),
+      selected: selected,
+      selectedTileColor: onPrimary.withValues(alpha: 0.16),
+      onTap: () => setState(() => _selectedKey = key),
+    );
+  }
+
+  List<Widget> _referenceGroup(Color onPrimary) {
+    return [
+      ListTile(
+        leading: Icon(Icons.list_alt_outlined, color: onPrimary),
+        title: Text('Reference Data', style: TextStyle(color: onPrimary)),
+        trailing: Icon(
+          _referenceExpanded ? Icons.expand_less : Icons.expand_more,
+          color: onPrimary,
+        ),
+        onTap: () =>
+            setState(() => _referenceExpanded = !_referenceExpanded),
+      ),
+      if (_referenceExpanded)
+        for (var i = 0; i < _modules.length; i++)
+          _navTile('ref:$i', _modules[i].icon, _modules[i].title, onPrimary,
+              child: true),
+    ];
+  }
+
+  /// Resolves the current selection to its (title, content) pair.
+  (String, Widget) _resolveContent(BuildContext context, bool isAdmin) {
+    if (_selectedKey.startsWith('ref:') && isAdmin) {
+      final index = int.parse(_selectedKey.substring(4));
+      if (index >= 0 && index < _modules.length) {
+        final module = _modules[index];
+        return (module.title, module.builder(context));
+      }
+    }
+
+    for (final leaf in [..._topLeaves, ..._bottomLeaves]) {
+      if (leaf.key == _selectedKey && (!leaf.adminOnly || isAdmin)) {
+        return (
+          leaf.label,
+          leaf.builder != null
+              ? leaf.builder!(context)
+              : _Placeholder(title: leaf.label),
+        );
+      }
+    }
+
+    // Selection no longer available (e.g. role changed) — fall back to Dashboard.
+    return ('Dashboard', const _Placeholder(title: 'Dashboard'));
   }
 }
 
