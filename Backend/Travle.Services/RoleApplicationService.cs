@@ -193,6 +193,12 @@ namespace Travle.Services
                 _dbContext.UserRoles.Add(new UserRole { UserId = application.UserId, RoleId = application.RoleId });
             }
 
+            // Force the applicant to re-authenticate so their next token carries the new role: revoke
+            // their refresh tokens. Their current (stateless) access token stays valid until it expires,
+            // at which point the failed refresh logs them out and re-login issues a JWT with the role.
+            _dbContext.RefreshTokens.RemoveRange(
+                _dbContext.RefreshTokens.Where(rt => rt.UserId == application.UserId));
+
             var roleName = await _dbContext.Roles
                 .Where(r => r.Id == application.RoleId)
                 .Select(r => r.Name)

@@ -4,6 +4,7 @@ import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
 import 'profile/become_curator_screen.dart';
+import 'profile/become_organizer_screen.dart';
 import 'profile/change_password_screen.dart';
 import 'profile/edit_profile_screen.dart';
 
@@ -36,6 +37,7 @@ class ProfileScreen extends StatelessWidget {
         : (auth.username ?? 'Signed in');
     final roles = user?.roles ?? auth.roles;
     final isCurator = roles.contains(AppRole.curator);
+    final isOrganizer = roles.contains(AppRole.organizer);
 
     return ListView(
       padding: const EdgeInsets.all(TravleTokens.space16),
@@ -137,6 +139,20 @@ class ProfileScreen extends StatelessWidget {
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => const BecomeCuratorScreen(),
+                    ),
+                  ),
+                ),
+              ],
+              if (!isOrganizer) ...[
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.tour_outlined),
+                  title: const Text('Become an organizer'),
+                  subtitle: const Text('Apply to create & run tours'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const BecomeOrganizerScreen(),
                     ),
                   ),
                 ),

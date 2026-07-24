@@ -155,7 +155,7 @@ class _RoleApplicationsReviewScreenState
       final ext = DocumentCodec.extensionForContentType(app.documentContentType);
       final path = await FilePicker.saveFile(
         dialogTitle: 'Save supporting document',
-        fileName: 'application_${app.id}$ext',
+        fileName: '${_documentBaseName(app)}$ext',
         bytes: bytes,
       );
       if (path == null) return; // Cancelled.
@@ -172,6 +172,18 @@ class _RoleApplicationsReviewScreenState
     } finally {
       if (mounted) setState(() => _acting.remove(app.id));
     }
+  }
+
+  /// A human, filesystem-safe base name for a downloaded document — the
+  /// applicant's name rather than a raw database id, e.g. `Application_John_Doe`.
+  String _documentBaseName(RoleApplicationResponse app) {
+    final raw = app.applicantName?.trim().isNotEmpty == true
+        ? app.applicantName!
+        : (app.username ?? 'applicant');
+    final safe = raw
+        .replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_')
+        .replaceAll(RegExp(r'^_+|_+$'), '');
+    return 'Application_${safe.isEmpty ? 'applicant' : safe}';
   }
 
   @override
