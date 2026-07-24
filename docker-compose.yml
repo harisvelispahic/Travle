@@ -11,7 +11,8 @@
 
 services:
   travle-sqlserver:
-    image: mcr.microsoft.com/mssql/server:2022-latest
+    # Explicitly pinned CU tag (course §3.2 — no bare `latest` on key services).
+    image: mcr.microsoft.com/mssql/server:2022-CU14-ubuntu-22.04
     container_name: travle-sqlserver
     environment:
       ACCEPT_EULA: "Y"
@@ -22,6 +23,13 @@ services:
       - sqlserver_data:/var/opt/mssql
     networks:
       - travle-network
+    healthcheck:
+      # Try the v18 tools (present on this image) first, then the older v17 path as a fallback.
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
   travle-rabbitmq:
     image: rabbitmq:3.13-management
@@ -36,6 +44,12 @@ services:
       - rabbitmq_data:/var/lib/rabbitmq
     networks:
       - travle-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
   travle-worker:
     build:
@@ -57,8 +71,10 @@ services:
       - Smtp__FromName=${SMTP_FROM_NAME:-Travle}
       - Smtp__UseStartTls=${SMTP_USE_STARTTLS:-true}
     depends_on:
-      - travle-sqlserver
-      - travle-rabbitmq
+      travle-sqlserver:
+        condition: service_healthy
+      travle-rabbitmq:
+        condition: service_healthy
     networks:
       - travle-network
 
@@ -82,8 +98,10 @@ services:
     ports:
       - "${API_HOST_PORT}:5121"
     depends_on:
-      - travle-sqlserver
-      - travle-rabbitmq
+      travle-sqlserver:
+        condition: service_healthy
+      travle-rabbitmq:
+        condition: service_healthy
     networks:
       - travle-network
 

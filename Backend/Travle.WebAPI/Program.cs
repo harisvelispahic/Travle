@@ -27,7 +27,25 @@ using System.Diagnostics;
 using System.Security.Claims;
 using System.Text;
 
+// Load the repo-root .env for local (non-Docker) runs, so the same secrets docker-compose injects
+// into the container are also available to `dotnet run`. Walks up from the working directory to find
+// it; a missing file (as inside the container, where compose supplies the vars) is a no-op. NoClobber
+// leaves any already-set environment variable untouched, so compose-provided values always win.
+for (var dir = new DirectoryInfo(Directory.GetCurrentDirectory()); dir is not null; dir = dir.Parent)
+{
+    var envPath = Path.Combine(dir.FullName, ".env");
+    if (File.Exists(envPath))
+    {
+        DotNetEnv.Env.NoClobber().Load(envPath);
+        break;
+    }
+}
+
 var builder = WebApplication.CreateBuilder(args);
+
+// CORS policy names and the origins it allows (explicit, from configuration — never AllowAnyOrigin).
+const string TravleCorsPolicy = "TravleCors";
+var corsAllowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 
 // Add services to the container.
 
@@ -68,8 +86,24 @@ builder.Services.AddControllers()
         };
     });
 
+// CORS configured once with explicit origins from configuration (course §3.4). Native Flutter
+// clients don't send an Origin, but a browser client (or the API's own docs UI) relies on this.
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(TravleCorsPolicy, policy =>
+    {
+        if (corsAllowedOrigins.Length > 0)
+        {
+            policy.WithOrigins(corsAllowedOrigins).AllowAnyHeader().AllowAnyMethod();
+        }
+    });
+});
+
 // Add Entity Framework Core DbContext
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException(
+        "No connection string configured. Set ConnectionStrings__DefaultConnection (docker-compose supplies "
+        + "it from CONNECTION_STRING; local runs read it from the repo-root .env via DotNetEnv).");
 builder.Services.AddDbContext<TravleDbContext>(options =>
     options.UseSqlServer(connectionString)
 );
@@ -183,6 +217,11 @@ builder.Services.AddAuthorization(options =>
 
 var app = builder.Build();
 
+// Apply migrations (and thereby the seed) on startup so a fresh `docker compose up` reaches a
+// migrated, seeded database with no manual step. SQL Server can still be mid-boot when the API
+// starts, so retry transient connection failures with a short backoff before giving up.
+await ApplyMigrationsAsync(app);
+
 // Must be the first middleware so it wraps the entire pipeline: any exception thrown downstream
 // is routed through the registered IExceptionHandler chain.
 app.UseExceptionHandler();
@@ -196,7 +235,7 @@ app.MapScalarApiReference(options =>
            .AddPreferredSecuritySchemes("Bearer");
 });
 
-//app.UseHttpsRedirection();
+app.UseCors(TravleCorsPolicy);
 
 app.UseAuthentication();
 
@@ -205,3 +244,31 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+// Migrates the database on startup, retrying while SQL Server finishes booting. Runs in its own DI
+// scope; the compose healthcheck already gates startup, so the retry is a belt-and-suspenders guard.
+static async Task ApplyMigrationsAsync(WebApplication app)
+{
+    const int maxAttempts = 12;
+    var delay = TimeSpan.FromSeconds(3);
+
+    await using var scope = app.Services.CreateAsyncScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<TravleDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    for (var attempt = 1; ; attempt++)
+    {
+        try
+        {
+            await dbContext.Database.MigrateAsync();
+            logger.LogInformation("Database migrations applied successfully.");
+            return;
+        }
+        catch (Exception ex) when (attempt < maxAttempts)
+        {
+            logger.LogWarning(ex, "Database not ready (attempt {Attempt}/{Max}); retrying in {Seconds}s.",
+                attempt, maxAttempts, delay.TotalSeconds);
+            await Task.Delay(delay);
+        }
+    }
+}
