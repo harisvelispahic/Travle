@@ -18,6 +18,7 @@ class TravleDesktopApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => RoleApplicationProvider()),
+        ChangeNotifierProvider(create: (_) => DestinationProvider()),
       ],
       child: MaterialApp(
         title: 'Travle — Management',

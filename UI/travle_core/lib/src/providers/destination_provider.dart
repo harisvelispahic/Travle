@@ -27,6 +27,36 @@ class DestinationProvider extends BaseProvider<DestinationResponse> {
           .toList();
   }
 
+  /// Admin moderation queue (`GET /Destinations/moderation`); defaults to Pending
+  /// server-side, filterable by `status` (0/1/2) and `text`.
+  Future<SearchResult<DestinationResponse>> moderationQueue({dynamic filter}) async {
+    final json =
+        await getAction('moderation', filter: filter) as Map<String, dynamic>;
+    return SearchResult<DestinationResponse>()
+      ..totalCount = json['totalCount'] as int?
+      ..items = (json['items'] as List)
+          .map((e) => fromJson(e as Map<String, dynamic>))
+          .toList();
+  }
+
+  /// Admin: approve a pending destination (publishes it). Returns the updated row.
+  Future<DestinationResponse> approve(int id) async {
+    final json = await postAction('$id/Approve');
+    return fromJson(json as Map<String, dynamic>);
+  }
+
+  /// Admin: reject a pending destination with a mandatory reason.
+  Future<DestinationResponse> reject(int id, String reason) async {
+    final json = await postAction('$id/Reject', {'reason': reason});
+    return fromJson(json as Map<String, dynamic>);
+  }
+
+  /// Admin: toggle the featured flag (only an approved destination may be featured).
+  Future<DestinationResponse> setFeatured(int id, bool isFeatured) async {
+    final json = await postAction('$id/Featured', {'isFeatured': isFeatured});
+    return fromJson(json as Map<String, dynamic>);
+  }
+
   /// A destination's detail (`GET /Destinations/{id}`). Opening an approved
   /// destination someone else submitted logs a View server-side.
   Future<DestinationResponse> getDetail(int id) => getById(id);

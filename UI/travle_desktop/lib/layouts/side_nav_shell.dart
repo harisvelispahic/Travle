@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
+import '../screens/destinations_moderation_screen.dart';
 import '../screens/reference/reference_registry.dart';
 import '../screens/role_applications_review_screen.dart';
 
@@ -43,7 +44,13 @@ class _SideNavShellState extends State<SideNavShell> {
     _Leaf('dashboard', Icons.dashboard_outlined, 'Dashboard'),
   ];
   static final _bottomLeaves = <_Leaf>[
-    const _Leaf('destinations', Icons.place_outlined, 'Destinations'),
+    _Leaf(
+      'destinations',
+      Icons.place_outlined,
+      'Destinations',
+      builder: (_) => const DestinationsModerationScreen(),
+      adminOnly: true,
+    ),
     const _Leaf('tours', Icons.tour_outlined, 'Tours'),
     const _Leaf('bookings', Icons.event_note_outlined, 'Bookings'),
     const _Leaf('users', Icons.group_outlined, 'Users'),
