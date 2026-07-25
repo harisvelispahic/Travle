@@ -27,7 +27,9 @@ namespace Travle.Services
         {
             if (!string.IsNullOrWhiteSpace(search?.Name))
             {
-                query = query.Where(t => t.Name.Contains(search.Name));
+                query = SearchCollation.HasDiacritics(search.Name)
+                    ? query.Where(t => EF.Functions.Collate(t.Name, SearchCollation.CaseInsensitiveAccentSensitive).Contains(search.Name))
+                    : query.Where(t => EF.Functions.Collate(t.Name, SearchCollation.CaseInsensitiveAccentInsensitive).Contains(search.Name));
             }
 
             return query;

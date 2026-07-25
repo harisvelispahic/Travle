@@ -1,6 +1,7 @@
 using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
 using Travle.Services.Database;
+using Microsoft.EntityFrameworkCore;
 
 namespace Travle.Services
 {
@@ -17,7 +18,9 @@ namespace Travle.Services
         {
             if (!string.IsNullOrWhiteSpace(search?.Name))
             {
-                query = query.Where(s => s.Name.Contains(search.Name));
+                query = SearchCollation.HasDiacritics(search.Name)
+                    ? query.Where(s => EF.Functions.Collate(s.Name, SearchCollation.CaseInsensitiveAccentSensitive).Contains(search.Name))
+                    : query.Where(s => EF.Functions.Collate(s.Name, SearchCollation.CaseInsensitiveAccentInsensitive).Contains(search.Name));
             }
 
             return query;

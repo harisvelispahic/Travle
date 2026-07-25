@@ -32,7 +32,9 @@ namespace Travle.Services
 
             if (!string.IsNullOrWhiteSpace(search.Name))
             {
-                query = query.Where(c => c.Name.Contains(search.Name));
+                query = SearchCollation.HasDiacritics(search.Name)
+                    ? query.Where(c => EF.Functions.Collate(c.Name, SearchCollation.CaseInsensitiveAccentSensitive).Contains(search.Name))
+                    : query.Where(c => EF.Functions.Collate(c.Name, SearchCollation.CaseInsensitiveAccentInsensitive).Contains(search.Name));
             }
 
             if (search.RegionId.HasValue)

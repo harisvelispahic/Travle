@@ -66,8 +66,13 @@ namespace Travle.Services
 
             if (!string.IsNullOrWhiteSpace(search.Name))
             {
-                query = query.Where(u => u.FirstName.Contains(search.Name)
-                                      || u.LastName.Contains(search.Name));
+                query = SearchCollation.HasDiacritics(search.Name)
+                    ? query.Where(u =>
+                        EF.Functions.Collate(u.FirstName, SearchCollation.CaseInsensitiveAccentSensitive).Contains(search.Name)
+                        || EF.Functions.Collate(u.LastName, SearchCollation.CaseInsensitiveAccentSensitive).Contains(search.Name))
+                    : query.Where(u =>
+                        EF.Functions.Collate(u.FirstName, SearchCollation.CaseInsensitiveAccentInsensitive).Contains(search.Name)
+                        || EF.Functions.Collate(u.LastName, SearchCollation.CaseInsensitiveAccentInsensitive).Contains(search.Name));
             }
 
             if (search.IsSuspended.HasValue)
