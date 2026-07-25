@@ -5,6 +5,7 @@ using Travle.Model.Responses;
 using Travle.Services;
 using Travle.Services.Authorization;
 using Travle.Services.Database;
+using Travle.Services.Imaging;
 using Travle.Services.Messaging;
 using Travle.Services.Recommender;
 using Travle.Services.Security;
@@ -133,6 +134,10 @@ TypeAdapterConfig<RoleApplication, RoleApplicationResponse>.NewConfig()
 // register application services
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IRoleApplicationService, RoleApplicationService>();
+builder.Services.AddScoped<IDestinationService, DestinationService>();
+
+// Managed, cross-platform image codec for server-side thumbnails (stateless → singleton).
+builder.Services.AddSingleton<IThumbnailGenerator, ImageSharpThumbnailGenerator>();
 builder.Services.AddScoped<IRefreshTokenService, RefreshTokenService>();
 builder.Services.AddScoped<IAccessManager, AccessManager>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
@@ -222,6 +227,10 @@ var app = builder.Build();
 // starts, so retry transient connection failures with a short backoff before giving up.
 await ApplyMigrationsAsync(app);
 
+// Runtime seed for heavy data the migration seed can't carry as HasData: give every seeded destination
+// a generated placeholder image + thumbnail so lists/details have images on first run (course §E).
+await SeedDestinationImagesAsync(app);
+
 // Must be the first middleware so it wraps the entire pipeline: any exception thrown downstream
 // is routed through the registered IExceptionHandler chain.
 app.UseExceptionHandler();
@@ -271,4 +280,43 @@ static async Task ApplyMigrationsAsync(WebApplication app)
             await Task.Delay(delay);
         }
     }
+}
+
+// Idempotent runtime seed: every destination that has no image gets a generated placeholder image plus
+// its thumbnail. Binary blobs can't ride along in HasData, so this runs once on startup after migration;
+// subsequent runs find images already present and do nothing.
+static async Task SeedDestinationImagesAsync(WebApplication app)
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<TravleDbContext>();
+    var thumbnailGenerator = scope.ServiceProvider.GetRequiredService<IThumbnailGenerator>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    var destinationsWithoutImages = await dbContext.Destinations
+        .Where(d => !d.Images.Any())
+        .Select(d => new { d.Id, d.Name })
+        .ToListAsync();
+
+    if (destinationsWithoutImages.Count == 0)
+    {
+        return;
+    }
+
+    foreach (var destination in destinationsWithoutImages)
+    {
+        var image = await thumbnailGenerator.GeneratePlaceholderJpegAsync(destination.Name);
+        var (thumbnail, contentType) = await thumbnailGenerator.GenerateThumbnailAsync(image);
+
+        dbContext.DestinationImages.Add(new DestinationImage
+        {
+            DestinationId = destination.Id,
+            ImageData = image,
+            ThumbnailData = thumbnail,
+            ContentType = contentType,
+            SortOrder = 0
+        });
+    }
+
+    await dbContext.SaveChangesAsync();
+    logger.LogInformation("Seeded placeholder images for {Count} destination(s).", destinationsWithoutImages.Count);
 }

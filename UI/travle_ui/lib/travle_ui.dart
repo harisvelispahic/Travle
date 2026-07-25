@@ -11,4 +11,6 @@ export 'src/widgets/confirm_dialog.dart';
 export 'src/widgets/document_picker_field.dart';
 export 'src/widgets/empty_state.dart';
 export 'src/widgets/profile_avatar.dart';
+export 'src/widgets/status_pill.dart';
+export 'src/widgets/thumbnail_image.dart';
 export 'src/widgets/travle_text_field.dart';

@@ -7,6 +7,7 @@ import 'profile/become_curator_screen.dart';
 import 'profile/become_organizer_screen.dart';
 import 'profile/change_password_screen.dart';
 import 'profile/edit_profile_screen.dart';
+import 'profile/my_destinations_screen.dart';
 
 /// The signed-in user's profile: an identity header (avatar, name, email, home
 /// city) over a menu (edit profile, change password, log out). Reads the live
@@ -129,7 +130,20 @@ class ProfileScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              if (!isCurator) ...[
+              if (isCurator) ...[
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.travel_explore_outlined),
+                  title: const Text('My destinations'),
+                  subtitle: const Text('Submit and manage destinations'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const MyDestinationsScreen(),
+                    ),
+                  ),
+                ),
+              ] else ...[
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.workspace_premium_outlined),

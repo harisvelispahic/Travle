@@ -18,6 +18,7 @@ class TravleMobileApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => DestinationCategoryProvider()),
+        ChangeNotifierProvider(create: (_) => DestinationProvider()),
         ChangeNotifierProvider(create: (_) => TagProvider()),
         ChangeNotifierProvider(create: (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => CountryProvider()),
