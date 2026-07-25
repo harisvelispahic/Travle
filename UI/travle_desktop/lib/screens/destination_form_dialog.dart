@@ -5,26 +5,24 @@ import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
-/// Submit a new destination or edit an existing one (curator/organizer). Fields:
-/// name, category, description, tags, images, and location. Editing an existing
-/// destination sends it back for moderation (warned up front). Coordinates are
-/// entered manually for now — a map picker replaces the [_LocationSection] later.
-class DestinationFormScreen extends StatefulWidget {
-  const DestinationFormScreen({super.key, this.existing});
-
-  /// The destination being edited, or null when creating a new one.
-  final DestinationResponse? existing;
-
-  bool get isEditing => existing != null;
-
-  @override
-  State<DestinationFormScreen> createState() => _DestinationFormScreenState();
+/// Opens the destination submit/edit dialog. Resolves to `true` when the
+/// destination was saved (the caller refreshes and shows a snackbar), or null on
+/// cancel. Editing an existing destination sends it back for moderation.
+Future<bool?> showDestinationFormDialog(
+  BuildContext context, {
+  DestinationResponse? existing,
+}) {
+  return showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => DestinationFormDialog(existing: existing),
+  );
 }
 
-/// One image in the form's grid: either an existing image being kept
-/// ([existingId] set) or a newly picked one ([base64] + [contentType] set). Both
-/// carry [previewBytes] for display (decoded once, at pick/fetch time). [key] is a
-/// stable identity for the reorderable list (new images have no server id yet).
+/// One image in the form's grid: an existing image being kept ([existingId] set)
+/// or a newly picked one ([base64] + [contentType] set). Both carry
+/// [previewBytes] for display (decoded once, at pick/fetch time). [key] is a
+/// stable identity for the reorderable list.
 class _ImageItem {
   _ImageItem({
     this.existingId,
@@ -42,7 +40,18 @@ class _ImageItem {
   bool get isExisting => existingId != null;
 }
 
-class _DestinationFormScreenState extends State<DestinationFormScreen> {
+class DestinationFormDialog extends StatefulWidget {
+  const DestinationFormDialog({super.key, this.existing});
+
+  final DestinationResponse? existing;
+
+  bool get isEditing => existing != null;
+
+  @override
+  State<DestinationFormDialog> createState() => _DestinationFormDialogState();
+}
+
+class _DestinationFormDialogState extends State<DestinationFormDialog> {
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
   final _description = TextEditingController();
@@ -60,12 +69,11 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
 
   bool _loading = true;
   String? _loadError;
-  bool _busy = false;
-  String? _error;
+  bool _submitting = false;
+  String? _submitError;
 
   /// True only when this edit will actually change the status back to Pending —
-  /// i.e. an already-approved (or rejected) destination is being edited. Editing a
-  /// still-pending destination leaves it pending, so no "back for review" nudge.
+  /// i.e. an already-approved (or rejected) destination is being edited.
   bool get _sendsForReview =>
       widget.existing != null && !widget.existing!.isPending;
 
@@ -99,15 +107,12 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
       _loading = true;
       _loadError = null;
     });
-
     final categoryProvider = context.read<DestinationCategoryProvider>();
     final cityProvider = context.read<CityProvider>();
     final tagProvider = context.read<TagProvider>();
     final destinationProvider = context.read<DestinationProvider>();
     final existing = widget.existing;
-
     try {
-      // Independent loads in parallel (constraint A.2).
       final results = await Future.wait([
         categoryProvider.get(filter: {'pageSize': 100, 'sortBy': 'Name'}),
         cityProvider.get(filter: {'pageSize': 100, 'sortBy': 'Name'}),
@@ -116,7 +121,6 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
 
       final images = <_ImageItem>[];
       if (existing != null && existing.images.isNotEmpty) {
-        // Fetch existing image bytes for preview (decoded once here, not in build).
         final ordered = [...existing.images]
           ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
         final bytes = await Future.wait(
@@ -186,8 +190,6 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
   void _removeImage(int index) => setState(() => _images.removeAt(index));
 
   void _reorderImages(int oldIndex, int newIndex) {
-    // onReorderItem already gives newIndex as the final target (adjusted for the
-    // item removed at oldIndex), so no off-by-one correction is needed here.
     setState(() {
       final item = _images.removeAt(oldIndex);
       _images.insert(newIndex, item);
@@ -195,31 +197,19 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
   }
 
   Future<void> _submit() async {
-    setState(() => _error = null);
+    if (_submitting) return;
     if (!_formKey.currentState!.validate()) return;
     if (_categoryId == null || _cityId == null) return;
 
-    // Capture context-bound handles before the confirm dialog's async gap.
     final provider = context.read<DestinationProvider>();
     final navigator = Navigator.of(context);
-
-    final confirmed = await showConfirmDialog(
-      context,
-      title: widget.isEditing ? 'Save changes' : 'Submit for approval',
-      message: !widget.isEditing
-          ? 'Submit this destination for an admin to review?'
-          : _sendsForReview
-              ? 'Editing sends this destination back for moderation. Continue?'
-              : 'Save changes to this destination?',
-      confirmLabel: widget.isEditing ? 'Save' : 'Submit',
-    );
-    if (!confirmed) return;
-
-    final latitude = double.parse(_latitude.text.trim());
-    final longitude = double.parse(_longitude.text.trim());
-
-    setState(() => _busy = true);
+    setState(() {
+      _submitting = true;
+      _submitError = null;
+    });
     try {
+      final latitude = double.parse(_latitude.text.trim());
+      final longitude = double.parse(_longitude.text.trim());
       if (widget.isEditing) {
         await provider.edit(
           widget.existing!.id,
@@ -265,50 +255,96 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
           ),
         );
       }
-      if (!mounted) return;
-      AppSnackbars.success(
-        context,
-        !widget.isEditing
-            ? 'Destination submitted — an admin will review it soon.'
-            : _sendsForReview
-                ? 'Destination updated — it will be reviewed again.'
-                : 'Destination updated.',
-      );
       navigator.pop(true);
     } on ApiClientException catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.message);
-    } finally {
-      if (mounted) setState(() => _busy = false);
+      setState(() {
+        _submitting = false;
+        _submitError = e.message;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.isEditing ? 'Edit destination' : 'New destination'),
-      ),
-      body: SafeArea(child: _buildBody(Theme.of(context))),
-    );
-  }
-
-  Widget _buildBody(ThemeData theme) {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_loadError != null) {
-      return Center(
+    final theme = Theme.of(context);
+    return Dialog(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 640, maxHeight: 720),
         child: Padding(
           padding: const EdgeInsets.all(TravleTokens.space24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                _loadError!,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: theme.colorScheme.error),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.isEditing ? 'Edit destination' : 'New destination',
+                      style: theme.textTheme.titleLarge,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    icon: const Icon(Icons.close),
+                    onPressed:
+                        _submitting ? null : () => Navigator.of(context).pop(),
+                  ),
+                ],
               ),
+              const SizedBox(height: TravleTokens.space16),
+              Flexible(child: _buildContent(theme)),
+              if (_submitError != null) ...[
+                const SizedBox(height: TravleTokens.space16),
+                _ErrorBanner(message: _submitError!),
+              ],
+              const SizedBox(height: TravleTokens.space16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed:
+                        _submitting ? null : () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: TravleTokens.space12),
+                  FilledButton(
+                    onPressed: (_loading || _submitting) ? null : _submit,
+                    child: _submitting
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(widget.isEditing
+                            ? 'Save changes'
+                            : 'Submit for approval'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContent(ThemeData theme) {
+    if (_loading) {
+      return const SizedBox(
+        height: 200,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_loadError != null) {
+      return SizedBox(
+        height: 200,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_loadError!, style: TextStyle(color: theme.colorScheme.error)),
               const SizedBox(height: TravleTokens.space16),
               ElevatedButton(onPressed: _bootstrap, child: const Text('Retry')),
             ],
@@ -318,86 +354,53 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
     }
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(TravleTokens.space16),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(TravleTokens.space24),
-              child: Form(
-                key: _formKey,
-                autovalidateMode: AutovalidateMode.onUnfocus,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (_sendsForReview) ...[
-                      _EditWarningBanner(),
-                      const SizedBox(height: TravleTokens.space16),
-                    ],
-                    TravleTextField(
-                      controller: _name,
-                      label: 'Name',
-                      prefixIcon: Icons.place_outlined,
-                      textInputAction: TextInputAction.next,
-                      maxLength: 200,
-                      validator: (v) => Validators.required(v, field: 'Name'),
-                    ),
-                    const SizedBox(height: TravleTokens.space16),
-                    _buildCategoryDropdown(),
-                    const SizedBox(height: TravleTokens.space16),
-                    _buildCityDropdown(),
-                    const SizedBox(height: TravleTokens.space16),
-                    TravleTextField(
-                      controller: _description,
-                      label: 'Description',
-                      minLines: 4,
-                      maxLines: 8,
-                      maxLength: 4000,
-                      keyboardType: TextInputType.multiline,
-                      textInputAction: TextInputAction.newline,
-                      validator: (v) =>
-                          Validators.required(v, field: 'Description'),
-                    ),
-                    const SizedBox(height: TravleTokens.space24),
-                    _SectionLabel('Tags'),
-                    const SizedBox(height: TravleTokens.space8),
-                    _buildTagChips(theme),
-                    const SizedBox(height: TravleTokens.space24),
-                    _SectionLabel('Photos'),
-                    const SizedBox(height: TravleTokens.space8),
-                    _buildImageGrid(theme),
-                    const SizedBox(height: TravleTokens.space24),
-                    _LocationSection(
-                      latitude: _latitude,
-                      longitude: _longitude,
-                      enabled: !_busy,
-                    ),
-                    if (_error != null) ...[
-                      const SizedBox(height: TravleTokens.space16),
-                      Text(
-                        _error!,
-                        style: TextStyle(color: theme.colorScheme.error),
-                      ),
-                    ],
-                    const SizedBox(height: TravleTokens.space24),
-                    ElevatedButton(
-                      onPressed: _busy ? null : _submit,
-                      child: _busy
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Text(widget.isEditing
-                              ? 'Save changes'
-                              : 'Submit for approval'),
-                    ),
-                  ],
-                ),
-              ),
+      child: Form(
+        key: _formKey,
+        autovalidateMode: AutovalidateMode.onUnfocus,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_sendsForReview) ...[
+              _EditWarningBanner(),
+              const SizedBox(height: TravleTokens.space16),
+            ],
+            TravleTextField(
+              controller: _name,
+              label: 'Name',
+              prefixIcon: Icons.place_outlined,
+              textInputAction: TextInputAction.next,
+              maxLength: 200,
+              validator: (v) => Validators.required(v, field: 'Name'),
             ),
-          ),
+            const SizedBox(height: TravleTokens.space16),
+            _buildCategoryDropdown(),
+            const SizedBox(height: TravleTokens.space16),
+            _buildCityDropdown(),
+            const SizedBox(height: TravleTokens.space16),
+            TravleTextField(
+              controller: _description,
+              label: 'Description',
+              minLines: 4,
+              maxLines: 8,
+              maxLength: 4000,
+              keyboardType: TextInputType.multiline,
+              validator: (v) => Validators.required(v, field: 'Description'),
+            ),
+            const SizedBox(height: TravleTokens.space24),
+            _SectionLabel('Tags'),
+            const SizedBox(height: TravleTokens.space8),
+            _buildTagChips(theme),
+            const SizedBox(height: TravleTokens.space24),
+            _SectionLabel('Photos'),
+            const SizedBox(height: TravleTokens.space8),
+            _buildImageGrid(theme),
+            const SizedBox(height: TravleTokens.space24),
+            _LocationSection(
+              latitude: _latitude,
+              longitude: _longitude,
+              enabled: !_submitting,
+            ),
+          ],
         ),
       ),
     );
@@ -416,7 +419,7 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
         for (final c in _categories)
           DropdownMenuItem(value: c.id, child: Text(c.name)),
       ],
-      onChanged: _busy ? null : (id) => setState(() => _categoryId = id),
+      onChanged: _submitting ? null : (id) => setState(() => _categoryId = id),
       validator: (v) => v == null ? 'Please select a category' : null,
     );
   }
@@ -437,7 +440,7 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
             child: Text(c.regionName == null ? c.name : '${c.name} — ${c.regionName}'),
           ),
       ],
-      onChanged: _busy ? null : (id) => setState(() => _cityId = id),
+      onChanged: _submitting ? null : (id) => setState(() => _cityId = id),
       validator: (v) => v == null ? 'Please select a city' : null,
     );
   }
@@ -458,7 +461,7 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
           FilterChip(
             label: Text(tag.name),
             selected: _selectedTagIds.contains(tag.id),
-            onSelected: _busy
+            onSelected: _submitting
                 ? null
                 : (selected) => setState(() {
                       if (selected) {
@@ -481,10 +484,9 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
             height: 100,
             child: ReorderableListView(
               scrollDirection: Axis.horizontal,
-              // Drag the whole thumbnail to reorder (long-press on mobile).
               buildDefaultDragHandles: true,
               onReorderItem: (oldIndex, newIndex) {
-                if (_busy) return;
+                if (_submitting) return;
                 _reorderImages(oldIndex, newIndex);
               },
               children: [
@@ -495,7 +497,7 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
                     child: _ImageThumb(
                       bytes: _images[i].previewBytes,
                       isCover: i == 0,
-                      onRemove: _busy ? null : () => _removeImage(i),
+                      onRemove: _submitting ? null : () => _removeImage(i),
                     ),
                   ),
               ],
@@ -504,7 +506,7 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
           const SizedBox(height: TravleTokens.space12),
         ],
         OutlinedButton.icon(
-          onPressed: _busy ? null : _pickImages,
+          onPressed: _submitting ? null : _pickImages,
           icon: const Icon(Icons.add_photo_alternate_outlined),
           label: Text(_images.isEmpty ? 'Add photos' : 'Add more photos'),
         ),
@@ -561,8 +563,6 @@ class _ImageThumb extends StatelessWidget {
   const _ImageThumb({required this.bytes, this.isCover = false, this.onRemove});
 
   final Uint8List bytes;
-
-  /// The cover (first) image gets a highlighted border and a "Cover" badge.
   final bool isCover;
   final VoidCallback? onRemove;
 
@@ -630,8 +630,8 @@ class _ImageThumb extends StatelessWidget {
 }
 
 /// Manual latitude/longitude entry. Interim: a map picker (Leaflet /
-/// OpenRouteService) will replace these fields with a tappable map — keeping the
-/// coordinate entry isolated here makes that swap a one-widget change (07 §8).
+/// OpenRouteService) will replace these fields later — keeping the coordinate
+/// entry isolated here makes that swap a one-widget change.
 class _LocationSection extends StatelessWidget {
   const _LocationSection({
     required this.latitude,
@@ -701,6 +701,36 @@ class _LocationSection extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// Inline banner for a server-side submit error, shown inside the form so the
+/// user's input is preserved.
+class _ErrorBanner extends StatelessWidget {
+  const _ErrorBanner({required this.message});
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(TravleTokens.space12),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer,
+        borderRadius: BorderRadius.circular(TravleTokens.radius),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.error_outline, size: 20, color: scheme.onErrorContainer),
+          const SizedBox(width: TravleTokens.space8),
+          Expanded(
+            child: Text(message, style: TextStyle(color: scheme.onErrorContainer)),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -19,6 +19,10 @@ class TravleDesktopApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => RoleApplicationProvider()),
         ChangeNotifierProvider(create: (_) => DestinationProvider()),
+        // Lookups the destination submit/edit form populates its dropdowns from.
+        ChangeNotifierProvider(create: (_) => DestinationCategoryProvider()),
+        ChangeNotifierProvider(create: (_) => CityProvider()),
+        ChangeNotifierProvider(create: (_) => TagProvider()),
       ],
       child: MaterialApp(
         title: 'Travle — Management',

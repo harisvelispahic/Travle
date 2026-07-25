@@ -4,6 +4,7 @@ import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
 import '../screens/destinations_moderation_screen.dart';
+import '../screens/organizer_destinations_screen.dart';
 import '../screens/reference/reference_registry.dart';
 import '../screens/role_applications_review_screen.dart';
 
@@ -22,14 +23,17 @@ class SideNavShell extends StatefulWidget {
 
 /// A flat sidebar destination (not the Reference Data group).
 class _Leaf {
-  const _Leaf(this.key, this.icon, this.label, {this.builder, this.adminOnly = false});
+  const _Leaf(this.key, this.icon, this.label, {this.builder, this.requiredRole});
   final String key;
   final IconData icon;
   final String label;
 
   /// Content for this destination; null renders the "coming soon" placeholder.
   final WidgetBuilder? builder;
-  final bool adminOnly;
+
+  /// When set, the leaf is only shown to a user holding this role (e.g. moderation
+  /// is admin-only; "My Destinations" is organizer-only).
+  final String? requiredRole;
 }
 
 class _SideNavShellState extends State<SideNavShell> {
@@ -49,7 +53,14 @@ class _SideNavShellState extends State<SideNavShell> {
       Icons.place_outlined,
       'Destinations',
       builder: (_) => const DestinationsModerationScreen(),
-      adminOnly: true,
+      requiredRole: AppRole.admin,
+    ),
+    _Leaf(
+      'myDestinations',
+      Icons.add_location_alt_outlined,
+      'My Destinations',
+      builder: (_) => const OrganizerDestinationsScreen(),
+      requiredRole: AppRole.organizer,
     ),
     const _Leaf('tours', Icons.tour_outlined, 'Tours'),
     const _Leaf('bookings', Icons.event_note_outlined, 'Bookings'),
@@ -59,7 +70,7 @@ class _SideNavShellState extends State<SideNavShell> {
       Icons.how_to_reg_outlined,
       'Role Requests',
       builder: (_) => const RoleApplicationsReviewScreen(),
-      adminOnly: true,
+      requiredRole: AppRole.admin,
     ),
   ];
 
@@ -77,17 +88,18 @@ class _SideNavShellState extends State<SideNavShell> {
     }
   }
 
-  Iterable<_Leaf> _visible(List<_Leaf> leaves, bool isAdmin) =>
-      leaves.where((l) => !l.adminOnly || isAdmin);
+  Iterable<_Leaf> _visible(List<_Leaf> leaves, List<String> roles) =>
+      leaves.where((l) => l.requiredRole == null || roles.contains(l.requiredRole));
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final onPrimary = theme.colorScheme.onPrimary;
     final auth = context.watch<AuthProvider>();
-    final isAdmin = auth.roles.contains(AppRole.admin);
+    final roles = auth.roles;
+    final isAdmin = roles.contains(AppRole.admin);
 
-    final (title, content) = _resolveContent(context, isAdmin);
+    final (title, content) = _resolveContent(context, roles);
 
     return Scaffold(
       body: Row(
@@ -116,10 +128,10 @@ class _SideNavShellState extends State<SideNavShell> {
                   child: ListView(
                     padding: EdgeInsets.zero,
                     children: [
-                      for (final leaf in _visible(_topLeaves, isAdmin))
+                      for (final leaf in _visible(_topLeaves, roles))
                         _navTile(leaf.key, leaf.icon, leaf.label, onPrimary),
                       if (isAdmin) ..._referenceGroup(onPrimary),
-                      for (final leaf in _visible(_bottomLeaves, isAdmin))
+                      for (final leaf in _visible(_bottomLeaves, roles))
                         _navTile(leaf.key, leaf.icon, leaf.label, onPrimary),
                     ],
                   ),
@@ -206,7 +218,8 @@ class _SideNavShellState extends State<SideNavShell> {
   }
 
   /// Resolves the current selection to its (title, content) pair.
-  (String, Widget) _resolveContent(BuildContext context, bool isAdmin) {
+  (String, Widget) _resolveContent(BuildContext context, List<String> roles) {
+    final isAdmin = roles.contains(AppRole.admin);
     if (_selectedKey.startsWith('ref:') && isAdmin) {
       final index = int.parse(_selectedKey.substring(4));
       if (index >= 0 && index < _modules.length) {
@@ -216,7 +229,8 @@ class _SideNavShellState extends State<SideNavShell> {
     }
 
     for (final leaf in [..._topLeaves, ..._bottomLeaves]) {
-      if (leaf.key == _selectedKey && (!leaf.adminOnly || isAdmin)) {
+      if (leaf.key == _selectedKey &&
+          (leaf.requiredRole == null || roles.contains(leaf.requiredRole))) {
         return (
           leaf.label,
           leaf.builder != null
