@@ -100,6 +100,15 @@ abstract class BaseProvider<T> with ChangeNotifier {
     return jsonDecode(response.body);
   }
 
+  /// DELETEs `endpoint/subPath` (for a non-`{id}` delete route, e.g.
+  /// `Tours/Schedules/{scheduleId}`). Reuses the auth header + 401→refresh pass.
+  Future<void> deleteAction(String subPath) async {
+    final response = await _send(
+      () => http.delete(Uri.parse('$_base$endpoint/$subPath'), headers: _headers()),
+    );
+    validateResponse(response);
+  }
+
   /// GETs raw bytes from `endpoint/subPath` (e.g. a document/image download).
   /// Reuses the auth header + 401→refresh pass.
   Future<Uint8List> getBytes(String subPath) async {

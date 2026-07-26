@@ -5,6 +5,7 @@ import 'package:travle_ui/travle_ui.dart';
 
 import '../screens/destinations_moderation_screen.dart';
 import '../screens/organizer_destinations_screen.dart';
+import '../screens/organizer_tours_screen.dart';
 import '../screens/reference/reference_registry.dart';
 import '../screens/role_applications_review_screen.dart';
 
@@ -12,8 +13,8 @@ import '../screens/role_applications_review_screen.dart';
 /// + account/logout) beside a content area. "Reference Data" (admin-only) is an
 /// inline expandable group revealing the reference tables; each opens the generic
 /// CRUD screen. The remaining destinations are placeholders filled in by their
-/// phase (Destinations §Phase 3, Tours §Phase 4, Bookings §Phase 5,
-/// Dashboard §Phase 10). Role Requests (admin-only) is live.
+/// phase (Bookings §Phase 5, Dashboard §Phase 10). Destinations (§Phase 3),
+/// My Tours (§Phase 4) and Role Requests are live.
 class SideNavShell extends StatefulWidget {
   const SideNavShell({super.key});
 
@@ -62,7 +63,13 @@ class _SideNavShellState extends State<SideNavShell> {
       builder: (_) => const OrganizerDestinationsScreen(),
       requiredRole: AppRole.organizer,
     ),
-    const _Leaf('tours', Icons.tour_outlined, 'Tours'),
+    _Leaf(
+      'myTours',
+      Icons.tour_outlined,
+      'My Tours',
+      builder: (_) => const OrganizerToursScreen(),
+      requiredRole: AppRole.organizer,
+    ),
     const _Leaf('bookings', Icons.event_note_outlined, 'Bookings'),
     const _Leaf('users', Icons.group_outlined, 'Users'),
     _Leaf(
