@@ -33,6 +33,11 @@ namespace Travle.Services.Validators
             RuleFor(x => x.Longitude)
                 .InclusiveBetween(-180, 180).WithMessage("Longitude must be between -180 and 180.");
 
+            RuleFor(x => x.EntranceFee)
+                .InclusiveBetween(0, 10000)
+                .When(x => x.EntranceFee.HasValue)
+                .WithMessage("Entrance fee must be between 0 and 10000 KM.");
+
             RuleForEach(x => x.Images).SetValidator(new DestinationImageValidator());
         }
     }

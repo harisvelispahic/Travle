@@ -20,6 +20,13 @@ namespace Travle.Services.Database
         public double Latitude { get; set; }
         public double Longitude { get; set; }
 
+        /// <summary>
+        /// Optional, purely informative entrance fee (in KM) travelers pay <b>at the destination</b> — it
+        /// is never added to a tour's price. Null means free (or unknown); the amount is a rough guide
+        /// ("bring around X"), not an authoritative, up-to-date charge.
+        /// </summary>
+        public decimal? EntranceFee { get; set; }
+
         public int SubmittedByUserId { get; set; }
         public User SubmittedByUser { get; set; } = null!;
 

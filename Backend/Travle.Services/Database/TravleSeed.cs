@@ -84,6 +84,14 @@ namespace Travle.Services.Database
                       IsSuspended = false, IsOnboarded = true, OnboardingPromptCount = 0, CreatedAt = SeedDate },
                 new { Id = 5, FirstName = "Lejla", LastName = "Traveler", Email = "traveler2@travle.com", Username = "traveler2",
                       PasswordHash = "OpluSY5uW8/O3RJjS37BjZaNnNBrwUb79gkix1bctqE=", PasswordSalt = "YuNDqqKGZWVIVJGM3s+jjQ==",
+                      IsSuspended = false, IsOnboarded = false, OnboardingPromptCount = 0, CreatedAt = SeedDate },
+                // Two more organizers so tours span 3+ organizers (03 §7). Password "test" — they reuse the
+                // organizer demo account's PBKDF2 hash+salt (same format), so they log in for the demo too.
+                new { Id = 6, FirstName = "Amir", LastName = "Hodžić", Email = "amir@travle.com", Username = "amir_tours",
+                      PasswordHash = "2FRMSidG5N9i/hqW9AXpRDLhOJq5DBQlRdE7MGBsaLU=", PasswordSalt = "d38hQJKnSdlVdlDAUMRJAA==",
+                      IsSuspended = false, IsOnboarded = false, OnboardingPromptCount = 0, CreatedAt = SeedDate },
+                new { Id = 7, FirstName = "Selma", LastName = "Begić", Email = "selma@travle.com", Username = "selma_travel",
+                      PasswordHash = "2FRMSidG5N9i/hqW9AXpRDLhOJq5DBQlRdE7MGBsaLU=", PasswordSalt = "d38hQJKnSdlVdlDAUMRJAA==",
                       IsSuspended = false, IsOnboarded = false, OnboardingPromptCount = 0, CreatedAt = SeedDate }
             );
         }
@@ -99,7 +107,9 @@ namespace Travle.Services.Database
                 new { UserId = 3, RoleId = 3 }, // curator   -> Curator
                 new { UserId = 3, RoleId = 2 }, // curator   -> Traveler (multi-role)
                 new { UserId = 4, RoleId = 2 }, // mobile    -> Traveler
-                new { UserId = 5, RoleId = 2 }  // traveler2 -> Traveler
+                new { UserId = 5, RoleId = 2 }, // traveler2 -> Traveler
+                new { UserId = 6, RoleId = 4 }, // amir_tours   -> Organizer
+                new { UserId = 7, RoleId = 4 }  // selma_travel -> Organizer
             );
         }
 
@@ -226,15 +236,15 @@ namespace Travle.Services.Database
             // seeded reviews below; ViewCount gives the popularity term something to work with.
             modelBuilder.Entity<Destination>().HasData(
                 new { Id = 1, Name = "Stari Most", Description = "The iconic 16th-century Ottoman bridge over the Neretva in Mostar, rebuilt after 1993 and a UNESCO World Heritage Site.", CategoryId = 1, CityId = 2, Latitude = 43.3373, Longitude = 17.8149, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = true, AverageRating = 4.5, ViewCount = 320, CreatedAt = SeedDate },
-                new { Id = 2, Name = "Kravice Waterfalls", Description = "A wide natural amphitheatre of waterfalls on the Trebižat river, popular for swimming in summer.", CategoryId = 2, CityId = 2, Latitude = 43.1583, Longitude = 17.6000, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = true, AverageRating = 5.0, ViewCount = 210, CreatedAt = SeedDate },
-                new { Id = 3, Name = "Vrelo Bosne", Description = "The spring of the river Bosna at the foot of Mount Igman, a landscaped park near Sarajevo.", CategoryId = 2, CityId = 1, Latitude = 43.8200, Longitude = 18.2600, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 95, CreatedAt = SeedDate },
-                new { Id = 4, Name = "Ostrožac Castle", Description = "A layered medieval-to-Ottoman fortress above the Una near Cazin.", CategoryId = 1, CityId = 7, Latitude = 44.9200, Longitude = 15.9800, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 40, CreatedAt = SeedDate },
+                new { Id = 2, Name = "Kravice Waterfalls", Description = "A wide natural amphitheatre of waterfalls on the Trebižat river, popular for swimming in summer.", CategoryId = 2, CityId = 2, Latitude = 43.1583, Longitude = 17.6000, EntranceFee = (decimal?)10.00m, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = true, AverageRating = 5.0, ViewCount = 210, CreatedAt = SeedDate },
+                new { Id = 3, Name = "Vrelo Bosne", Description = "The spring of the river Bosna at the foot of Mount Igman, a landscaped park near Sarajevo.", CategoryId = 2, CityId = 1, Latitude = 43.8200, Longitude = 18.2600, EntranceFee = (decimal?)2.00m, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 95, CreatedAt = SeedDate },
+                new { Id = 4, Name = "Ostrožac Castle", Description = "A layered medieval-to-Ottoman fortress above the Una near Cazin.", CategoryId = 1, CityId = 7, Latitude = 44.9200, Longitude = 15.9800, EntranceFee = (decimal?)5.00m, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 40, CreatedAt = SeedDate },
                 new { Id = 5, Name = "Bihać Old Town", Description = "The historic core of Bihać on the Una, with the Fethija mosque and Captain's Tower.", CategoryId = 7, CityId = 6, Latitude = 44.8100, Longitude = 15.8700, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 55, CreatedAt = SeedDate },
                 new { Id = 6, Name = "Srebrenik Fortress", Description = "A 13th-century fortress on a rock spur, one of the best-preserved in Bosnia.", CategoryId = 1, CityId = 12, Latitude = 44.7000, Longitude = 18.4900, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 30, CreatedAt = SeedDate },
-                new { Id = 7, Name = "Blagaj Tekija", Description = "A 16th-century dervish monastery built against a cliff at the source of the Buna river.", CategoryId = 3, CityId = 3, Latitude = 43.2570, Longitude = 17.8880, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = true, AverageRating = 5.0, ViewCount = 180, CreatedAt = SeedDate },
+                new { Id = 7, Name = "Blagaj Tekija", Description = "A 16th-century dervish monastery built against a cliff at the source of the Buna river.", CategoryId = 3, CityId = 3, Latitude = 43.2570, Longitude = 17.8880, EntranceFee = (decimal?)4.00m, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = true, AverageRating = 5.0, ViewCount = 180, CreatedAt = SeedDate },
                 new { Id = 8, Name = "Počitelj", Description = "A stepped Ottoman-era village and fortress overlooking the Neretva valley.", CategoryId = 7, CityId = 4, Latitude = 43.1300, Longitude = 17.7300, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 70, CreatedAt = SeedDate },
-                new { Id = 9, Name = "Jajce Waterfall", Description = "A 20-metre waterfall where the Pliva meets the Vrbas in the heart of Jajce.", CategoryId = 2, CityId = 10, Latitude = 44.3400, Longitude = 17.2700, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = true, AverageRating = 0.0, ViewCount = 240, CreatedAt = SeedDate },
-                new { Id = 10, Name = "Una National Park", Description = "Protected river canyons, rapids and waterfalls around the upper Una — Bosnia's rafting heartland.", CategoryId = 2, CityId = 6, Latitude = 44.6500, Longitude = 16.1500, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 130, CreatedAt = SeedDate },
+                new { Id = 9, Name = "Jajce Waterfall", Description = "A 20-metre waterfall where the Pliva meets the Vrbas in the heart of Jajce.", CategoryId = 2, CityId = 10, Latitude = 44.3400, Longitude = 17.2700, EntranceFee = (decimal?)6.00m, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = true, AverageRating = 0.0, ViewCount = 240, CreatedAt = SeedDate },
+                new { Id = 10, Name = "Una National Park", Description = "Protected river canyons, rapids and waterfalls around the upper Una — Bosnia's rafting heartland.", CategoryId = 2, CityId = 6, Latitude = 44.6500, Longitude = 16.1500, EntranceFee = (decimal?)15.00m, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = false, AverageRating = 0.0, ViewCount = 130, CreatedAt = SeedDate },
                 new { Id = 11, Name = "Baščaršija", Description = "Sarajevo's 15th-century Ottoman bazaar and cultural heart, full of coppersmiths and cafés.", CategoryId = 7, CityId = 1, Latitude = 43.8596, Longitude = 18.4306, SubmittedByUserId = 3, Status = DestinationStatus.Approved, ModeratedByUserId = (int?)1, ModeratedAt = (DateTime?)SeedDate, IsFeatured = true, AverageRating = 4.0, ViewCount = 260, CreatedAt = SeedDate },
                 // One Pending submission so the moderation queue is non-empty on first run.
                 new { Id = 12, Name = "Vranduk Fortress", Description = "A small medieval fortress guarding the Bosna gorge north of Zenica.", CategoryId = 1, CityId = 13, Latitude = 44.2800, Longitude = 17.9800, SubmittedByUserId = 3, Status = DestinationStatus.Pending, ModeratedByUserId = (int?)null, ModeratedAt = (DateTime?)null, IsFeatured = false, AverageRating = 0.0, ViewCount = 0, CreatedAt = SeedDate }
@@ -267,7 +277,14 @@ namespace Travle.Services.Database
                 new { Id = 2, OrganizerId = 2, Name = "Kravice Waterfalls Day Trip", Description = "A full-day excursion to the Kravice waterfalls with a stop in Počitelj.", DurationMinutes = 300, PricePerPerson = 45.00m, Capacity = 12, TourTypeId = 3, IsActive = true, CreatedAt = SeedDate },
                 new { Id = 3, OrganizerId = 2, Name = "Sarajevo Cultural Heritage Tour", Description = "From Vrelo Bosne to Baščaršija — the natural and Ottoman heritage around Sarajevo.", DurationMinutes = 180, PricePerPerson = 30.00m, Capacity = 20, TourTypeId = 2, IsActive = true, CreatedAt = SeedDate },
                 new { Id = 4, OrganizerId = 2, Name = "Una National Park Rafting", Description = "A guided rafting descent of the upper Una with a visit to Bihać old town.", DurationMinutes = 240, PricePerPerson = 60.00m, Capacity = 10, TourTypeId = 3, IsActive = true, CreatedAt = SeedDate },
-                new { Id = 5, OrganizerId = 2, Name = "Blagaj & Počitelj Excursion", Description = "A half-day cultural excursion to the Buna spring and the fortress village of Počitelj.", DurationMinutes = 360, PricePerPerson = 40.00m, Capacity = 16, TourTypeId = 2, IsActive = true, CreatedAt = SeedDate }
+                new { Id = 5, OrganizerId = 2, Name = "Blagaj & Počitelj Excursion", Description = "A half-day cultural excursion to the Buna spring and the fortress village of Počitelj.", DurationMinutes = 360, PricePerPerson = 40.00m, Capacity = 16, TourTypeId = 2, IsActive = true, CreatedAt = SeedDate },
+                // Tours from the two additional organizers (6 = Amir, 7 = Selma), so the catalogue spans
+                // three organizers (03 §7). SeatsTaken on their schedules stays 0 (bookings arrive in P5).
+                new { Id = 6, OrganizerId = 6, Name = "Jajce Waterfall Discovery", Description = "A relaxed guided walk around the Jajce waterfall and the old town above it.", DurationMinutes = 90, PricePerPerson = 20.00m, Capacity = 15, TourTypeId = 1, IsActive = true, CreatedAt = SeedDate },
+                new { Id = 7, OrganizerId = 7, Name = "Sarajevo Food & Bazaar Walk", Description = "A tasting walk through Baščaršija — ćevapi, Bosnian coffee and sweets among the coppersmiths.", DurationMinutes = 150, PricePerPerson = 35.00m, Capacity = 10, TourTypeId = 4, IsActive = true, CreatedAt = SeedDate },
+                new { Id = 8, OrganizerId = 7, Name = "Srebrenik Fortress Trail", Description = "A guided visit to the dramatic clifftop fortress of Srebrenik, one of Bosnia's best preserved.", DurationMinutes = 120, PricePerPerson = 22.00m, Capacity = 18, TourTypeId = 2, IsActive = true, CreatedAt = SeedDate },
+                new { Id = 9, OrganizerId = 6, Name = "Una Canyon & Ostrožac Castle", Description = "An adventure day combining the Ostrožac castle with the canyons of the upper Una.", DurationMinutes = 300, PricePerPerson = 55.00m, Capacity = 12, TourTypeId = 3, IsActive = true, CreatedAt = SeedDate },
+                new { Id = 10, OrganizerId = 7, Name = "Počitelj & Blagaj Heritage Walk", Description = "An unhurried heritage walk through Počitelj's stepped lanes and the Blagaj dervish lodge.", DurationMinutes = 240, PricePerPerson = 38.00m, Capacity = 14, TourTypeId = 2, IsActive = true, CreatedAt = SeedDate }
             );
         }
 
@@ -283,7 +300,15 @@ namespace Travle.Services.Database
                 new { Id = 7, TourId = 4, DestinationId = 10, SortOrder = 1, CreatedAt = SeedDate },
                 new { Id = 8, TourId = 4, DestinationId = 5, SortOrder = 2, CreatedAt = SeedDate },
                 new { Id = 9, TourId = 5, DestinationId = 7, SortOrder = 1, CreatedAt = SeedDate },
-                new { Id = 10, TourId = 5, DestinationId = 8, SortOrder = 2, CreatedAt = SeedDate }
+                new { Id = 10, TourId = 5, DestinationId = 8, SortOrder = 2, CreatedAt = SeedDate },
+                // Itineraries for the new tours 6–10 (all use approved destinations).
+                new { Id = 11, TourId = 6, DestinationId = 9, SortOrder = 1, CreatedAt = SeedDate },  // Jajce Waterfall
+                new { Id = 12, TourId = 7, DestinationId = 11, SortOrder = 1, CreatedAt = SeedDate }, // Baščaršija
+                new { Id = 13, TourId = 8, DestinationId = 6, SortOrder = 1, CreatedAt = SeedDate },  // Srebrenik Fortress
+                new { Id = 14, TourId = 9, DestinationId = 4, SortOrder = 1, CreatedAt = SeedDate },  // Ostrožac Castle
+                new { Id = 15, TourId = 9, DestinationId = 10, SortOrder = 2, CreatedAt = SeedDate }, // Una National Park
+                new { Id = 16, TourId = 10, DestinationId = 8, SortOrder = 1, CreatedAt = SeedDate }, // Počitelj
+                new { Id = 17, TourId = 10, DestinationId = 7, SortOrder = 2, CreatedAt = SeedDate }  // Blagaj Tekija
             );
         }
 
@@ -301,7 +326,19 @@ namespace Travle.Services.Database
                 new { Id = 7, TourId = 3, StartsAt = new DateTime(2026, 5, 30, 9, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 5, 30, 12, 0, 0, DateTimeKind.Utc), Capacity = 20, SeatsTaken = 0, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
                 new { Id = 8, TourId = 4, StartsAt = new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc), Capacity = 10, SeatsTaken = 0, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
                 new { Id = 9, TourId = 5, StartsAt = new DateTime(2026, 8, 25, 8, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 8, 25, 14, 0, 0, DateTimeKind.Utc), Capacity = 16, SeatsTaken = 0, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
-                new { Id = 10, TourId = 5, StartsAt = new DateTime(2026, 6, 10, 8, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 6, 10, 14, 0, 0, DateTimeKind.Utc), Capacity = 16, SeatsTaken = 0, Status = ScheduleStatus.Active, CreatedAt = SeedDate }
+                new { Id = 10, TourId = 5, StartsAt = new DateTime(2026, 6, 10, 8, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 6, 10, 14, 0, 0, DateTimeKind.Utc), Capacity = 16, SeatsTaken = 0, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
+                // Schedules for the new tours 6–10 (EndsAt = StartsAt + the tour's duration). Future slots
+                // plus a couple of past ones; no seeded bookings yet, so SeatsTaken is 0.
+                new { Id = 11, TourId = 6, StartsAt = new DateTime(2026, 8, 18, 10, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 8, 18, 11, 30, 0, DateTimeKind.Utc), Capacity = 15, SeatsTaken = 0, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
+                new { Id = 12, TourId = 6, StartsAt = new DateTime(2026, 9, 5, 10, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 9, 5, 11, 30, 0, DateTimeKind.Utc), Capacity = 15, SeatsTaken = 0, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
+                new { Id = 13, TourId = 7, StartsAt = new DateTime(2026, 8, 22, 17, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 8, 22, 19, 30, 0, DateTimeKind.Utc), Capacity = 10, SeatsTaken = 0, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
+                new { Id = 14, TourId = 7, StartsAt = new DateTime(2026, 9, 12, 17, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 9, 12, 19, 30, 0, DateTimeKind.Utc), Capacity = 10, SeatsTaken = 0, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
+                new { Id = 15, TourId = 8, StartsAt = new DateTime(2026, 8, 28, 11, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 8, 28, 13, 0, 0, DateTimeKind.Utc), Capacity = 18, SeatsTaken = 0, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
+                new { Id = 16, TourId = 8, StartsAt = new DateTime(2026, 6, 15, 11, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 6, 15, 13, 0, 0, DateTimeKind.Utc), Capacity = 18, SeatsTaken = 0, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
+                new { Id = 17, TourId = 9, StartsAt = new DateTime(2026, 9, 3, 8, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 9, 3, 13, 0, 0, DateTimeKind.Utc), Capacity = 12, SeatsTaken = 0, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
+                new { Id = 18, TourId = 9, StartsAt = new DateTime(2026, 9, 20, 8, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 9, 20, 13, 0, 0, DateTimeKind.Utc), Capacity = 12, SeatsTaken = 0, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
+                new { Id = 19, TourId = 10, StartsAt = new DateTime(2026, 8, 30, 9, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 8, 30, 13, 0, 0, DateTimeKind.Utc), Capacity = 14, SeatsTaken = 0, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
+                new { Id = 20, TourId = 10, StartsAt = new DateTime(2026, 7, 5, 9, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 7, 5, 13, 0, 0, DateTimeKind.Utc), Capacity = 14, SeatsTaken = 0, Status = ScheduleStatus.Active, CreatedAt = SeedDate }
             );
         }
 

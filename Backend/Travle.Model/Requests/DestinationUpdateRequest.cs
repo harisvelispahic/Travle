@@ -17,6 +17,9 @@ namespace Travle.Model.Requests
         public double Latitude { get; set; }
         public double Longitude { get; set; }
 
+        /// <summary>Optional entrance fee (KM) paid at the destination; null = free/unknown. Informative only.</summary>
+        public decimal? EntranceFee { get; set; }
+
         public List<int> TagIds { get; set; } = new List<int>();
         public List<DestinationImageEditItem> Images { get; set; } = new List<DestinationImageEditItem>();
     }

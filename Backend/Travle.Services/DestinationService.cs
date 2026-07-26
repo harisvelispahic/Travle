@@ -227,6 +227,7 @@ namespace Travle.Services
                 CityId = request.CityId,
                 Latitude = request.Latitude,
                 Longitude = request.Longitude,
+                EntranceFee = request.EntranceFee,
                 SubmittedByUserId = userId,
                 Status = DestinationStatus.Pending
             };
@@ -269,6 +270,7 @@ namespace Travle.Services
             destination.CityId = request.CityId;
             destination.Latitude = request.Latitude;
             destination.Longitude = request.Longitude;
+            destination.EntranceFee = request.EntranceFee;
 
             // Any edit sends the destination back for moderation (course rule); clear the prior decision.
             destination.Status = DestinationStatus.Pending;
@@ -436,6 +438,7 @@ namespace Travle.Services
                 CountryName = d.City.Region.Country.Name,
                 Latitude = d.Latitude,
                 Longitude = d.Longitude,
+                EntranceFee = d.EntranceFee,
                 Status = d.Status.ToString(),
                 IsFeatured = d.IsFeatured,
                 AverageRating = d.AverageRating,

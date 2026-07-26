@@ -48,6 +48,7 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
   final _description = TextEditingController();
   final _latitude = TextEditingController();
   final _longitude = TextEditingController();
+  final _entranceFee = TextEditingController();
 
   List<DestinationCategoryResponse> _categories = [];
   List<CityResponse> _cities = [];
@@ -78,6 +79,9 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
       _description.text = existing.description;
       _latitude.text = existing.latitude.toString();
       _longitude.text = existing.longitude.toString();
+      if (existing.entranceFee != null) {
+        _entranceFee.text = existing.entranceFee!.toStringAsFixed(2);
+      }
       _categoryId = existing.categoryId;
       _cityId = existing.cityId;
       _selectedTagIds.addAll(existing.tags.map((t) => t.id));
@@ -91,6 +95,7 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
     _description.dispose();
     _latitude.dispose();
     _longitude.dispose();
+    _entranceFee.dispose();
     super.dispose();
   }
 
@@ -194,6 +199,17 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
     });
   }
 
+  String? _validateEntranceFee(String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) return null; // optional — blank means free/unknown
+    final parsed = double.tryParse(text);
+    if (parsed == null) return 'Entrance fee must be a number';
+    if (parsed < 0 || parsed > 10000) {
+      return 'Entrance fee must be between 0 and 10000 KM';
+    }
+    return null;
+  }
+
   Future<void> _submit() async {
     setState(() => _error = null);
     if (!_formKey.currentState!.validate()) return;
@@ -217,6 +233,8 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
 
     final latitude = double.parse(_latitude.text.trim());
     final longitude = double.parse(_longitude.text.trim());
+    final feeText = _entranceFee.text.trim();
+    final entranceFee = feeText.isEmpty ? null : double.parse(feeText);
 
     setState(() => _busy = true);
     try {
@@ -230,6 +248,7 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
             cityId: _cityId!,
             latitude: latitude,
             longitude: longitude,
+            entranceFee: entranceFee,
             tagIds: _selectedTagIds.toList(),
             images: [
               for (var i = 0; i < _images.length; i++)
@@ -253,6 +272,7 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
             cityId: _cityId!,
             latitude: latitude,
             longitude: longitude,
+            entranceFee: entranceFee,
             tagIds: _selectedTagIds.toList(),
             images: [
               for (var i = 0; i < _images.length; i++)
@@ -358,6 +378,20 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
                       textInputAction: TextInputAction.newline,
                       validator: (v) =>
                           Validators.required(v, field: 'Description'),
+                    ),
+                    const SizedBox(height: TravleTokens.space16),
+                    TravleTextField(
+                      controller: _entranceFee,
+                      label: 'Entrance fee (KM, optional)',
+                      helperText:
+                          'Leave blank if free. Shown to travelers as a reminder — never added to a tour price.',
+                      prefixIcon: Icons.confirmation_number_outlined,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                      ],
+                      validator: _validateEntranceFee,
                     ),
                     const SizedBox(height: TravleTokens.space24),
                     _SectionLabel('Tags'),

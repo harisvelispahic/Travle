@@ -19,6 +19,8 @@ namespace Travle.Services.Database.Configurations
 
             builder.Property(d => d.RejectionReason).HasMaxLength(500);
 
+            builder.Property(d => d.EntranceFee).HasPrecision(18, 2);
+
             builder.HasOne(d => d.Category)
                 .WithMany(c => c.Destinations)
                 .HasForeignKey(d => d.CategoryId)

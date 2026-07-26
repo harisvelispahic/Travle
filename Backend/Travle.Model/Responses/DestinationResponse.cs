@@ -25,6 +25,12 @@ namespace Travle.Model.Responses
         public double Latitude { get; set; }
         public double Longitude { get; set; }
 
+        /// <summary>
+        /// Optional informative entrance fee (KM) paid at the destination — never part of a tour's price.
+        /// Null = free/unknown; treat the amount as an approximate "bring around X" guide.
+        /// </summary>
+        public decimal? EntranceFee { get; set; }
+
         /// <summary>Pending / Approved / Rejected — the enum name, never the raw int.</summary>
         public string Status { get; set; } = string.Empty;
 

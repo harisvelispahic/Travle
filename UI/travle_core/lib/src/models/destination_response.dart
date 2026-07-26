@@ -26,6 +26,7 @@ class DestinationResponse {
     required this.viewCount,
     required this.submittedByUserId,
     required this.createdAt,
+    this.entranceFee,
     this.categoryName,
     this.cityName,
     this.regionName,
@@ -56,6 +57,10 @@ class DestinationResponse {
 
   final double latitude;
   final double longitude;
+
+  /// Optional entrance fee (KM) paid at the destination — never part of a tour's
+  /// price. Null = free/unknown; the amount is an approximate "bring around X" guide.
+  final double? entranceFee;
 
   /// Pending / Approved / Rejected — the enum name, never a raw int.
   final String status;

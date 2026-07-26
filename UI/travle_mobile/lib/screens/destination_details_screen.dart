@@ -313,6 +313,10 @@ class _DetailsContent extends StatelessWidget {
             ],
           ),
         ],
+        if (destination.entranceFee != null) ...[
+          const SizedBox(height: TravleTokens.space16),
+          _EntranceFeeReminder(fee: destination.entranceFee!),
+        ],
         const SizedBox(height: TravleTokens.space24),
         Text('About', style: theme.textTheme.titleMedium),
         const SizedBox(height: TravleTokens.space8),
@@ -322,6 +326,45 @@ class _DetailsContent extends StatelessWidget {
         const SizedBox(height: TravleTokens.space8),
         _LocationPanel(destination: destination),
       ],
+    );
+  }
+}
+
+/// A friendly, informative reminder that the destination charges an entrance fee
+/// paid on site — deliberately worded as an approximate "bring around X" nudge,
+/// since the amount may be out of date and is never part of a tour's price.
+class _EntranceFeeReminder extends StatelessWidget {
+  const _EntranceFeeReminder({required this.fee});
+
+  final double fee;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(TravleTokens.space12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(TravleTokens.radius),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.confirmation_number_outlined,
+              color: theme.colorScheme.onSecondaryContainer),
+          const SizedBox(width: TravleTokens.space12),
+          Expanded(
+            child: Text(
+              'Heads up: bring around ${fee.toStringAsFixed(2)} KM in cash for the '
+              'entrance fee, paid at the destination. It is not included in any tour '
+              'price, and the amount is approximate — it may have changed.',
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onSecondaryContainer),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

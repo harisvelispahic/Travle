@@ -15,6 +15,7 @@ DestinationInsertRequest _$DestinationInsertRequestFromJson(
   cityId: (json['cityId'] as num).toInt(),
   latitude: (json['latitude'] as num).toDouble(),
   longitude: (json['longitude'] as num).toDouble(),
+  entranceFee: (json['entranceFee'] as num?)?.toDouble(),
   tagIds:
       (json['tagIds'] as List<dynamic>?)
           ?.map((e) => (e as num).toInt())
@@ -38,6 +39,7 @@ Map<String, dynamic> _$DestinationInsertRequestToJson(
   'cityId': instance.cityId,
   'latitude': instance.latitude,
   'longitude': instance.longitude,
+  'entranceFee': instance.entranceFee,
   'tagIds': instance.tagIds,
   'images': instance.images,
 };

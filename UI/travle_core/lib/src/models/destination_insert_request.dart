@@ -17,6 +17,7 @@ class DestinationInsertRequest {
     required this.cityId,
     required this.latitude,
     required this.longitude,
+    this.entranceFee,
     this.tagIds = const [],
     this.images = const [],
   });
@@ -27,6 +28,9 @@ class DestinationInsertRequest {
   final int cityId;
   final double latitude;
   final double longitude;
+
+  /// Optional entrance fee (KM) paid at the destination; null = free/unknown.
+  final double? entranceFee;
   final List<int> tagIds;
   final List<DestinationImageRequest> images;
 

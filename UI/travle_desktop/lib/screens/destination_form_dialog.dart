@@ -57,6 +57,7 @@ class _DestinationFormDialogState extends State<DestinationFormDialog> {
   final _description = TextEditingController();
   final _latitude = TextEditingController();
   final _longitude = TextEditingController();
+  final _entranceFee = TextEditingController();
 
   List<DestinationCategoryResponse> _categories = [];
   List<CityResponse> _cities = [];
@@ -86,6 +87,9 @@ class _DestinationFormDialogState extends State<DestinationFormDialog> {
       _description.text = existing.description;
       _latitude.text = existing.latitude.toString();
       _longitude.text = existing.longitude.toString();
+      if (existing.entranceFee != null) {
+        _entranceFee.text = existing.entranceFee!.toStringAsFixed(2);
+      }
       _categoryId = existing.categoryId;
       _cityId = existing.cityId;
       _selectedTagIds.addAll(existing.tags.map((t) => t.id));
@@ -99,6 +103,7 @@ class _DestinationFormDialogState extends State<DestinationFormDialog> {
     _description.dispose();
     _latitude.dispose();
     _longitude.dispose();
+    _entranceFee.dispose();
     super.dispose();
   }
 
@@ -196,6 +201,17 @@ class _DestinationFormDialogState extends State<DestinationFormDialog> {
     });
   }
 
+  String? _validateEntranceFee(String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) return null; // optional — blank means free/unknown
+    final parsed = double.tryParse(text);
+    if (parsed == null) return 'Entrance fee must be a number';
+    if (parsed < 0 || parsed > 10000) {
+      return 'Entrance fee must be between 0 and 10000 KM';
+    }
+    return null;
+  }
+
   Future<void> _submit() async {
     if (_submitting) return;
     if (!_formKey.currentState!.validate()) return;
@@ -210,6 +226,8 @@ class _DestinationFormDialogState extends State<DestinationFormDialog> {
     try {
       final latitude = double.parse(_latitude.text.trim());
       final longitude = double.parse(_longitude.text.trim());
+      final feeText = _entranceFee.text.trim();
+      final entranceFee = feeText.isEmpty ? null : double.parse(feeText);
       if (widget.isEditing) {
         await provider.edit(
           widget.existing!.id,
@@ -220,6 +238,7 @@ class _DestinationFormDialogState extends State<DestinationFormDialog> {
             cityId: _cityId!,
             latitude: latitude,
             longitude: longitude,
+            entranceFee: entranceFee,
             tagIds: _selectedTagIds.toList(),
             images: [
               for (var i = 0; i < _images.length; i++)
@@ -243,6 +262,7 @@ class _DestinationFormDialogState extends State<DestinationFormDialog> {
             cityId: _cityId!,
             latitude: latitude,
             longitude: longitude,
+            entranceFee: entranceFee,
             tagIds: _selectedTagIds.toList(),
             images: [
               for (var i = 0; i < _images.length; i++)
@@ -385,6 +405,19 @@ class _DestinationFormDialogState extends State<DestinationFormDialog> {
               maxLength: 4000,
               keyboardType: TextInputType.multiline,
               validator: (v) => Validators.required(v, field: 'Description'),
+            ),
+            const SizedBox(height: TravleTokens.space16),
+            TravleTextField(
+              controller: _entranceFee,
+              label: 'Entrance fee (KM, optional)',
+              helperText:
+                  'Leave blank if free. Informative only — never added to a tour price.',
+              prefixIcon: Icons.confirmation_number_outlined,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+              ],
+              validator: _validateEntranceFee,
             ),
             const SizedBox(height: TravleTokens.space24),
             _SectionLabel('Tags'),
