@@ -5,15 +5,18 @@ import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
+import '../widgets/tour_card.dart';
+import 'tour_details_screen.dart';
+
 /// Traveler-facing destination details (mockup Slika 8). Opening the screen
 /// fetches the detail via `GET /Destinations/{id}`, which logs a View interaction
 /// and bumps ViewCount server-side (for an approved destination viewed by someone
 /// other than its submitter). Shows the full-image gallery (fetched from the image
-/// endpoint, decoded once), header + rating, tags, an expandable description, and a
-/// location panel.
+/// endpoint, decoded once), header + rating, tags, an expandable description, a
+/// location panel, and the tours that visit this destination (§Phase 4).
 ///
-/// Tours, reviews, similar destinations, and the favorite toggle arrive in their
-/// own phases (4 / 7 / 8) and are intentionally not stubbed here.
+/// Reviews, similar destinations, and the favorite toggle arrive in their own
+/// phases (7 / 8) and are intentionally not stubbed here.
 class DestinationDetailsScreen extends StatefulWidget {
   const DestinationDetailsScreen({
     super.key,
@@ -111,6 +114,122 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
           padding: const EdgeInsets.all(TravleTokens.space16),
           child: _DetailsContent(destination: destination),
         ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            TravleTokens.space16,
+            0,
+            TravleTokens.space16,
+            TravleTokens.space16,
+          ),
+          child: _ToursSection(
+            destinationId: destination.id,
+            destinationName: destination.name,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The tours that visit this destination (`GET /Tours?destinationId=…`, active
+/// only). Loads independently; the whole section hides when there are none, so a
+/// destination with no tours shows nothing rather than an empty header.
+class _ToursSection extends StatefulWidget {
+  const _ToursSection({required this.destinationId, required this.destinationName});
+
+  final int destinationId;
+  final String destinationName;
+
+  @override
+  State<_ToursSection> createState() => _ToursSectionState();
+}
+
+class _ToursSectionState extends State<_ToursSection> {
+  bool _loading = true;
+  String? _error;
+  List<TourResponse> _tours = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final result = await context.read<TourProvider>().get(
+        filter: {
+          'destinationId': widget.destinationId,
+          'isActive': true,
+          'pageSize': 20,
+          'sortBy': 'CreatedAt desc',
+        },
+      );
+      if (!mounted) return;
+      setState(() {
+        _tours = result.items;
+        _loading = false;
+      });
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.message;
+        _loading = false;
+      });
+    }
+  }
+
+  void _openTour(TourResponse tour) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            TourDetailsScreen(tourId: tour.id, initialName: tour.name),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    // Nothing to show and nothing to retry → take up no space at all.
+    if (!_loading && _error == null && _tours.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Tours visiting here', style: theme.textTheme.titleMedium),
+        const SizedBox(height: TravleTokens.space8),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: TravleTokens.space16),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_error != null)
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _error!,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.error),
+                ),
+              ),
+              TextButton(onPressed: _load, child: const Text('Retry')),
+            ],
+          )
+        else
+          for (final tour in _tours)
+            Padding(
+              padding: const EdgeInsets.only(bottom: TravleTokens.space8),
+              child: TourCard(tour: tour, onTap: () => _openTour(tour)),
+            ),
       ],
     );
   }
