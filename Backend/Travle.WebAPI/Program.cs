@@ -135,6 +135,7 @@ TypeAdapterConfig<RoleApplication, RoleApplicationResponse>.NewConfig()
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IRoleApplicationService, RoleApplicationService>();
 builder.Services.AddScoped<IDestinationService, DestinationService>();
+builder.Services.AddScoped<ITourService, TourService>();
 
 // Managed, cross-platform image codec for server-side thumbnails (stateless → singleton).
 builder.Services.AddSingleton<IThumbnailGenerator, ImageSharpThumbnailGenerator>();
