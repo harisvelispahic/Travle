@@ -18,6 +18,13 @@ namespace Travle.Model.Responses
         public int DurationMinutes { get; set; }
         public decimal PricePerPerson { get; set; }
 
+        /// <summary>
+        /// Sum of the visited destinations' informative entrance fees (KM), <b>per person</b> — money the
+        /// traveler pays on-site, never part of the Travle charge. 0 when no stop has a fee. Shown as a
+        /// "bring around X" guide, not an authoritative total.
+        /// </summary>
+        public decimal EntranceFeesPerPerson { get; set; }
+
         /// <summary>Default group size seeded into new schedules; each slot may override it.</summary>
         public int Capacity { get; set; }
 

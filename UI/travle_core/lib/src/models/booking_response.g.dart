@@ -19,6 +19,8 @@ BookingResponse _$BookingResponseFromJson(Map<String, dynamic> json) =>
       tourName: json['tourName'] as String,
       numberOfPeople: (json['numberOfPeople'] as num).toInt(),
       totalAmount: (json['totalAmount'] as num).toDouble(),
+      entranceFeesPerPerson:
+          (json['entranceFeesPerPerson'] as num?)?.toDouble() ?? 0,
       statusId: (json['statusId'] as num).toInt(),
       status: json['status'] as String,
       statusChangedAt: DateTime.parse(json['statusChangedAt'] as String),
@@ -60,6 +62,7 @@ Map<String, dynamic> _$BookingResponseToJson(BookingResponse instance) =>
       'tourName': instance.tourName,
       'numberOfPeople': instance.numberOfPeople,
       'totalAmount': instance.totalAmount,
+      'entranceFeesPerPerson': instance.entranceFeesPerPerson,
       'statusId': instance.statusId,
       'status': instance.status,
       'statusChangedAt': instance.statusChangedAt.toIso8601String(),

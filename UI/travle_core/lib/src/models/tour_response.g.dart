@@ -13,6 +13,8 @@ TourResponse _$TourResponseFromJson(Map<String, dynamic> json) => TourResponse(
   durationMinutes: (json['durationMinutes'] as num).toInt(),
   pricePerPerson: (json['pricePerPerson'] as num).toDouble(),
   capacity: (json['capacity'] as num).toInt(),
+  entranceFeesPerPerson:
+      (json['entranceFeesPerPerson'] as num?)?.toDouble() ?? 0,
   tourTypeId: (json['tourTypeId'] as num).toInt(),
   organizerId: (json['organizerId'] as num).toInt(),
   isActive: json['isActive'] as bool,
@@ -46,6 +48,7 @@ Map<String, dynamic> _$TourResponseToJson(TourResponse instance) =>
       'description': instance.description,
       'durationMinutes': instance.durationMinutes,
       'pricePerPerson': instance.pricePerPerson,
+      'entranceFeesPerPerson': instance.entranceFeesPerPerson,
       'capacity': instance.capacity,
       'tourTypeId': instance.tourTypeId,
       'tourTypeName': instance.tourTypeName,

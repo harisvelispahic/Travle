@@ -20,6 +20,7 @@ dependencies:
     path: ../travle_core
   travle_ui:
     path: ../travle_ui
+  flutter_stripe: ^13.1.0
 
 dev_dependencies:
   flutter_test:

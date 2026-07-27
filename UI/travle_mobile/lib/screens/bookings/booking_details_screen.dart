@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_stripe/flutter_stripe.dart' as stripe;
 import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
 import '../../util/booking_display.dart';
 import '../../util/formatting.dart';
+import '../../widgets/entrance_fee_note.dart';
 import '../tour_details_screen.dart';
 
 /// The detail half of the traveler's booking master-detail. Shows the full
@@ -27,6 +29,8 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   BookingResponse? _booking;
   bool _loading = true;
   bool _busy = false;
+  // True while we wait for the Stripe webhook to promote a just-paid booking to Pending.
+  bool _confirmingPayment = false;
   String? _error;
 
   @override
@@ -148,25 +152,169 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   }
 
   Future<void> _pay() async {
-    // Stub: Stripe PaymentSheet arrives in Phase 6. The booking is already holding
-    // seats; here we only explain what will happen so the flow is honest.
-    await showDialog<void>(
+    final booking = _booking!;
+
+    // Show the amount + the cancellation-refund policy before charging (spec §3.4).
+    final confirmed = await _confirmPay(booking);
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      // 1. Server creates the PaymentIntent (amount + fee snapshot are server-side).
+      final intent =
+          await context.read<PaymentProvider>().createIntent(booking.id);
+
+      // 2. Initialise the Stripe SDK with the (non-secret) publishable key the
+      //    server returned, then present the PaymentSheet for the client secret.
+      stripe.Stripe.publishableKey = intent.publishableKey;
+      await stripe.Stripe.instance.applySettings();
+      await stripe.Stripe.instance.initPaymentSheet(
+        paymentSheetParameters: stripe.SetupPaymentSheetParameters(
+          paymentIntentClientSecret: intent.clientSecret,
+          merchantDisplayName: 'Travle',
+        ),
+      );
+      await stripe.Stripe.instance.presentPaymentSheet();
+
+      // 3. The card is confirmed. Success is recorded server-side by the webhook,
+      //    which promotes the booking to Pending — poll until that lands.
+      if (!mounted) return;
+      setState(() => _confirmingPayment = true);
+      await _awaitPaymentConfirmed(booking.id);
+    } on stripe.StripeException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _confirmingPayment = false;
+      });
+      // A user-cancelled sheet is not an error; anything else is surfaced.
+      if (e.error.code != stripe.FailureCode.Canceled) {
+        AppSnackbars.error(
+            context, e.error.localizedMessage ?? 'Payment failed. Please try again.');
+      }
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _confirmingPayment = false;
+      });
+      AppSnackbars.error(context, e.message);
+    }
+  }
+
+  // Amount + refund-policy confirmation shown before the PaymentSheet. Returns true
+  // when the traveler confirms. The policy tiers are read live so they always match
+  // what the server would actually refund.
+  Future<bool?> _confirmPay(BookingResponse booking) async {
+    List<RefundPolicyTierResponse> tiers = const [];
+    try {
+      final result = await RefundPolicyTierProvider().get();
+      tiers = result.items.toList()
+        ..sort((a, b) => b.hoursBeforeMin.compareTo(a.hoursBeforeMin));
+    } on ApiClientException {
+      // Non-fatal: still allow paying without the policy table.
+    }
+    if (!mounted) return false;
+
+    final theme = Theme.of(context);
+    return showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Payment coming soon'),
-        content: const Text(
-          'Online payment (Stripe) will be available in the next update. Your '
-          'seats are held for 15 minutes from checkout; if payment is not '
-          'completed in time, the hold is released automatically.',
+        title: const Text('Confirm payment'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "You'll be charged ${formatPrice(booking.totalAmount)} for "
+              '${booking.numberOfPeople} ${booking.numberOfPeople == 1 ? 'seat' : 'seats'}.',
+              style: theme.textTheme.bodyMedium,
+            ),
+            if (booking.entranceFeesPerPerson > 0) ...[
+              const SizedBox(height: TravleTokens.space8),
+              Text(
+                'Separately, bring around ${formatPrice(booking.entranceFeesPerPerson)} '
+                'per person for on-site entrance fees — not charged by Travle.',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ],
+            if (tiers.isNotEmpty) ...[
+              const SizedBox(height: TravleTokens.space16),
+              Text('If you cancel later', style: theme.textTheme.titleSmall),
+              const SizedBox(height: TravleTokens.space8),
+              ...tiers.map(
+                (t) => Padding(
+                  padding: const EdgeInsets.only(bottom: TravleTokens.space4),
+                  child: Text('• ${_refundTierLine(t)}',
+                      style: theme.textTheme.bodySmall),
+                ),
+              ),
+            ],
+          ],
         ),
         actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Not now'),
+          ),
           FilledButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Got it'),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text('Pay ${formatPrice(booking.totalAmount)}'),
           ),
         ],
       ),
     );
+  }
+
+  // Human-readable line for one refund tier, e.g. "More than 72h before: 100% back".
+  String _refundTierLine(RefundPolicyTierResponse t) {
+    final String window;
+    if (t.hoursBeforeMax == null) {
+      window = 'More than ${t.hoursBeforeMin}h before departure';
+    } else if (t.hoursBeforeMin == 0) {
+      window = 'Less than ${t.hoursBeforeMax}h before departure';
+    } else {
+      window = '${t.hoursBeforeMin}–${t.hoursBeforeMax}h before departure';
+    }
+    return t.percentage > 0
+        ? '$window: ${t.percentage}% refunded'
+        : '$window: no refund';
+  }
+
+  // Polls the booking after a confirmed card payment until the webhook has promoted
+  // it (paid / no longer PaymentInProgress), or a short timeout elapses.
+  Future<void> _awaitPaymentConfirmed(int bookingId) async {
+    for (var attempt = 0; attempt < 6; attempt++) {
+      await Future<void>.delayed(const Duration(milliseconds: 1200));
+      if (!mounted) return;
+      try {
+        final updated =
+            await context.read<BookingProvider>().getDetail(bookingId);
+        if (!mounted) return;
+        if (updated.isPaid || !updated.isPaymentInProgress) {
+          setState(() {
+            _booking = updated;
+            _busy = false;
+            _confirmingPayment = false;
+          });
+          AppSnackbars.success(
+              context, 'Payment successful — your booking is awaiting confirmation.');
+          return;
+        }
+      } on ApiClientException {
+        // Transient — keep polling.
+      }
+    }
+
+    // The webhook hasn't landed yet; leave the booking as-is and let the user know.
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _confirmingPayment = false;
+    });
+    AppSnackbars.success(
+        context, 'Payment received. Your booking will update shortly.');
   }
 
   @override
@@ -210,6 +358,10 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         _Header(booking: booking, onOpenTour: _openTour),
         const SizedBox(height: TravleTokens.space24),
         _DetailCard(booking: booking),
+        if (booking.entranceFeesPerPerson > 0) ...[
+          const SizedBox(height: TravleTokens.space16),
+          EntranceFeeNote(amountPerPerson: booking.entranceFeesPerPerson),
+        ],
         if (booking.isPaymentInProgress && booking.expiresAt != null) ...[
           const SizedBox(height: TravleTokens.space16),
           _HoldNotice(expiresAt: booking.expiresAt!),
@@ -233,6 +385,10 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
           ),
         ],
         const SizedBox(height: TravleTokens.space24),
+        if (_confirmingPayment) ...[
+          _ConfirmingPaymentNotice(),
+          const SizedBox(height: TravleTokens.space16),
+        ],
         if (booking.canCancel && booking.cancellationRefundPercentage != null)
           Padding(
             padding: const EdgeInsets.only(bottom: TravleTokens.space8),
@@ -505,6 +661,36 @@ class _HoldNoticeState extends State<_HoldNotice> {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shown while we wait for the Stripe webhook to promote a just-paid booking.
+class _ConfirmingPaymentNotice extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(TravleTokens.space16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(TravleTokens.radius),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: TravleTokens.space12),
+          Expanded(
+            child: Text('Confirming your payment…',
+                style: theme.textTheme.bodyMedium),
           ),
         ],
       ),

@@ -19,6 +19,7 @@ class TourResponse {
     required this.durationMinutes,
     required this.pricePerPerson,
     required this.capacity,
+    this.entranceFeesPerPerson = 0,
     required this.tourTypeId,
     required this.organizerId,
     required this.isActive,
@@ -42,6 +43,10 @@ class TourResponse {
 
   final int durationMinutes;
   final double pricePerPerson;
+
+  /// Sum of the visited destinations' entrance fees, per person (KM), paid on-site
+  /// and never part of the Travle charge. 0 when no stop has a fee.
+  final double entranceFeesPerPerson;
 
   /// Default group size seeded into new schedules; each slot may override it.
   final int capacity;

@@ -477,6 +477,8 @@ namespace Travle.Services
                 OrganizerName = t.Organizer.FirstName + " " + t.Organizer.LastName,
                 IsActive = t.IsActive,
                 DestinationCount = t.TourDestinations.Count,
+                // Per-person on-site entrance fees (informative; never part of the Travle price).
+                EntranceFeesPerPerson = t.TourDestinations.Sum(td => td.Destination.EntranceFee ?? 0m),
                 UpcomingScheduleCount = t.Schedules.Count(s => s.Status == ScheduleStatus.Active && s.StartsAt > now),
                 NextDepartureAt = t.Schedules
                     .Where(s => s.Status == ScheduleStatus.Active && s.StartsAt > now)

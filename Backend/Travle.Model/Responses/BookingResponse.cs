@@ -28,6 +28,12 @@ namespace Travle.Model.Responses
         /// <summary>Server-computed total (price-per-person × people). Never trusted from the client.</summary>
         public decimal TotalAmount { get; set; }
 
+        /// <summary>
+        /// Sum of the tour's destinations' informative entrance fees (KM), <b>per person</b> — paid on-site,
+        /// never part of the Travle charge. 0 when no stop has a fee. A "bring around X" guide only.
+        /// </summary>
+        public decimal EntranceFeesPerPerson { get; set; }
+
         public int StatusId { get; set; }
 
         /// <summary>PaymentInProgress / Pending / Confirmed / Completed / Cancelled / Expired — the name.</summary>

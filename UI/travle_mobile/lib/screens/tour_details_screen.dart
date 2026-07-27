@@ -4,6 +4,7 @@ import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
 import '../util/formatting.dart';
+import '../widgets/entrance_fee_note.dart';
 import 'bookings/booking_details_screen.dart';
 import 'destination_details_screen.dart';
 
@@ -147,6 +148,10 @@ class _TourDetailsScreenState extends State<TourDetailsScreen> {
       children: [
         _Header(tour: tour),
         const SizedBox(height: TravleTokens.space24),
+        if (tour.entranceFeesPerPerson > 0) ...[
+          EntranceFeeNote(amountPerPerson: tour.entranceFeesPerPerson),
+          const SizedBox(height: TravleTokens.space24),
+        ],
         Text('About', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: TravleTokens.space8),
         Text(tour.description, style: Theme.of(context).textTheme.bodyMedium),

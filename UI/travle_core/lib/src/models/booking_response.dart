@@ -22,6 +22,7 @@ class BookingResponse {
     required this.tourName,
     required this.numberOfPeople,
     required this.totalAmount,
+    this.entranceFeesPerPerson = 0,
     required this.statusId,
     required this.status,
     required this.statusChangedAt,
@@ -56,6 +57,10 @@ class BookingResponse {
 
   final int numberOfPeople;
   final double totalAmount;
+
+  /// Sum of the tour's destinations' entrance fees, per person (KM), paid on-site
+  /// and never part of the Travle charge. 0 when no stop has a fee.
+  final double entranceFeesPerPerson;
 
   final int statusId;
 

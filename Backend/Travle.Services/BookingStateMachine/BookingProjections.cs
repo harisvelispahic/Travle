@@ -29,6 +29,9 @@ namespace Travle.Services.BookingStateMachine
                 TourName = b.TourSchedule.Tour.Name,
                 NumberOfPeople = b.NumberOfPeople,
                 TotalAmount = b.TotalAmount,
+                // Per-person on-site entrance fees for the booked tour (informative; not charged by Travle).
+                EntranceFeesPerPerson = b.TourSchedule.Tour.TourDestinations
+                    .Sum(td => td.Destination.EntranceFee ?? 0m),
                 StatusId = b.StatusId,
                 Status = b.Status.Name,
                 StatusChangedAt = b.StatusChangedAt,
