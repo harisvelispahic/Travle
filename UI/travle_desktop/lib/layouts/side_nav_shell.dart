@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
+import '../screens/admin_bookings_screen.dart';
 import '../screens/destinations_moderation_screen.dart';
+import '../screens/organizer_bookings_screen.dart';
 import '../screens/organizer_destinations_screen.dart';
 import '../screens/organizer_tours_screen.dart';
 import '../screens/reference/reference_registry.dart';
@@ -70,7 +72,20 @@ class _SideNavShellState extends State<SideNavShell> {
       builder: (_) => const OrganizerToursScreen(),
       requiredRole: AppRole.organizer,
     ),
-    const _Leaf('bookings', Icons.event_note_outlined, 'Bookings'),
+    _Leaf(
+      'tourBookings',
+      Icons.event_note_outlined,
+      'Tour Bookings',
+      builder: (_) => const OrganizerBookingsScreen(),
+      requiredRole: AppRole.organizer,
+    ),
+    _Leaf(
+      'allBookings',
+      Icons.event_available_outlined,
+      'All Bookings',
+      builder: (_) => const AdminBookingsScreen(),
+      requiredRole: AppRole.admin,
+    ),
     const _Leaf('users', Icons.group_outlined, 'Users'),
     _Leaf(
       'roleRequests',

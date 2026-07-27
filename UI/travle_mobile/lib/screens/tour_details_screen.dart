@@ -423,73 +423,77 @@ class _BookSheetState extends State<_BookSheet> {
     final maxPeople = widget.schedule.freeSeats;
     final total = widget.pricePerPerson * _people;
 
-    return Padding(
-      padding: EdgeInsets.only(
-        left: TravleTokens.space24,
-        right: TravleTokens.space24,
-        top: TravleTokens.space8,
-        bottom: MediaQuery.of(context).viewInsets.bottom + TravleTokens.space24,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Book this departure', style: theme.textTheme.titleLarge),
-          const SizedBox(height: TravleTokens.space4),
-          Text(
-            formatScheduleRange(
-                widget.schedule.startsAt, widget.schedule.endsAt),
-            style: theme.textTheme.bodyMedium?.copyWith(color: muted),
-          ),
-          const SizedBox(height: TravleTokens.space24),
-          Row(
-            children: [
-              Text('People', style: theme.textTheme.titleMedium),
-              const Spacer(),
-              IconButton.outlined(
-                onPressed:
-                    _people > 1 ? () => setState(() => _people--) : null,
-                icon: const Icon(Icons.remove),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: TravleTokens.space16),
-                child: Text('$_people', style: theme.textTheme.titleLarge),
-              ),
-              IconButton.outlined(
-                onPressed: _people < maxPeople
-                    ? () => setState(() => _people++)
-                    : null,
-                icon: const Icon(Icons.add),
-              ),
-            ],
-          ),
-          const SizedBox(height: TravleTokens.space8),
-          Text(
-            '$maxPeople ${maxPeople == 1 ? 'seat' : 'seats'} available',
-            style: theme.textTheme.bodySmall?.copyWith(color: muted),
-          ),
-          const SizedBox(height: TravleTokens.space24),
-          Row(
-            children: [
-              Text('Total', style: theme.textTheme.titleMedium),
-              const Spacer(),
-              Text(
-                formatPrice(total),
-                style: theme.textTheme.titleLarge
-                    ?.copyWith(color: theme.colorScheme.primary),
-              ),
-            ],
-          ),
-          const SizedBox(height: TravleTokens.space24),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: () => Navigator.of(context).pop(_people),
-              child: const Text('Book now'),
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: TravleTokens.space24,
+          right: TravleTokens.space24,
+          top: TravleTokens.space8,
+          bottom:
+              MediaQuery.of(context).viewInsets.bottom + TravleTokens.space24,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Book this departure', style: theme.textTheme.titleLarge),
+            const SizedBox(height: TravleTokens.space4),
+            Text(
+              formatScheduleRange(
+                  widget.schedule.startsAt, widget.schedule.endsAt),
+              style: theme.textTheme.bodyMedium?.copyWith(color: muted),
             ),
-          ),
-        ],
+            const SizedBox(height: TravleTokens.space24),
+            Row(
+              children: [
+                Text('People', style: theme.textTheme.titleMedium),
+                const Spacer(),
+                IconButton.outlined(
+                  onPressed:
+                      _people > 1 ? () => setState(() => _people--) : null,
+                  icon: const Icon(Icons.remove),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: TravleTokens.space16),
+                  child: Text('$_people', style: theme.textTheme.titleLarge),
+                ),
+                IconButton.outlined(
+                  onPressed: _people < maxPeople
+                      ? () => setState(() => _people++)
+                      : null,
+                  icon: const Icon(Icons.add),
+                ),
+              ],
+            ),
+            const SizedBox(height: TravleTokens.space8),
+            Text(
+              '$maxPeople ${maxPeople == 1 ? 'seat' : 'seats'} available',
+              style: theme.textTheme.bodySmall?.copyWith(color: muted),
+            ),
+            const SizedBox(height: TravleTokens.space24),
+            Row(
+              children: [
+                Text('Total', style: theme.textTheme.titleMedium),
+                const Spacer(),
+                Text(
+                  formatPrice(total),
+                  style: theme.textTheme.titleLarge
+                      ?.copyWith(color: theme.colorScheme.primary),
+                ),
+              ],
+            ),
+            const SizedBox(height: TravleTokens.space24),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => Navigator.of(context).pop(_people),
+                child: const Text('Book now'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

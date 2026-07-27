@@ -20,6 +20,7 @@ class TravleDesktopApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => RoleApplicationProvider()),
         ChangeNotifierProvider(create: (_) => DestinationProvider()),
         ChangeNotifierProvider(create: (_) => TourProvider()),
+        ChangeNotifierProvider(create: (_) => BookingProvider()),
         // Lookups the destination submit/edit + tour forms populate their dropdowns from.
         ChangeNotifierProvider(create: (_) => DestinationCategoryProvider()),
         ChangeNotifierProvider(create: (_) => CityProvider()),

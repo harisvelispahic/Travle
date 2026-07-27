@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
@@ -402,8 +404,8 @@ class _Row extends StatelessWidget {
         Icon(icon, size: 18, color: muted),
         const SizedBox(width: TravleTokens.space12),
         Text(label, style: theme.textTheme.bodyMedium?.copyWith(color: muted)),
-        const Spacer(),
-        Flexible(
+        const SizedBox(width: TravleTokens.space12),
+        Expanded(
           child: Text(
             value,
             textAlign: TextAlign.right,
@@ -416,18 +418,96 @@ class _Row extends StatelessWidget {
   }
 }
 
-class _HoldNotice extends StatelessWidget {
+/// A live count-down of the 15-minute payment hold. Ticks once a second toward
+/// [expiresAt] and stops at 00:00 (never goes negative). The remaining time is
+/// computed in UTC on both sides (see [asUtc]) so it is correct on any device
+/// time zone, even though the app otherwise shows server times as wall-clock.
+class _HoldNotice extends StatefulWidget {
   const _HoldNotice({required this.expiresAt});
 
   final DateTime expiresAt;
 
   @override
+  State<_HoldNotice> createState() => _HoldNoticeState();
+}
+
+class _HoldNoticeState extends State<_HoldNotice> {
+  Timer? _timer;
+  late Duration _remaining;
+
+  @override
+  void initState() {
+    super.initState();
+    _remaining = _timeLeft();
+    if (_remaining > Duration.zero) {
+      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        final left = _timeLeft();
+        if (!mounted) return;
+        setState(() => _remaining = left);
+        if (left <= Duration.zero) _timer?.cancel();
+      });
+    }
+  }
+
+  Duration _timeLeft() {
+    final diff = asUtc(widget.expiresAt).difference(DateTime.now().toUtc());
+    return diff.isNegative ? Duration.zero : diff;
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return _ReasonNotice(
-      icon: Icons.timer_outlined,
-      title: 'Seats held',
-      text: 'Your seats are held until ${formatDateTime(expiresAt)}. '
-          'Complete payment before then to secure your booking.',
+    final theme = Theme.of(context);
+    final expired = _remaining <= Duration.zero;
+    final mm = _remaining.inMinutes.toString().padLeft(2, '0');
+    final ss = (_remaining.inSeconds % 60).toString().padLeft(2, '0');
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(TravleTokens.space16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(TravleTokens.radius),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.timer_outlined,
+              size: 18, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: TravleTokens.space12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Seats held', style: theme.textTheme.titleSmall),
+                const SizedBox(height: TravleTokens.space4),
+                Text(
+                  '$mm:$ss',
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                    color: expired
+                        ? theme.colorScheme.error
+                        : theme.colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(height: TravleTokens.space4),
+                Text(
+                  expired
+                      ? 'This hold has expired — the seats may have been released.'
+                      : 'Complete payment before the timer runs out or the seats are released.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
