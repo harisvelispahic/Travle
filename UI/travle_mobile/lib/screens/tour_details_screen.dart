@@ -4,13 +4,13 @@ import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
 import '../util/formatting.dart';
+import 'bookings/booking_details_screen.dart';
 import 'destination_details_screen.dart';
 
 /// Traveler-facing tour details. Fetches `GET /Tours/{id}`, showing the tour
 /// header (cover, type, price per person, duration), the ordered itinerary (each
 /// stop opens its destination details), and the upcoming departures with live
-/// free-seat counts. Booking is added in Phase 5, so there is no pay/book action
-/// here yet.
+/// free-seat counts and a Book action per bookable slot.
 class TourDetailsScreen extends StatefulWidget {
   const TourDetailsScreen({
     super.key,
@@ -70,6 +70,44 @@ class _TourDetailsScreenState extends State<TourDetailsScreen> {
     );
   }
 
+  Future<void> _book(TourScheduleResponse schedule) async {
+    final tour = _tour;
+    if (tour == null) return;
+
+    final people = await showModalBottomSheet<int>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _BookSheet(
+        schedule: schedule,
+        pricePerPerson: tour.pricePerPerson,
+      ),
+    );
+    if (people == null || !mounted) return;
+
+    try {
+      final booking = await context.read<BookingProvider>().create(
+            BookingInsertRequest(
+              tourScheduleId: schedule.id,
+              numberOfPeople: people,
+            ),
+          );
+      if (!mounted) return;
+      AppSnackbars.success(
+          context, 'Seats held — complete payment to secure your booking.');
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => BookingDetailsScreen(bookingId: booking.id),
+        ),
+      );
+      // Returning from the booking may have changed seat counts — refresh.
+      if (mounted) _load();
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      AppSnackbars.error(context, e.message);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final title = _tour?.name ?? widget.initialName ?? 'Tour';
@@ -120,7 +158,11 @@ class _TourDetailsScreenState extends State<TourDetailsScreen> {
         Text('Upcoming departures',
             style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: TravleTokens.space8),
-        _Departures(schedules: tour.schedules ?? const []),
+        _Departures(
+          schedules: tour.schedules ?? const [],
+          onBook: _book,
+          canBook: tour.isActive,
+        ),
       ],
     );
   }
@@ -283,9 +325,17 @@ class _Itinerary extends StatelessWidget {
 }
 
 class _Departures extends StatelessWidget {
-  const _Departures({required this.schedules});
+  const _Departures({
+    required this.schedules,
+    required this.onBook,
+    required this.canBook,
+  });
 
   final List<TourScheduleResponse> schedules;
+  final void Function(TourScheduleResponse schedule) onBook;
+
+  /// False when the tour is inactive — the slots are shown but not bookable.
+  final bool canBook;
 
   @override
   Widget build(BuildContext context) {
@@ -312,38 +362,135 @@ class _Departures extends StatelessWidget {
             margin: const EdgeInsets.only(bottom: TravleTokens.space8),
             child: Padding(
               padding: const EdgeInsets.all(TravleTokens.space16),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.event_outlined, color: theme.colorScheme.primary),
-                  const SizedBox(width: TravleTokens.space12),
-                  Expanded(
-                    child: Text(
-                      formatScheduleRange(s.startsAt, s.endsAt),
-                      style: theme.textTheme.bodyMedium,
-                    ),
+                  Row(
+                    children: [
+                      Icon(Icons.event_outlined,
+                          color: theme.colorScheme.primary),
+                      const SizedBox(width: TravleTokens.space12),
+                      Expanded(
+                        child: Text(
+                          formatScheduleRange(s.startsAt, s.endsAt),
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ),
+                      const SizedBox(width: TravleTokens.space12),
+                      _SeatsPill(freeSeats: s.freeSeats, capacity: s.capacity),
+                    ],
                   ),
-                  const SizedBox(width: TravleTokens.space12),
-                  _SeatsPill(freeSeats: s.freeSeats, capacity: s.capacity),
+                  if (canBook && s.freeSeats > 0) ...[
+                    const SizedBox(height: TravleTokens.space12),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: FilledButton.icon(
+                        onPressed: () => onBook(s),
+                        icon: const Icon(Icons.add_circle_outline, size: 18),
+                        label: const Text('Book'),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
           ),
-        const SizedBox(height: TravleTokens.space4),
-        Row(
-          children: [
-            Icon(Icons.info_outline,
-                size: 16, color: theme.colorScheme.onSurfaceVariant),
-            const SizedBox(width: TravleTokens.space8),
-            Expanded(
-              child: Text(
-                'Booking will be available soon.',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-              ),
-            ),
-          ],
-        ),
       ],
+    );
+  }
+}
+
+/// Bottom sheet to pick the party size for a departure and confirm the booking.
+/// The total updates live from the tour's price per person; the count is capped
+/// at the slot's live free seats.
+class _BookSheet extends StatefulWidget {
+  const _BookSheet({required this.schedule, required this.pricePerPerson});
+
+  final TourScheduleResponse schedule;
+  final double pricePerPerson;
+
+  @override
+  State<_BookSheet> createState() => _BookSheetState();
+}
+
+class _BookSheetState extends State<_BookSheet> {
+  int _people = 1;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final maxPeople = widget.schedule.freeSeats;
+    final total = widget.pricePerPerson * _people;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: TravleTokens.space24,
+        right: TravleTokens.space24,
+        top: TravleTokens.space8,
+        bottom: MediaQuery.of(context).viewInsets.bottom + TravleTokens.space24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Book this departure', style: theme.textTheme.titleLarge),
+          const SizedBox(height: TravleTokens.space4),
+          Text(
+            formatScheduleRange(
+                widget.schedule.startsAt, widget.schedule.endsAt),
+            style: theme.textTheme.bodyMedium?.copyWith(color: muted),
+          ),
+          const SizedBox(height: TravleTokens.space24),
+          Row(
+            children: [
+              Text('People', style: theme.textTheme.titleMedium),
+              const Spacer(),
+              IconButton.outlined(
+                onPressed:
+                    _people > 1 ? () => setState(() => _people--) : null,
+                icon: const Icon(Icons.remove),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: TravleTokens.space16),
+                child: Text('$_people', style: theme.textTheme.titleLarge),
+              ),
+              IconButton.outlined(
+                onPressed: _people < maxPeople
+                    ? () => setState(() => _people++)
+                    : null,
+                icon: const Icon(Icons.add),
+              ),
+            ],
+          ),
+          const SizedBox(height: TravleTokens.space8),
+          Text(
+            '$maxPeople ${maxPeople == 1 ? 'seat' : 'seats'} available',
+            style: theme.textTheme.bodySmall?.copyWith(color: muted),
+          ),
+          const SizedBox(height: TravleTokens.space24),
+          Row(
+            children: [
+              Text('Total', style: theme.textTheme.titleMedium),
+              const Spacer(),
+              Text(
+                formatPrice(total),
+                style: theme.textTheme.titleLarge
+                    ?.copyWith(color: theme.colorScheme.primary),
+              ),
+            ],
+          ),
+          const SizedBox(height: TravleTokens.space24),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: () => Navigator.of(context).pop(_people),
+              child: const Text('Book now'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

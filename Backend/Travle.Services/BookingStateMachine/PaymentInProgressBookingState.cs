@@ -1,0 +1,49 @@
+using Travle.Model.Responses;
+using Travle.Services.Database;
+using MapsterMapper;
+using Microsoft.EntityFrameworkCore;
+
+namespace Travle.Services.BookingStateMachine
+{
+    /// <summary>
+    /// A booking holding seats while payment completes. It can move forward to Pending when the Stripe
+    /// webhook confirms payment (Phase 6), or lapse to Expired when the 15-minute hold runs out (or
+    /// payment fails) — the latter driven by the lifecycle scheduler.
+    /// </summary>
+    public class PaymentInProgressBookingState : BaseBookingState
+    {
+        public PaymentInProgressBookingState(TravleDbContext dbContext, IMapper mapper, IServiceProvider serviceProvider)
+            : base(dbContext, mapper, serviceProvider)
+        {
+        }
+
+        public override async Task<BookingResponse> MarkPaidAsync(Booking booking)
+        {
+            // PaymentInProgress → Pending. Invoked by the signature-verified Stripe webhook in Phase 6;
+            // the held seats carry over and the 15-minute hold no longer applies.
+            MarkStatus(booking, BookingStatusCode.Pending);
+            booking.ExpiresAt = null;
+            await DbContext.SaveChangesAsync();
+            return await BuildResponseAsync(booking.Id);
+        }
+
+        public override async Task<BookingResponse> ExpireAsync(Booking booking)
+            => await InTransactionAsync(async () =>
+            {
+                // The hold lapsed (or payment failed): release the seats and record the expiry.
+                await ReleaseSeatsAsync(booking.TourScheduleId, booking.NumberOfPeople);
+                MarkStatus(booking, BookingStatusCode.Expired);
+                AddNotification(booking.UserId, NotificationType.BookingExpired,
+                    "Booking expired",
+                    "Your booking hold expired before payment was completed, and the seats were released.",
+                    booking.Id);
+                await DbContext.SaveChangesAsync();
+                return await BuildResponseAsync(booking.Id);
+            });
+
+        public override Task<BookingResponse> CancelForSlotAsync(Booking booking, int organizerUserId, string reason)
+            => CancelForSlotInternalAsync(booking, organizerUserId, reason);
+
+        public override List<BookingAction> GetAllowedActions() => new() { BookingAction.Pay };
+    }
+}

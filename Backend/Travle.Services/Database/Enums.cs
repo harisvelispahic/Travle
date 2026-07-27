@@ -15,6 +15,41 @@ namespace Travle.Services.Database
         Cancelled = 1
     }
 
+    /// <summary>
+    /// The booking lifecycle states, driven only by the centralized <c>BookingStateMachine</c>. The
+    /// integer values are a hard contract: they equal the seeded <see cref="BookingStatus"/> reference
+    /// row Ids, so <c>(int)BookingStatusCode.Confirmed == Booking.StatusId</c> and the filtered unique
+    /// index on <see cref="Booking"/> (<c>WHERE StatusId IN (1,2,3)</c>) stays correct. This enum is the
+    /// type-safe discriminator the state factory switches on — never persisted as a separate column and
+    /// never renumbered.
+    /// </summary>
+    public enum BookingStatusCode
+    {
+        PaymentInProgress = 1,
+        Pending = 2,
+        Confirmed = 3,
+        Completed = 4,
+        Cancelled = 5,
+        Expired = 6
+    }
+
+    /// <summary>
+    /// A transition a booking currently permits. Each <c>BookingState</c> reports its own allowed set so
+    /// the UI can render exactly the buttons that will succeed (rule K "disabled with reason"). Serialized
+    /// to the client as the enum name, never acted on by matching a raw int.
+    /// </summary>
+    public enum BookingAction
+    {
+        /// <summary>Traveler pays for a held booking (PaymentInProgress → Pending, via Stripe in Phase 6).</summary>
+        Pay = 0,
+        /// <summary>Organizer confirms a paid booking (Pending → Confirmed).</summary>
+        Confirm = 1,
+        /// <summary>Organizer rejects a paid booking with a reason (Pending → Cancelled, 100% refund).</summary>
+        Reject = 2,
+        /// <summary>Traveler cancels their own booking (Pending/Confirmed → Cancelled, tiered refund).</summary>
+        Cancel = 3
+    }
+
     /// <summary>Decision lifecycle of a <see cref="RoleApplication"/>.</summary>
     public enum RoleApplicationStatus
     {

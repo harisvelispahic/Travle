@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
+import 'bookings/my_bookings_screen.dart';
 import 'profile/become_curator_screen.dart';
 import 'profile/become_organizer_screen.dart';
 import 'profile/change_password_screen.dart';
@@ -109,6 +110,18 @@ class ProfileScreen extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           child: Column(
             children: [
+              ListTile(
+                leading: const Icon(Icons.confirmation_number_outlined),
+                title: const Text('My bookings'),
+                subtitle: const Text('View and manage your bookings'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const MyBookingsScreen(),
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
               ListTile(
                 leading: const Icon(Icons.edit_outlined),
                 title: const Text('Edit profile'),

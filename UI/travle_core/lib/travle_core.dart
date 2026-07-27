@@ -3,6 +3,8 @@
 library;
 
 export 'src/app_config.dart';
+export 'src/models/booking_insert_request.dart';
+export 'src/models/booking_response.dart';
 export 'src/models/booking_status_response.dart';
 export 'src/models/city_response.dart';
 export 'src/models/country_response.dart';
@@ -37,6 +39,7 @@ export 'src/network/api_error.dart';
 export 'src/network/search_result.dart';
 export 'src/network/base_search_object.dart';
 export 'src/network/base_provider.dart';
+export 'src/providers/booking_provider.dart';
 export 'src/providers/booking_status_provider.dart';
 export 'src/providers/city_provider.dart';
 export 'src/providers/country_provider.dart';

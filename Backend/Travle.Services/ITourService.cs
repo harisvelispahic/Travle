@@ -43,8 +43,9 @@ namespace Travle.Services
         Task<TourScheduleResponse> AddScheduleAsync(int tourId, TourScheduleInsertRequest request);
 
         /// <summary>
-        /// Organizer cancels a slot with a mandatory reason (status change + audit). Phase 4 stub: the
-        /// automatic 100% refund + per-booking notifications are wired in Phase 6.
+        /// Organizer cancels a slot with a mandatory reason: the slot is retired and every still-active
+        /// booking on it is transitioned to Cancelled through the state machine (100% refund owed),
+        /// atomically. The refund execution itself lands in Phase 6.
         /// </summary>
         Task<TourScheduleResponse> CancelScheduleAsync(int scheduleId, TourScheduleCancelRequest request);
 

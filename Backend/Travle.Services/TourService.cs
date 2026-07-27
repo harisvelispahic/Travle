@@ -31,6 +31,7 @@ namespace Travle.Services
 
         private readonly IAppAuthorizationService _authorization;
         private readonly IAuthenticatedUserAccessor _currentUser;
+        private readonly IBookingService _bookingService;
         private readonly IValidator<TourScheduleInsertRequest> _scheduleInsertValidator;
         private readonly IValidator<TourScheduleCancelRequest> _scheduleCancelValidator;
 
@@ -39,6 +40,7 @@ namespace Travle.Services
             MapsterMapper.IMapper mapper,
             IAppAuthorizationService authorization,
             IAuthenticatedUserAccessor currentUser,
+            IBookingService bookingService,
             IValidator<TourInsertRequest> insertValidator,
             IValidator<TourUpdateRequest> updateValidator,
             IValidator<TourScheduleInsertRequest> scheduleInsertValidator,
@@ -47,6 +49,7 @@ namespace Travle.Services
         {
             _authorization = authorization;
             _currentUser = currentUser;
+            _bookingService = bookingService;
             _scheduleInsertValidator = scheduleInsertValidator;
             _scheduleCancelValidator = scheduleCancelValidator;
         }
@@ -374,6 +377,7 @@ namespace Travle.Services
                 ?? throw new NotFoundException("TourSchedule", scheduleId);
 
             _authorization.EnsureSelfOrAdmin(schedule.Tour.OrganizerId, "tour");
+            var actingUserId = _authorization.RequireUserId();
 
             if (schedule.Status == ScheduleStatus.Cancelled)
             {
@@ -384,14 +388,18 @@ namespace Travle.Services
                 throw new BusinessRuleException("A schedule that has already started cannot be cancelled.");
             }
 
+            var reason = request.Reason.Trim();
             schedule.Status = ScheduleStatus.Cancelled;
-            schedule.CancelledReason = request.Reason.Trim();
+            schedule.CancelledReason = reason;
             schedule.CancelledAt = DateTime.UtcNow;
 
-            // PHASE 4 STUB: the automatic 100% refund to every booking on this slot, the per-booking
-            // Cancelled transition through the state machine, and the notifications are wired in Phase 5/6
-            // (roadmap Phase 4 "slot-cancel stub — refunds in P6"). No bookings are touched here yet.
+            // Retire the slot and transition every still-active booking on it to Cancelled through the
+            // state machine (organizer slot-cancel = 100% refund owed, executed in Phase 6). The schedule
+            // status change and all booking transitions commit atomically in one transaction (rule 7).
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
             await _dbContext.SaveChangesAsync();
+            await _bookingService.CancelBookingsForScheduleAsync(scheduleId, actingUserId, reason);
+            await transaction.CommitAsync();
 
             return await BuildScheduleResponseAsync(scheduleId);
         }

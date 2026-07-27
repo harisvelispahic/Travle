@@ -344,14 +344,17 @@ namespace Travle.Services.Database
 
         private void SeedBookings(ModelBuilder modelBuilder)
         {
-            // One booking in each of the demonstrable statuses (Completed, Confirmed, Cancelled, Pending),
-            // so the state machine, reviews, refunds and history screens all have data. Travelers book
-            // (mobile = 4, traveler2 = 5); the organizer (2) owns every tour, so confirmations are by 2.
+            // One booking in each of the demonstrable statuses (Completed, Confirmed, Cancelled, Pending,
+            // Expired), so the state machine, reviews, refunds and history screens all have data. Travelers
+            // book (mobile = 4, traveler2 = 5); the organizer (2) owns every tour, so confirmations are by 2.
+            // Booking 5 is an Expired hold (payment never completed): its seats were released, so schedule 2
+            // keeps SeatsTaken = 0, and it carries no Payment row.
             modelBuilder.Entity<Booking>().HasData(
                 new { Id = 1, UserId = 4, TourScheduleId = 1, NumberOfPeople = 2, TotalAmount = 50.00m, StatusId = 4, StatusChangedAt = new DateTime(2026, 6, 20, 12, 30, 0, DateTimeKind.Utc), ConfirmedByUserId = (int?)2, CreatedAt = new DateTime(2026, 6, 15, 9, 0, 0, DateTimeKind.Utc) },
                 new { Id = 2, UserId = 4, TourScheduleId = 6, NumberOfPeople = 1, TotalAmount = 30.00m, StatusId = 3, StatusChangedAt = new DateTime(2026, 7, 10, 11, 0, 0, DateTimeKind.Utc), ConfirmedByUserId = (int?)2, CreatedAt = new DateTime(2026, 7, 9, 15, 0, 0, DateTimeKind.Utc) },
                 new { Id = 3, UserId = 5, TourScheduleId = 9, NumberOfPeople = 3, TotalAmount = 120.00m, StatusId = 5, StatusChangedAt = new DateTime(2026, 7, 5, 10, 0, 0, DateTimeKind.Utc), CancelledByUserId = (int?)5, CancellationReason = "Change of travel plans.", CreatedAt = new DateTime(2026, 7, 1, 12, 0, 0, DateTimeKind.Utc) },
-                new { Id = 4, UserId = 4, TourScheduleId = 4, NumberOfPeople = 2, TotalAmount = 90.00m, StatusId = 2, StatusChangedAt = new DateTime(2026, 7, 14, 8, 0, 0, DateTimeKind.Utc), CreatedAt = new DateTime(2026, 7, 14, 8, 0, 0, DateTimeKind.Utc) }
+                new { Id = 4, UserId = 4, TourScheduleId = 4, NumberOfPeople = 2, TotalAmount = 90.00m, StatusId = 2, StatusChangedAt = new DateTime(2026, 7, 14, 8, 0, 0, DateTimeKind.Utc), CreatedAt = new DateTime(2026, 7, 14, 8, 0, 0, DateTimeKind.Utc) },
+                new { Id = 5, UserId = 5, TourScheduleId = 2, NumberOfPeople = 2, TotalAmount = 50.00m, StatusId = 6, StatusChangedAt = new DateTime(2026, 7, 18, 14, 15, 0, DateTimeKind.Utc), ExpiresAt = (DateTime?)new DateTime(2026, 7, 18, 14, 15, 0, DateTimeKind.Utc), CreatedAt = new DateTime(2026, 7, 18, 14, 0, 0, DateTimeKind.Utc) }
             );
         }
 

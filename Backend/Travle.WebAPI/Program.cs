@@ -4,6 +4,7 @@ using Travle.Model.Requests;
 using Travle.Model.Responses;
 using Travle.Services;
 using Travle.Services.Authorization;
+using Travle.Services.BookingStateMachine;
 using Travle.Services.Database;
 using Travle.Services.Imaging;
 using Travle.Services.Messaging;
@@ -136,6 +137,22 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IRoleApplicationService, RoleApplicationService>();
 builder.Services.AddScoped<IDestinationService, DestinationService>();
 builder.Services.AddScoped<ITourService, TourService>();
+builder.Services.AddScoped<IBookingService, BookingService>();
+
+// Booking state machine: the base acts as the factory host injected into the service, and each concrete
+// state is a scoped service resolved by BaseBookingState.GetState per the persisted status (state pattern).
+builder.Services.AddScoped<BaseBookingState>();
+builder.Services.AddScoped<InitialBookingState>();
+builder.Services.AddScoped<PaymentInProgressBookingState>();
+builder.Services.AddScoped<PendingBookingState>();
+builder.Services.AddScoped<ConfirmedBookingState>();
+builder.Services.AddScoped<CompletedBookingState>();
+builder.Services.AddScoped<CancelledBookingState>();
+builder.Services.AddScoped<ExpiredBookingState>();
+
+// In-process scheduler (IHostedService): expires 15-min PaymentInProgress holds and auto-completes
+// Confirmed bookings past their schedule end. Lives in the API, not the RabbitMQ worker container.
+builder.Services.AddHostedService<BookingLifecycleWorker>();
 
 // Managed, cross-platform image codec for server-side thumbnails (stateless → singleton).
 builder.Services.AddSingleton<IThumbnailGenerator, ImageSharpThumbnailGenerator>();
