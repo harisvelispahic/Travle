@@ -338,21 +338,35 @@ namespace Travle.Services.Payments
 
             var capturedCount = await captured.CountAsync(cancellationToken);
             var grossRevenue = await captured.SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0m;
-            var commission = await captured.SumAsync(p => (decimal?)p.PlatformFeeAmount, cancellationToken) ?? 0m;
 
             var refunds = filtered.SelectMany(p => p.Refunds);
             var totalRefunded = await refunds.SumAsync(r => (decimal?)r.Amount, cancellationToken) ?? 0m;
             var refundCount = await refunds.CountAsync(cancellationToken);
+
+            var netRevenue = grossRevenue - totalRefunded;
+
+            // Commission is earned only on funds the platform actually kept. A refund gives money back to
+            // the traveler, so it must shrink the commission too — otherwise the platform would appear to
+            // earn 10% on amounts it returned. Each payment's snapshotted fee is scaled by the fraction of
+            // its charge that was retained (refund tiers apply to the whole charge, fee included), then
+            // summed at the DB and rounded once for display. Amount is always > 0 for a captured payment
+            // (a booking with no payable amount never produces a Payment row), so the division is safe.
+            var netCommissionRaw = await captured.SumAsync(
+                p => (decimal?)(p.PlatformFeeAmount
+                    * (p.Amount - (p.Refunds.Sum(r => (decimal?)r.Amount) ?? 0m))
+                    / p.Amount),
+                cancellationToken) ?? 0m;
+            var commission = Math.Round(netCommissionRaw, 2, MidpointRounding.AwayFromZero);
 
             return new PaymentSummaryResponse
             {
                 CapturedCount = capturedCount,
                 GrossRevenue = grossRevenue,
                 PlatformCommission = commission,
-                OrganizerShare = grossRevenue - commission,
+                OrganizerShare = netRevenue - commission,
                 TotalRefunded = totalRefunded,
                 RefundCount = refundCount,
-                NetRevenue = grossRevenue - totalRefunded,
+                NetRevenue = netRevenue,
                 Currency = _options.Currency
             };
         }

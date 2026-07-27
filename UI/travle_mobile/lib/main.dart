@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
@@ -6,6 +7,12 @@ import 'package:travle_ui/travle_ui.dart';
 import 'app/auth_gate.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  // The mobile app is portrait-only — lock it upright so no screen ever rotates.
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
   runApp(const TravleMobileApp());
 }
 

@@ -100,6 +100,52 @@ namespace Travle.Services
             await _dbContext.Entry(entity).Reference(u => u.City).LoadAsync();
         }
 
+        /// <summary>
+        /// List path (admin user management). Projected by hand instead of mapping whole entities so the
+        /// heavy <see cref="User.ProfileImage"/> column is never selected — lists carry no image bytes
+        /// (rule 12: thumbnails only, and there is no user thumbnail, so the image is omitted entirely).
+        /// The full image is served only by the detail/self read. Filter/sort/page reuse the base stages.
+        /// </summary>
+        public override async Task<PageResult<UserResponse>> GetAllAsync(UserSearch? search = null)
+        {
+            IQueryable<User> query = _dbContext.Users.AsNoTracking();
+            query = ApplyFilters(query, search);
+
+            int? totalCount = null;
+            if (search?.IncludeTotalCount ?? false)
+            {
+                totalCount = await query.CountAsync();
+            }
+
+            query = ApplySorting(query, search);
+            query = ApplyPaging(query, search);
+
+            var items = await query
+                .Select(u => new UserResponse
+                {
+                    Id = u.Id,
+                    FirstName = u.FirstName,
+                    LastName = u.LastName,
+                    Email = u.Email,
+                    Username = u.Username,
+                    PhoneNumber = u.PhoneNumber,
+                    Roles = u.UserRoles.Select(ur => ur.Role.Name).ToList(),
+                    IsSuspended = u.IsSuspended,
+                    SuspendedAt = u.SuspendedAt,
+                    SuspensionReason = u.SuspensionReason,
+                    CityId = u.CityId,
+                    CityName = u.City != null ? u.City.Name : null,
+                    IsOnboarded = u.IsOnboarded,
+                    OnboardingPromptCount = u.OnboardingPromptCount,
+                    // ProfileImage / ProfileImageContentType intentionally left null in list responses.
+                    CreatedAt = u.CreatedAt,
+                    ModifiedAt = u.ModifiedAt
+                })
+                .ToListAsync();
+
+            return new PageResult<UserResponse> { Items = items, TotalCount = totalCount };
+        }
+
         public async Task<UserResponse> RegisterAsync(UserRegisterRequest request)
         {
             await _registerValidator.ValidateAndThrowAsync(request);

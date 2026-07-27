@@ -92,7 +92,9 @@ namespace Travle.Services
         public override async Task<PageResult<BookingResponse>> GetAllAsync(BookingSearch? search = null)
         {
             _authorization.EnsureInRole(RoleNames.Admin);
-            return await QueryAsync(search ?? new BookingSearch());
+            search ??= new BookingSearch();
+            // Default: nearest upcoming departure first (most urgent to act on). An explicit SortBy wins.
+            return await QueryAsync(search, DefaultManagementOrder(search));
         }
 
         public async Task<PageResult<BookingResponse>> GetMineAsync(BookingSearch? search)
@@ -114,8 +116,8 @@ namespace Travle.Services
             // Force scoping to the organizer's own tours.
             search.OrganizerId = userId;
             search.UserId = null;
-            search.SortBy ??= "CreatedAt desc";
-            return await QueryAsync(search);
+            // Default: nearest upcoming departure first (most urgent to act on). An explicit SortBy wins.
+            return await QueryAsync(search, DefaultManagementOrder(search));
         }
 
         public override async Task<BookingResponse> GetByIdAsync(int id)
@@ -282,8 +284,30 @@ namespace Travle.Services
 
         // --- helpers ---------------------------------------------------------------------------------
 
-        // Shared read pipeline (no authorization — callers scope or gate first).
-        private async Task<PageResult<BookingResponse>> QueryAsync(BookingSearch search)
+        // The management lists (admin + organizer) default to "nearest upcoming departure first" so the
+        // most time-critical bookings surface at the top; a client-supplied SortBy still overrides it.
+        private static Func<IQueryable<Booking>, IOrderedQueryable<Booking>>? DefaultManagementOrder(BookingSearch search)
+            => string.IsNullOrWhiteSpace(search.SortBy) ? OrderByNearestUpcoming : null;
+
+        // Upcoming departures first, soonest at the very top (the urgent ones to confirm/reject before they
+        // run); past departures fall below, most recent first. Fully DB-side (translates to ORDER BY CASE …).
+        private static IOrderedQueryable<Booking> OrderByNearestUpcoming(IQueryable<Booking> query)
+        {
+            var now = DateTime.UtcNow;
+            return query
+                // Upcoming (StartsAt >= now) sorts before past.
+                .OrderBy(b => b.TourSchedule.StartsAt >= now ? 0 : 1)
+                // Within upcoming: soonest first. Past rows collapse to `now` here so they tie …
+                .ThenBy(b => b.TourSchedule.StartsAt >= now ? b.TourSchedule.StartsAt : now)
+                // … and are ordered most-recent-first by this final key.
+                .ThenByDescending(b => b.TourSchedule.StartsAt);
+        }
+
+        // Shared read pipeline (no authorization — callers scope or gate first). When <paramref name="orderBy"/>
+        // is supplied it takes precedence over the string-based SortBy (used for the management default order).
+        private async Task<PageResult<BookingResponse>> QueryAsync(
+            BookingSearch search,
+            Func<IQueryable<Booking>, IOrderedQueryable<Booking>>? orderBy = null)
         {
             IQueryable<Booking> query = _dbContext.Bookings.AsNoTracking();
             query = ApplyFilters(query, search);
@@ -294,7 +318,7 @@ namespace Travle.Services
                 totalCount = await query.CountAsync();
             }
 
-            query = ApplySorting(query, search);
+            query = orderBy is not null ? orderBy(query) : ApplySorting(query, search);
             query = ApplyPaging(query, search);
 
             var items = await BookingProjections.ProjectToResponse(query).ToListAsync();

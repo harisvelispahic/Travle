@@ -35,6 +35,29 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   }
   window.SetQuitOnClose(true);
 
+  // Center the window on the work area of the monitor it was created on. Done in
+  // physical pixels against the actual window rect, so it stays correct under any
+  // DPI scaling. The window is still hidden here (it shows on the first frame).
+  if (HWND hwnd = window.GetHandle())
+  {
+    RECT window_rect;
+    ::GetWindowRect(hwnd, &window_rect);
+    const int window_width = window_rect.right - window_rect.left;
+    const int window_height = window_rect.bottom - window_rect.top;
+
+    HMONITOR monitor = ::MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO monitor_info;
+    monitor_info.cbSize = sizeof(monitor_info);
+    if (::GetMonitorInfo(monitor, &monitor_info))
+    {
+      const RECT& work = monitor_info.rcWork;
+      const int x = work.left + ((work.right - work.left) - window_width) / 2;
+      const int y = work.top + ((work.bottom - work.top) - window_height) / 2;
+      ::SetWindowPos(hwnd, nullptr, x, y, 0, 0,
+                     SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+  }
+
   ::MSG msg;
   while (::GetMessage(&msg, nullptr, 0, 0))
   {

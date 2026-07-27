@@ -60,20 +60,20 @@ class TourCard extends StatelessWidget {
                       ),
                     ],
                     const SizedBox(height: TravleTokens.space8),
-                    Row(
+                    // Wrap (not Row) so price + duration reflow onto a second line
+                    // on tight widths instead of overflowing horizontally.
+                    Wrap(
+                      spacing: TravleTokens.space12,
+                      runSpacing: TravleTokens.space4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        Icon(Icons.payments_outlined, size: 14, color: muted),
-                        const SizedBox(width: TravleTokens.space4),
-                        Text(
-                          '${formatPrice(tour.pricePerPerson)} / person',
-                          style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                        _MetaChip(
+                          icon: Icons.payments_outlined,
+                          label: '${formatPrice(tour.pricePerPerson)} / person',
                         ),
-                        const SizedBox(width: TravleTokens.space12),
-                        Icon(Icons.schedule_outlined, size: 14, color: muted),
-                        const SizedBox(width: TravleTokens.space4),
-                        Text(
-                          formatDuration(tour.durationMinutes),
-                          style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                        _MetaChip(
+                          icon: Icons.schedule_outlined,
+                          label: formatDuration(tour.durationMinutes),
                         ),
                       ],
                     ),
@@ -82,9 +82,14 @@ class TourCard extends StatelessWidget {
                       children: [
                         Icon(Icons.event_outlined, size: 14, color: muted),
                         const SizedBox(width: TravleTokens.space4),
-                        Text(
-                          _departure,
-                          style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                        Expanded(
+                          child: Text(
+                            _departure,
+                            style:
+                                theme.textTheme.bodySmall?.copyWith(color: muted),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ],
                     ),
@@ -96,6 +101,32 @@ class TourCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A compact icon + label metric used inside the card's [Wrap], sized to its
+/// content so several can flow onto one or more lines without overflowing.
+class _MetaChip extends StatelessWidget {
+  const _MetaChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: muted),
+        const SizedBox(width: TravleTokens.space4),
+        Text(
+          label,
+          style: theme.textTheme.bodySmall?.copyWith(color: muted),
+        ),
+      ],
     );
   }
 }
