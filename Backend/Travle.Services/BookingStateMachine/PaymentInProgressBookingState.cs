@@ -19,10 +19,15 @@ namespace Travle.Services.BookingStateMachine
 
         public override async Task<BookingResponse> MarkPaidAsync(Booking booking)
         {
-            // PaymentInProgress → Pending. Invoked by the signature-verified Stripe webhook in Phase 6;
-            // the held seats carry over and the 15-minute hold no longer applies.
+            // PaymentInProgress → Pending. Invoked by the signature-verified Stripe webhook; the held seats
+            // carry over and the 15-minute hold no longer applies. Any Payment-row edits the caller made on
+            // this same DbContext scope commit in the SaveChanges below.
             MarkStatus(booking, BookingStatusCode.Pending);
             booking.ExpiresAt = null;
+            AddNotification(booking.UserId, NotificationType.PaymentSucceeded,
+                "Payment received",
+                "Your payment succeeded. Your booking is now awaiting the organizer's confirmation.",
+                booking.Id);
             await DbContext.SaveChangesAsync();
             return await BuildResponseAsync(booking.Id);
         }

@@ -8,6 +8,7 @@ using Travle.Services.BookingStateMachine;
 using Travle.Services.Database;
 using Travle.Services.Imaging;
 using Travle.Services.Messaging;
+using Travle.Services.Payments;
 using Travle.Services.Recommender;
 using Travle.Services.Security;
 using Travle.Services.Validators;
@@ -153,6 +154,17 @@ builder.Services.AddScoped<ExpiredBookingState>();
 // In-process scheduler (IHostedService): expires 15-min PaymentInProgress holds and auto-completes
 // Confirmed bookings past their schedule end. Lives in the API, not the RabbitMQ worker container.
 builder.Services.AddHostedService<BookingLifecycleWorker>();
+
+// Payments: Stripe settings bound once and validated at startup (fail fast on a missing secret key, like
+// JWT). StripeService is the only caller of the Stripe SDK; PaymentService owns the amount/fee snapshot
+// and the Payment-row lifecycle. Test-mode only — see docs/payments-and-stripe.md.
+builder.Services.AddOptions<PaymentOptions>()
+    .Bind(builder.Configuration.GetSection(PaymentOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddScoped<IStripeService, StripeService>();
+builder.Services.AddScoped<IPaymentService, PaymentService>();
+builder.Services.AddScoped<IRefundService, RefundService>();
 
 // Managed, cross-platform image codec for server-side thumbnails (stateless → singleton).
 builder.Services.AddSingleton<IThumbnailGenerator, ImageSharpThumbnailGenerator>();

@@ -6,6 +6,7 @@ using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
 using Travle.Services.BookingStateMachine;
 using Travle.Services.Database;
+using Travle.Services.Payments;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 
@@ -23,6 +24,7 @@ namespace Travle.Services
         private readonly IAppAuthorizationService _authorization;
         private readonly IAuthenticatedUserAccessor _currentUser;
         private readonly BaseBookingState _states;
+        private readonly IRefundService _refunds;
         private readonly IValidator<BookingRejectRequest> _rejectValidator;
         private readonly IValidator<BookingCancelRequest> _cancelValidator;
 
@@ -32,6 +34,7 @@ namespace Travle.Services
             IAppAuthorizationService authorization,
             IAuthenticatedUserAccessor currentUser,
             BaseBookingState states,
+            IRefundService refunds,
             IValidator<BookingRejectRequest> rejectValidator,
             IValidator<BookingCancelRequest> cancelValidator)
             : base(mapper, dbContext)
@@ -39,6 +42,7 @@ namespace Travle.Services
             _authorization = authorization;
             _currentUser = currentUser;
             _states = states;
+            _refunds = refunds;
             _rejectValidator = rejectValidator;
             _cancelValidator = cancelValidator;
         }
@@ -165,8 +169,14 @@ namespace Travle.Services
             var booking = await LoadForTransitionAsync(id);
             await EnsureOrganizerOwnsBookingTourAsync(id, organizerId);
 
+            var reason = request.Reason.Trim();
             var state = _states.GetState((BookingStatusCode)booking.StatusId);
-            return await state.RejectAsync(booking, organizerId, request.Reason.Trim());
+            var response = await state.RejectAsync(booking, organizerId, reason);
+
+            // Organizer rejection ⇒ 100% refund. Issued after the Cancelled transition has committed, so the
+            // Stripe call never runs inside a DB transaction (idempotent — a retry won't double-refund).
+            await _refunds.RefundForBookingAsync(id, organizerId, $"Organizer rejected the booking: {reason}", forcedPercentage: 100);
+            return response;
         }
 
         public async Task<BookingResponse> CancelAsync(int id, BookingCancelRequest request)
@@ -179,7 +189,15 @@ namespace Travle.Services
             _authorization.EnsureSelfOrAdmin(booking.UserId, "booking");
 
             var state = _states.GetState((BookingStatusCode)booking.StatusId);
-            return await state.CancelAsync(booking, userId, request.Reason?.Trim());
+            var response = await state.CancelAsync(booking, userId, request.Reason?.Trim());
+
+            // Traveler cancellation ⇒ tiered refund (null lets the tier resolve from hours-before-start).
+            // Post-commit, so the Stripe refund runs outside the cancellation's transaction.
+            var refundReason = string.IsNullOrWhiteSpace(request.Reason)
+                ? "Traveler cancelled the booking."
+                : request.Reason.Trim();
+            await _refunds.RefundForBookingAsync(id, userId, refundReason, forcedPercentage: null);
+            return response;
         }
 
         public async Task CancelBookingsForScheduleAsync(int scheduleId, int organizerUserId, string reason)
@@ -334,20 +352,9 @@ namespace Travle.Services
                 return;
             }
 
-            var hoursBefore = (response.ScheduleStartsAt - DateTime.UtcNow).TotalHours;
-            if (hoursBefore < 0)
-            {
-                hoursBefore = 0;
-            }
-
-            var tier = await _dbContext.RefundPolicyTiers
-                .AsNoTracking()
-                .Where(t => hoursBefore >= t.HoursBeforeMin
-                            && (t.HoursBeforeMax == null || hoursBefore < t.HoursBeforeMax))
-                .OrderByDescending(t => t.HoursBeforeMin)
-                .FirstOrDefaultAsync();
-
-            response.CancellationRefundPercentage = tier?.Percentage ?? 0;
+            // Same resolver the refund execution uses, so the previewed % always equals the charged one.
+            response.CancellationRefundPercentage = await PaymentMath.ResolveRefundPercentageAsync(
+                _dbContext, response.ScheduleStartsAt, DateTime.UtcNow);
         }
     }
 }

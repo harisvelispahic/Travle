@@ -5,6 +5,7 @@ using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
 using Travle.Services.Database;
+using Travle.Services.Payments;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 
@@ -32,6 +33,7 @@ namespace Travle.Services
         private readonly IAppAuthorizationService _authorization;
         private readonly IAuthenticatedUserAccessor _currentUser;
         private readonly IBookingService _bookingService;
+        private readonly IRefundService _refunds;
         private readonly IValidator<TourScheduleInsertRequest> _scheduleInsertValidator;
         private readonly IValidator<TourScheduleCancelRequest> _scheduleCancelValidator;
 
@@ -41,6 +43,7 @@ namespace Travle.Services
             IAppAuthorizationService authorization,
             IAuthenticatedUserAccessor currentUser,
             IBookingService bookingService,
+            IRefundService refunds,
             IValidator<TourInsertRequest> insertValidator,
             IValidator<TourUpdateRequest> updateValidator,
             IValidator<TourScheduleInsertRequest> scheduleInsertValidator,
@@ -50,6 +53,7 @@ namespace Travle.Services
             _authorization = authorization;
             _currentUser = currentUser;
             _bookingService = bookingService;
+            _refunds = refunds;
             _scheduleInsertValidator = scheduleInsertValidator;
             _scheduleCancelValidator = scheduleCancelValidator;
         }
@@ -394,12 +398,20 @@ namespace Travle.Services
             schedule.CancelledAt = DateTime.UtcNow;
 
             // Retire the slot and transition every still-active booking on it to Cancelled through the
-            // state machine (organizer slot-cancel = 100% refund owed, executed in Phase 6). The schedule
-            // status change and all booking transitions commit atomically in one transaction (rule 7).
-            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
-            await _dbContext.SaveChangesAsync();
-            await _bookingService.CancelBookingsForScheduleAsync(scheduleId, actingUserId, reason);
-            await transaction.CommitAsync();
+            // state machine. The schedule status change and all booking transitions commit atomically in
+            // one transaction (rule 7). The block scopes the transaction so it is disposed (no longer the
+            // context's ambient transaction) before the refund pass below runs its own SaveChanges.
+            {
+                await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+                await _dbContext.SaveChangesAsync();
+                await _bookingService.CancelBookingsForScheduleAsync(scheduleId, actingUserId, reason);
+                await transaction.CommitAsync();
+            }
+
+            // Only now — outside the transaction — issue the 100% refunds (Stripe network calls must never
+            // run inside an open DB transaction). Idempotent: re-running skips already-refunded bookings.
+            await _refunds.RefundForScheduleCancellationAsync(
+                scheduleId, actingUserId, $"Organizer cancelled the schedule: {reason}");
 
             return await BuildScheduleResponseAsync(scheduleId);
         }

@@ -89,8 +89,9 @@ namespace Travle.Services.BookingStateMachine
         /// <summary>
         /// User (or admin) cancellation, shared by <see cref="PendingBookingState"/> and
         /// <see cref="ConfirmedBookingState"/>: release the held seats, move to Cancelled with audit, and
-        /// notify the organizer their slot freed up. The tiered refund is computed and executed against
-        /// the actually charged amount in Phase 6.
+        /// notify the organizer their slot freed up. The tiered refund is a payment side-effect issued by
+        /// <c>IRefundService</c> after this transition commits (BookingService orchestrates), so Stripe is
+        /// never called inside this transaction.
         /// </summary>
         protected async Task<BookingResponse> CancelByUserAsync(Booking booking, int cancellingUserId, string? reason)
             => await InTransactionAsync(async () =>
@@ -117,7 +118,8 @@ namespace Travle.Services.BookingStateMachine
         /// Organizer slot-cancellation, shared by <see cref="PaymentInProgressBookingState"/>,
         /// <see cref="PendingBookingState"/> and <see cref="ConfirmedBookingState"/>: the whole slot is
         /// being retired by the caller (which zeroes it out), so seats are not decremented here — the
-        /// booking just moves to Cancelled with a 100% refund owed (executed in Phase 6).
+        /// booking just moves to Cancelled with a 100% refund owed (issued by <c>IRefundService</c> once
+        /// TourService commits the slot-cancel transaction).
         /// </summary>
         protected async Task<BookingResponse> CancelForSlotInternalAsync(Booking booking, int organizerUserId, string reason)
         {

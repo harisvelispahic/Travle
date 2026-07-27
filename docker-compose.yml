@@ -95,6 +95,11 @@ services:
       - RabbitMq__Port=${RABBITMQ_PORT}
       - RabbitMq__Username=${RABBITMQ_USERNAME}
       - RabbitMq__Password=${RABBITMQ_PASSWORD}
+      # Payments (Stripe test mode). The webhook secret comes from `stripe listen` / the dashboard endpoint.
+      - Payments__StripeSecretKey=${STRIPE_SECRET_KEY}
+      - Payments__StripeWebhookSecret=${STRIPE_WEBHOOK_SECRET}
+      - Payments__StripePublishableKey=${STRIPE_PUBLISHABLE_KEY}
+      - Payments__PlatformFeePercentage=${PLATFORM_FEE_PERCENTAGE}
     ports:
       - "${API_HOST_PORT}:5121"
     depends_on:

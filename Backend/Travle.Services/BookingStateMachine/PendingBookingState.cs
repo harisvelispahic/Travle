@@ -33,7 +33,8 @@ namespace Travle.Services.BookingStateMachine
         public override async Task<BookingResponse> RejectAsync(Booking booking, int organizerUserId, string reason)
             => await InTransactionAsync(async () =>
             {
-                // Pending → Cancelled (organizer reject): release the seats, record who/why, 100% refund (P6).
+                // Pending → Cancelled (organizer reject): release the seats, record who/why. The 100% refund
+                // is issued by IRefundService after this commits (BookingService.RejectAsync orchestrates).
                 await ReleaseSeatsAsync(booking.TourScheduleId, booking.NumberOfPeople);
                 MarkStatus(booking, BookingStatusCode.Cancelled);
                 booking.CancelledByUserId = organizerUserId;
