@@ -1,6 +1,8 @@
+using Travle.Model.Constants;
 using Travle.Model.Exceptions;
 using Travle.Model.Requests;
 using Travle.Model.Responses;
+using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
 using Travle.Services.BookingStateMachine;
 using Travle.Services.Database;
@@ -8,6 +10,7 @@ using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Linq.Dynamic.Core;
 
 namespace Travle.Services.Payments
 {
@@ -251,6 +254,132 @@ namespace Travle.Services.Payments
             }
 
             return payment;
+        }
+
+        public async Task<PageResult<PaymentResponse>> SearchAsync(PaymentSearch search, CancellationToken cancellationToken = default)
+        {
+            _authorization.EnsureInRole(RoleNames.Admin);
+
+            var query = ApplyFilters(_dbContext.Payments.AsNoTracking(), search);
+
+            int? totalCount = null;
+            if (search.IncludeTotalCount ?? false)
+            {
+                totalCount = await query.CountAsync(cancellationToken);
+            }
+
+            // Newest first by default; the table's sortable columns override via SortBy (entity paths).
+            var sortBy = string.IsNullOrWhiteSpace(search.SortBy) ? "CreatedAt desc" : search.SortBy;
+            try
+            {
+                query = query.OrderBy(sortBy);
+            }
+            catch (System.Linq.Dynamic.Core.Exceptions.ParseException)
+            {
+                throw new BusinessRuleException($"Invalid sort expression: '{search.SortBy}'.");
+            }
+
+            var page = search.Page is int p && p > 0 ? p : 1;
+            var pageSize = Math.Clamp(search.PageSize ?? 10, 1, 100);
+            query = query.Skip((page - 1) * pageSize).Take(pageSize);
+
+            // Materialize with the raw enum, then map its name in memory (EF can't translate enum.ToString()).
+            var rows = await query
+                .Select(p => new
+                {
+                    p.Id,
+                    p.BookingId,
+                    TravelerName = p.Booking.User.FirstName + " " + p.Booking.User.LastName,
+                    TravelerUsername = p.Booking.User.Username,
+                    TourName = p.Booking.TourSchedule.Tour.Name,
+                    p.Amount,
+                    p.Currency,
+                    p.PlatformFeePercentage,
+                    p.PlatformFeeAmount,
+                    p.Status,
+                    RefundedAmount = p.Refunds.Sum(r => (decimal?)r.Amount) ?? 0m,
+                    RefundCount = p.Refunds.Count,
+                    p.SucceededAt,
+                    p.CreatedAt
+                })
+                .ToListAsync(cancellationToken);
+
+            var items = rows.Select(r => new PaymentResponse
+            {
+                Id = r.Id,
+                BookingId = r.BookingId,
+                TravelerName = r.TravelerName,
+                TravelerUsername = r.TravelerUsername,
+                TourName = r.TourName,
+                Amount = r.Amount,
+                Currency = r.Currency,
+                PlatformFeePercentage = r.PlatformFeePercentage,
+                PlatformFeeAmount = r.PlatformFeeAmount,
+                Status = r.Status.ToString(),
+                RefundedAmount = r.RefundedAmount,
+                RefundCount = r.RefundCount,
+                SucceededAt = r.SucceededAt,
+                CreatedAt = r.CreatedAt
+            }).ToList();
+
+            return new PageResult<PaymentResponse> { Items = items, TotalCount = totalCount };
+        }
+
+        public async Task<PaymentSummaryResponse> GetSummaryAsync(PaymentSearch search, CancellationToken cancellationToken = default)
+        {
+            _authorization.EnsureInRole(RoleNames.Admin);
+
+            var filtered = ApplyFilters(_dbContext.Payments.AsNoTracking(), search);
+
+            // "Captured" = money actually taken (charged and possibly later refunded).
+            var captured = filtered.Where(p => p.Status == PaymentStatus.Succeeded
+                                               || p.Status == PaymentStatus.Refunded
+                                               || p.Status == PaymentStatus.PartiallyRefunded);
+
+            var capturedCount = await captured.CountAsync(cancellationToken);
+            var grossRevenue = await captured.SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0m;
+            var commission = await captured.SumAsync(p => (decimal?)p.PlatformFeeAmount, cancellationToken) ?? 0m;
+
+            var refunds = filtered.SelectMany(p => p.Refunds);
+            var totalRefunded = await refunds.SumAsync(r => (decimal?)r.Amount, cancellationToken) ?? 0m;
+            var refundCount = await refunds.CountAsync(cancellationToken);
+
+            return new PaymentSummaryResponse
+            {
+                CapturedCount = capturedCount,
+                GrossRevenue = grossRevenue,
+                PlatformCommission = commission,
+                OrganizerShare = grossRevenue - commission,
+                TotalRefunded = totalRefunded,
+                RefundCount = refundCount,
+                NetRevenue = grossRevenue - totalRefunded,
+                Currency = _options.Currency
+            };
+        }
+
+        private static IQueryable<Payment> ApplyFilters(IQueryable<Payment> query, PaymentSearch search)
+        {
+            if (search.Status is int status)
+            {
+                query = query.Where(p => p.Status == (PaymentStatus)status);
+            }
+            if (search.FromDate is DateTime from)
+            {
+                query = query.Where(p => p.CreatedAt >= from);
+            }
+            if (search.ToDate is DateTime to)
+            {
+                query = query.Where(p => p.CreatedAt < to);
+            }
+            if (!string.IsNullOrWhiteSpace(search.Text))
+            {
+                var text = search.Text.Trim();
+                query = query.Where(p =>
+                    p.Booking.User.Username.Contains(text)
+                    || (p.Booking.User.FirstName + " " + p.Booking.User.LastName).Contains(text)
+                    || p.Booking.TourSchedule.Tour.Name.Contains(text));
+            }
+            return query;
         }
 
         private PaymentIntentResponse BuildResponse(Booking booking, Payment payment, string clientSecret)

@@ -1,5 +1,6 @@
 using Travle.Model.Requests;
 using Travle.Model.Responses;
+using Travle.Model.SearchObjects;
 
 namespace Travle.Services.Payments
 {
@@ -27,5 +28,11 @@ namespace Travle.Services.Payments
         /// This is the <b>only</b> place a payment is recorded as successful; the client never reports it.
         /// </summary>
         Task HandleWebhookAsync(string json, string signatureHeader, CancellationToken cancellationToken = default);
+
+        /// <summary>Admin-only: paginated, filterable list of payments for the admin payments screen.</summary>
+        Task<PageResult<PaymentResponse>> SearchAsync(PaymentSearch search, CancellationToken cancellationToken = default);
+
+        /// <summary>Admin-only: revenue / commission / refund totals over the same filter as the list.</summary>
+        Task<PaymentSummaryResponse> GetSummaryAsync(PaymentSearch search, CancellationToken cancellationToken = default);
     }
 }

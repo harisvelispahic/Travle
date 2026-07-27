@@ -16,6 +16,8 @@ export 'src/models/destination_response.dart';
 export 'src/models/destination_update_request.dart';
 export 'src/models/forgot_password_request.dart';
 export 'src/models/payment_intent_response.dart';
+export 'src/models/payment_response.dart';
+export 'src/models/payment_summary_response.dart';
 export 'src/models/refund_policy_tier_response.dart';
 export 'src/models/region_response.dart';
 export 'src/models/reset_password_request.dart';

@@ -1,23 +1,30 @@
 import '../models/payment_intent_response.dart';
+import '../models/payment_response.dart';
+import '../models/payment_summary_response.dart';
 import '../network/base_provider.dart';
 
-/// Payments (`/Payments`). Not a CRUD resource — the only client action is
-/// starting a payment for a held booking; the amount and platform-fee snapshot
-/// are computed server-side, and payment success is recorded solely by the
-/// signature-verified webhook (never reported by the client).
-class PaymentProvider extends BaseProvider<PaymentIntentResponse> {
+/// Payments (`/Payments`). Two audiences: a traveler starts a payment for their
+/// held booking ([createIntent]); an admin reads the payments list (the inherited
+/// paginated `get`) and the [summary] totals. The base type is [PaymentResponse]
+/// (the admin list row); the create-intent path parses its own response shape.
+class PaymentProvider extends BaseProvider<PaymentResponse> {
   PaymentProvider() : super('Payments');
 
   @override
-  PaymentIntentResponse fromJson(Map<String, dynamic> json) =>
-      PaymentIntentResponse.fromJson(json);
+  PaymentResponse fromJson(Map<String, dynamic> json) =>
+      PaymentResponse.fromJson(json);
 
-  /// Starts (or resumes) paying for the traveler's own PaymentInProgress booking
-  /// (`POST /Payments/CreateIntent`). Returns the Stripe PaymentIntent client
-  /// secret for the PaymentSheet. Ownership and the hold precondition are
-  /// enforced server-side.
+  /// Traveler starts (or resumes) paying for a held booking
+  /// (`POST /Payments/CreateIntent`) → the Stripe PaymentSheet client secret.
   Future<PaymentIntentResponse> createIntent(int bookingId) async {
     final json = await postAction('CreateIntent', {'bookingId': bookingId});
-    return fromJson(json as Map<String, dynamic>);
+    return PaymentIntentResponse.fromJson(json as Map<String, dynamic>);
+  }
+
+  /// Admin revenue / commission / refund totals (`GET /Payments/summary`),
+  /// over the same filter as the list.
+  Future<PaymentSummaryResponse> summary({dynamic filter}) async {
+    final json = await getAction('summary', filter: filter) as Map<String, dynamic>;
+    return PaymentSummaryResponse.fromJson(json);
   }
 }

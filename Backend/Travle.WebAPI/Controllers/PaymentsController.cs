@@ -1,5 +1,6 @@
 using Travle.Model.Requests;
 using Travle.Model.Responses;
+using Travle.Model.SearchObjects;
 using Travle.Services.Payments;
 using Travle.WebAPI.Authorization;
 using Microsoft.AspNetCore.Authorization;
@@ -52,4 +53,18 @@ public class PaymentsController : ControllerBase
         await _service.HandleWebhookAsync(json, signature, cancellationToken);
         return Ok();
     }
+
+    /// <summary>Admin-only: paginated, filterable payments list for the admin payments screen.</summary>
+    [Authorize(Policy = AuthPolicies.AdminOnly)]
+    [HttpGet]
+    public async Task<ActionResult<PageResult<PaymentResponse>>> GetAll(
+        [FromQuery] PaymentSearch? search, CancellationToken cancellationToken)
+        => Ok(await _service.SearchAsync(search ?? new PaymentSearch(), cancellationToken));
+
+    /// <summary>Admin-only: revenue / commission / refund totals over the same filter.</summary>
+    [Authorize(Policy = AuthPolicies.AdminOnly)]
+    [HttpGet("summary")]
+    public async Task<ActionResult<PaymentSummaryResponse>> Summary(
+        [FromQuery] PaymentSearch? search, CancellationToken cancellationToken)
+        => Ok(await _service.GetSummaryAsync(search ?? new PaymentSearch(), cancellationToken));
 }

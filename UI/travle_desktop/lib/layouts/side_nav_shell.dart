@@ -4,6 +4,7 @@ import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
 import '../screens/admin_bookings_screen.dart';
+import '../screens/admin_payments_screen.dart';
 import '../screens/destinations_moderation_screen.dart';
 import '../screens/organizer_bookings_screen.dart';
 import '../screens/organizer_destinations_screen.dart';
@@ -84,6 +85,13 @@ class _SideNavShellState extends State<SideNavShell> {
       Icons.event_available_outlined,
       'All Bookings',
       builder: (_) => const AdminBookingsScreen(),
+      requiredRole: AppRole.admin,
+    ),
+    _Leaf(
+      'payments',
+      Icons.receipt_long_outlined,
+      'Payments',
+      builder: (_) => const AdminPaymentsScreen(),
       requiredRole: AppRole.admin,
     ),
     const _Leaf('users', Icons.group_outlined, 'Users'),
