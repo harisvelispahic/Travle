@@ -30,9 +30,10 @@ namespace Travle.Services.Projections
                 OrganizerId = t.OrganizerId,
                 OrganizerName = t.Organizer.FirstName + " " + t.Organizer.LastName,
                 IsActive = t.IsActive,
-                // Tour rating is computed on read — a tour has no denormalized rating column (03 §4).
-                AverageRating = t.Reviews.Where(r => !r.IsRemoved).Select(r => (double?)r.Rating).Average() ?? 0d,
-                ReviewCount = t.Reviews.Count(r => !r.IsRemoved),
+                // Tour rating is computed on read — a tour has no denormalized rating column (03 §4). A
+                // suspended author's review is excluded from the public aggregate (reappears on unsuspend).
+                AverageRating = t.Reviews.Where(r => !r.IsRemoved && !r.User.IsSuspended).Select(r => (double?)r.Rating).Average() ?? 0d,
+                ReviewCount = t.Reviews.Count(r => !r.IsRemoved && !r.User.IsSuspended),
                 DestinationCount = t.TourDestinations.Count,
                 // Per-person on-site entrance fees (informative; never part of the Travle price).
                 EntranceFeesPerPerson = t.TourDestinations.Sum(td => td.Destination.EntranceFee ?? 0m),

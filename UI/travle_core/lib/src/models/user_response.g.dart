@@ -26,6 +26,7 @@ UserResponse _$UserResponseFromJson(Map<String, dynamic> json) => UserResponse(
   cityName: json['cityName'] as String?,
   profileImage: json['profileImage'] as String?,
   profileImageContentType: json['profileImageContentType'] as String?,
+  profileImageThumbnail: json['profileImageThumbnail'] as String?,
   modifiedAt: json['modifiedAt'] == null
       ? null
       : DateTime.parse(json['modifiedAt'] as String),
@@ -49,6 +50,7 @@ Map<String, dynamic> _$UserResponseToJson(UserResponse instance) =>
       'onboardingPromptCount': instance.onboardingPromptCount,
       'profileImage': instance.profileImage,
       'profileImageContentType': instance.profileImageContentType,
+      'profileImageThumbnail': instance.profileImageThumbnail,
       'createdAt': instance.createdAt.toIso8601String(),
       'modifiedAt': instance.modifiedAt?.toIso8601String(),
     };

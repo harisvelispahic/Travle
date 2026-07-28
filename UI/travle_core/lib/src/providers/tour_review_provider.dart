@@ -38,6 +38,9 @@ class TourReviewProvider extends BaseProvider<TourReviewResponse> {
   Future<TourReviewResponse> updateReview(int id, ReviewUpdateRequest request) =>
       update(id, request.toJson());
 
+  /// Remove your own review (`DELETE /TourReviews/{id}`; soft — you may review the booking again after).
+  Future<void> removeOwn(int id) => remove(id);
+
   /// Admin moderation removal with a reason (`POST /TourReviews/{id}/Remove`).
   Future<TourReviewResponse> adminRemove(int id, String reason) async {
     final json = await postAction('$id/Remove', {'reason': reason});

@@ -56,6 +56,17 @@ namespace Travle.Services.BookingStateMachine
                 throw new BusinessRuleException("This tour is no longer active.");
             }
 
+            // A suspended organizer can't confirm bookings, so their tours are not bookable while suspended
+            // (defense in depth — the tour is already hidden from browse). Reverses on unsuspend.
+            var organizerSuspended = await DbContext.Users
+                .Where(u => u.Id == slot.Tour.OrganizerId)
+                .Select(u => u.IsSuspended)
+                .FirstOrDefaultAsync();
+            if (organizerSuspended)
+            {
+                throw new BusinessRuleException("This tour is not currently available for booking.");
+            }
+
             // Friendly pre-checks; the filtered unique index and the conditional capacity UPDATE below are
             // the real race backstops (a concurrent request can still slip between check and insert).
             var alreadyActive = await DbContext.Bookings.AnyAsync(b =>

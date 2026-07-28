@@ -61,24 +61,19 @@ namespace Travle.Services
 
         protected override IQueryable<Tour> ApplyFilters(IQueryable<Tour> query, TourSearch? search)
         {
+            // Tours run by a suspended organizer are hidden from every list — a traveler must never book a
+            // tour no one can confirm. A suspended organizer can't sign in, so their own "my tours" view is
+            // unaffected, and this reverses automatically on unsuspend (rows are never deleted).
+            query = query.Where(t => !t.Organizer.IsSuspended);
+
             if (search is null)
             {
                 return query;
             }
 
-            if (!string.IsNullOrWhiteSpace(search.Text))
-            {
-                var text = search.Text;
-                // Asymmetric accent handling driven by the term (see SearchCollation): plain terms match
-                // accent-insensitively; an accented term stays accent-sensitive. Literal collation per branch.
-                query = SearchCollation.HasDiacritics(text)
-                    ? query.Where(t =>
-                        EF.Functions.Collate(t.Name, SearchCollation.CaseInsensitiveAccentSensitive).Contains(text)
-                        || EF.Functions.Collate(t.Description, SearchCollation.CaseInsensitiveAccentSensitive).Contains(text))
-                    : query.Where(t =>
-                        EF.Functions.Collate(t.Name, SearchCollation.CaseInsensitiveAccentInsensitive).Contains(text)
-                        || EF.Functions.Collate(t.Description, SearchCollation.CaseInsensitiveAccentInsensitive).Contains(text));
-            }
+            // Accent-aware name/description search: plain terms match accent-insensitively, an accented term
+            // stays accent-sensitive (see TextSearch / SearchCollation).
+            query = query.WhereContains(search.Text, t => t.Name, t => t.Description);
 
             if (search.TourTypeId.HasValue)
             {
@@ -172,12 +167,13 @@ namespace Travle.Services
             var meta = await _dbContext.Tours
                 .AsNoTracking()
                 .Where(t => t.Id == id)
-                .Select(t => new { t.OrganizerId, t.IsActive })
+                .Select(t => new { t.OrganizerId, t.IsActive, OrganizerSuspended = t.Organizer.IsSuspended })
                 .FirstOrDefaultAsync()
                 ?? throw new NotFoundException("Tour", id);
 
-            // A deactivated tour's detail is only for its organizer or an admin — travelers never reach it.
-            if (!meta.IsActive)
+            // A deactivated tour, or one whose organizer is suspended, is visible only to its organizer or an
+            // admin — travelers never reach it (a suspended organizer can't confirm bookings).
+            if (!meta.IsActive || meta.OrganizerSuspended)
             {
                 _authorization.EnsureSelfOrAdmin(meta.OrganizerId, "tour");
             }

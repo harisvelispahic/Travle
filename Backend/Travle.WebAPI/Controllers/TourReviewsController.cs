@@ -51,6 +51,14 @@ public class TourReviewsController : ControllerBase
     public async Task<ActionResult<TourReviewResponse>> Update(int id, [FromBody] TourReviewUpdateRequest request)
         => Ok(await _service.UpdateAsync(id, request));
 
+    /// <summary>Remove your own review (soft; you may review this booking again afterwards).</summary>
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> RemoveOwn(int id)
+    {
+        await _service.RemoveOwnAsync(id);
+        return NoContent();
+    }
+
     /// <summary>Admin moderation: soft-remove any review with a mandatory reason (author is notified).</summary>
     [Authorize(Policy = AuthPolicies.AdminOnly)]
     [HttpPost("{id}/Remove")]

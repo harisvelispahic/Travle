@@ -73,8 +73,17 @@ namespace Travle.Services
                 query = query.Where(r => r.Rating >= search.MinRating.Value);
             }
 
+            var isAdmin = _currentUser.IsInRole(RoleNames.Admin);
+
+            // A suspended user's reviews are withheld from public view but never deleted — they reappear on
+            // unsuspend. Admins still see them (moderation). Aggregates exclude them regardless (see projections).
+            if (!isAdmin)
+            {
+                query = query.Where(r => !r.User.IsSuspended);
+            }
+
             // Removed rows are surfaced only to admins who explicitly ask; everyone else sees active only.
-            var includeRemoved = (search.IncludeRemoved ?? false) && _currentUser.IsInRole(RoleNames.Admin);
+            var includeRemoved = (search.IncludeRemoved ?? false) && isAdmin;
             if (!includeRemoved)
             {
                 query = query.Where(r => !r.IsRemoved);
@@ -106,13 +115,21 @@ namespace Travle.Services
 
         public override async Task<DestinationReviewResponse> GetByIdAsync(int id)
         {
-            var response = await ProjectToResponse(_dbContext.DestinationReviews.AsNoTracking().Where(r => r.Id == id))
-                .FirstOrDefaultAsync()
+            var isAdmin = _currentUser.IsInRole(RoleNames.Admin);
+
+            IQueryable<DestinationReview> query = _dbContext.DestinationReviews.AsNoTracking().Where(r => r.Id == id);
+            // A suspended author's review is invisible to non-admins (it reappears on unsuspend).
+            if (!isAdmin)
+            {
+                query = query.Where(r => !r.User.IsSuspended);
+            }
+
+            var response = await ProjectToResponse(query).FirstOrDefaultAsync()
                 ?? throw new NotFoundException("DestinationReview", id);
 
             // A removed review is visible only to an admin (moderation) or its author.
             if (response.IsRemoved
-                && !_currentUser.IsInRole(RoleNames.Admin)
+                && !isAdmin
                 && _currentUser.GetUserId() != response.UserId)
             {
                 throw new NotFoundException("DestinationReview", id);

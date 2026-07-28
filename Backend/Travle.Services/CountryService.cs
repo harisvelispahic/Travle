@@ -25,12 +25,7 @@ namespace Travle.Services
 
         protected override IQueryable<Country> ApplyFilters(IQueryable<Country> query, CountrySearch? search)
         {
-            if (!string.IsNullOrWhiteSpace(search?.Name))
-            {
-                query = SearchCollation.HasDiacritics(search.Name)
-                    ? query.Where(c => EF.Functions.Collate(c.Name, SearchCollation.CaseInsensitiveAccentSensitive).Contains(search.Name))
-                    : query.Where(c => EF.Functions.Collate(c.Name, SearchCollation.CaseInsensitiveAccentInsensitive).Contains(search.Name));
-            }
+            query = query.WhereContains(search?.Name, c => c.Name);
 
             return query;
         }

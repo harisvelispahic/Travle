@@ -30,12 +30,7 @@ namespace Travle.Services
                 return query;
             }
 
-            if (!string.IsNullOrWhiteSpace(search.Name))
-            {
-                query = SearchCollation.HasDiacritics(search.Name)
-                    ? query.Where(r => EF.Functions.Collate(r.Name, SearchCollation.CaseInsensitiveAccentSensitive).Contains(search.Name))
-                    : query.Where(r => EF.Functions.Collate(r.Name, SearchCollation.CaseInsensitiveAccentInsensitive).Contains(search.Name));
-            }
+            query = query.WhereContains(search.Name, r => r.Name);
 
             if (search.CountryId.HasValue)
             {

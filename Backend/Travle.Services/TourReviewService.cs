@@ -69,7 +69,16 @@ namespace Travle.Services
                 query = query.Where(r => r.Rating >= search.MinRating.Value);
             }
 
-            var includeRemoved = (search.IncludeRemoved ?? false) && _currentUser.IsInRole(RoleNames.Admin);
+            var isAdmin = _currentUser.IsInRole(RoleNames.Admin);
+
+            // A suspended user's reviews are withheld from public view but never deleted — they reappear on
+            // unsuspend. Admins still see them (moderation). Aggregates exclude them regardless (see projections).
+            if (!isAdmin)
+            {
+                query = query.Where(r => !r.User.IsSuspended);
+            }
+
+            var includeRemoved = (search.IncludeRemoved ?? false) && isAdmin;
             if (!includeRemoved)
             {
                 query = query.Where(r => !r.IsRemoved);
@@ -101,12 +110,20 @@ namespace Travle.Services
 
         public override async Task<TourReviewResponse> GetByIdAsync(int id)
         {
-            var response = await ProjectToResponse(_dbContext.TourReviews.AsNoTracking().Where(r => r.Id == id))
-                .FirstOrDefaultAsync()
+            var isAdmin = _currentUser.IsInRole(RoleNames.Admin);
+
+            IQueryable<TourReview> query = _dbContext.TourReviews.AsNoTracking().Where(r => r.Id == id);
+            // A suspended author's review is invisible to non-admins (it reappears on unsuspend).
+            if (!isAdmin)
+            {
+                query = query.Where(r => !r.User.IsSuspended);
+            }
+
+            var response = await ProjectToResponse(query).FirstOrDefaultAsync()
                 ?? throw new NotFoundException("TourReview", id);
 
             if (response.IsRemoved
-                && !_currentUser.IsInRole(RoleNames.Admin)
+                && !isAdmin
                 && _currentUser.GetUserId() != response.UserId)
             {
                 throw new NotFoundException("TourReview", id);
@@ -147,12 +164,29 @@ namespace Travle.Services
                 throw new BusinessRuleException("You can review a tour only after your booking is completed.");
             }
 
-            // The booking id stays occupied even after a soft removal — check every row, not just active
-            // ones, so a removed review is not re-created (03 §3). The DB unique index is the backstop.
-            var alreadyReviewed = await _dbContext.TourReviews.AnyAsync(r => r.BookingId == request.BookingId);
-            if (alreadyReviewed)
+            // One review per booking (unique index on BookingId). If a row already exists we either block
+            // (active, or an admin-removed one — moderation is final) or reactivate the author's own prior
+            // self-removal, reusing the row so the unique index is honoured (03 §3).
+            var existing = await _dbContext.TourReviews.FirstOrDefaultAsync(r => r.BookingId == request.BookingId);
+            if (existing is not null)
             {
-                throw new ConflictException("You have already reviewed this booking.");
+                if (!existing.IsRemoved)
+                {
+                    throw new ConflictException("You have already reviewed this booking.");
+                }
+                if (existing.RemovedByUserId != userId)
+                {
+                    throw new ConflictException("This review was removed by a moderator and cannot be re-created.");
+                }
+
+                existing.Rating = request.Rating;
+                existing.Comment = string.IsNullOrWhiteSpace(request.Comment) ? null : request.Comment.Trim();
+                existing.IsRemoved = false;
+                existing.RemovedByUserId = null;
+                existing.RemovalReason = null;
+                await _dbContext.SaveChangesAsync();
+
+                return await RequireResponseAsync(existing.Id);
             }
 
             var review = new TourReview
@@ -192,6 +226,30 @@ namespace Travle.Services
             await _dbContext.SaveChangesAsync();
 
             return await RequireResponseAsync(id);
+        }
+
+        public async Task RemoveOwnAsync(int id)
+        {
+            var review = await _dbContext.TourReviews.FirstOrDefaultAsync(r => r.Id == id)
+                ?? throw new NotFoundException("TourReview", id);
+
+            var userId = _authorization.RequireUserId();
+            if (review.UserId != userId)
+            {
+                throw new ForbiddenException("You can only modify your own review.");
+            }
+            if (review.IsRemoved)
+            {
+                throw new BusinessRuleException("This review has already been removed.");
+            }
+
+            // Self-removal: soft-remove, tagging the author as the remover so a later re-review can tell it
+            // apart from an admin moderation removal (which is final). Tour ratings are computed on read, so
+            // there is nothing to recompute.
+            review.IsRemoved = true;
+            review.RemovedByUserId = userId;
+            review.RemovalReason = null;
+            await _dbContext.SaveChangesAsync();
         }
 
         public async Task<TourReviewResponse> RemoveAsync(int id, ReviewRemoveRequest request)

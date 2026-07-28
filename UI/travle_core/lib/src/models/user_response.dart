@@ -2,9 +2,10 @@ import 'package:json_annotation/json_annotation.dart';
 
 part 'user_response.g.dart';
 
-/// Public user projection (mirrors the backend `UserResponse`). [profileImage]
-/// is a base64 string (from the server's `byte[]`), populated only on
-/// detail/self reads — list endpoints leave it null.
+/// Public user projection (mirrors the backend `UserResponse`). Read paths
+/// (list + self / `Access/Me`) carry only [profileImageThumbnail] — a small
+/// base64 JPEG — so the avatar loads fast; the full [profileImage] is populated
+/// only on the admin detail read and is null everywhere else.
 @JsonSerializable()
 class UserResponse {
   UserResponse({
@@ -25,6 +26,7 @@ class UserResponse {
     this.cityName,
     this.profileImage,
     this.profileImageContentType,
+    this.profileImageThumbnail,
     this.modifiedAt,
   });
 
@@ -45,6 +47,9 @@ class UserResponse {
   final int onboardingPromptCount;
   final String? profileImage;
   final String? profileImageContentType;
+
+  /// Small base64 JPEG avatar thumbnail; the image shipped on list + self reads.
+  final String? profileImageThumbnail;
   final DateTime createdAt;
   final DateTime? modifiedAt;
 

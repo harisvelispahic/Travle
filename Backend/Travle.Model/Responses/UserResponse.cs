@@ -2,8 +2,9 @@ namespace Travle.Model.Responses
 {
     /// <summary>
     /// Public user projection. Never carries the password hash/salt. <see cref="Roles"/> is a list
-    /// because accounts can hold several roles at once. <see cref="ProfileImage"/> is populated on
-    /// detail/self reads; list endpoints leave it null (§8.2 — no heavy payloads in lists).
+    /// because accounts can hold several roles at once. Read paths (list + self) carry only the small
+    /// <see cref="ProfileImageThumbnail"/> (§8.2 — no heavy payloads); the full <see cref="ProfileImage"/>
+    /// is populated only on the admin detail read and is null everywhere else.
     /// </summary>
     public class UserResponse
     {
@@ -31,6 +32,9 @@ namespace Travle.Model.Responses
 
         public byte[]? ProfileImage { get; set; }
         public string? ProfileImageContentType { get; set; }
+
+        /// <summary>Small JPEG avatar thumbnail; the image shipped on list + self reads (§8.2).</summary>
+        public byte[]? ProfileImageThumbnail { get; set; }
 
         public DateTime CreatedAt { get; set; }
         public DateTime? ModifiedAt { get; set; }

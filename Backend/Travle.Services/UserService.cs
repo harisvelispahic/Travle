@@ -5,6 +5,7 @@ using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
 using Travle.Services.Database;
+using Travle.Services.Imaging;
 using Travle.Services.Recommender;
 using Travle.Services.Security;
 using FluentValidation;
@@ -17,6 +18,7 @@ namespace Travle.Services
     {
         private readonly ICryptoService _cryptoService;
         private readonly IAppAuthorizationService _authorization;
+        private readonly IThumbnailGenerator _thumbnailGenerator;
         private readonly RecommenderOptions _recommenderOptions;
         private readonly IValidator<UserRegisterRequest> _registerValidator;
         private readonly IValidator<UserUpdateRequest> _updateValidator;
@@ -29,6 +31,7 @@ namespace Travle.Services
             MapsterMapper.IMapper mapper,
             ICryptoService cryptoService,
             IAppAuthorizationService authorization,
+            IThumbnailGenerator thumbnailGenerator,
             IOptions<RecommenderOptions> recommenderOptions,
             IValidator<UserRegisterRequest> registerValidator,
             IValidator<UserUpdateRequest> updateValidator,
@@ -39,6 +42,7 @@ namespace Travle.Services
         {
             _cryptoService = cryptoService;
             _authorization = authorization;
+            _thumbnailGenerator = thumbnailGenerator;
             _recommenderOptions = recommenderOptions.Value;
             _registerValidator = registerValidator;
             _updateValidator = updateValidator;
@@ -64,16 +68,7 @@ namespace Travle.Services
                 query = query.Where(u => u.Username.Contains(search.Username));
             }
 
-            if (!string.IsNullOrWhiteSpace(search.Name))
-            {
-                query = SearchCollation.HasDiacritics(search.Name)
-                    ? query.Where(u =>
-                        EF.Functions.Collate(u.FirstName, SearchCollation.CaseInsensitiveAccentSensitive).Contains(search.Name)
-                        || EF.Functions.Collate(u.LastName, SearchCollation.CaseInsensitiveAccentSensitive).Contains(search.Name))
-                    : query.Where(u =>
-                        EF.Functions.Collate(u.FirstName, SearchCollation.CaseInsensitiveAccentInsensitive).Contains(search.Name)
-                        || EF.Functions.Collate(u.LastName, SearchCollation.CaseInsensitiveAccentInsensitive).Contains(search.Name));
-            }
+            query = query.WhereContains(search.Name, u => u.FirstName, u => u.LastName);
 
             if (search.IsSuspended.HasValue)
             {
@@ -101,10 +96,9 @@ namespace Travle.Services
         }
 
         /// <summary>
-        /// List path (admin user management). Projected by hand instead of mapping whole entities so the
-        /// heavy <see cref="User.ProfileImage"/> column is never selected — lists carry no image bytes
-        /// (rule 12: thumbnails only, and there is no user thumbnail, so the image is omitted entirely).
-        /// The full image is served only by the detail/self read. Filter/sort/page reuse the base stages.
+        /// List path (admin user management). Projected by hand (see <see cref="ProjectToResponse"/>) so the
+        /// heavy <see cref="User.ProfileImage"/> column is never selected — only the small thumbnail travels
+        /// (rule 12 / §8.2). Filter/sort/page reuse the base stages.
         /// </summary>
         public override async Task<PageResult<UserResponse>> GetAllAsync(UserSearch? search = null)
         {
@@ -120,31 +114,38 @@ namespace Travle.Services
             query = ApplySorting(query, search);
             query = ApplyPaging(query, search);
 
-            var items = await query
-                .Select(u => new UserResponse
-                {
-                    Id = u.Id,
-                    FirstName = u.FirstName,
-                    LastName = u.LastName,
-                    Email = u.Email,
-                    Username = u.Username,
-                    PhoneNumber = u.PhoneNumber,
-                    Roles = u.UserRoles.Select(ur => ur.Role.Name).ToList(),
-                    IsSuspended = u.IsSuspended,
-                    SuspendedAt = u.SuspendedAt,
-                    SuspensionReason = u.SuspensionReason,
-                    CityId = u.CityId,
-                    CityName = u.City != null ? u.City.Name : null,
-                    IsOnboarded = u.IsOnboarded,
-                    OnboardingPromptCount = u.OnboardingPromptCount,
-                    // ProfileImage / ProfileImageContentType intentionally left null in list responses.
-                    CreatedAt = u.CreatedAt,
-                    ModifiedAt = u.ModifiedAt
-                })
-                .ToListAsync();
+            var items = await ProjectToResponse(query).ToListAsync();
 
             return new PageResult<UserResponse> { Items = items, TotalCount = totalCount };
         }
+
+        /// <summary>
+        /// The list/self projection: every public field plus the small avatar thumbnail, but never the heavy
+        /// full <see cref="User.ProfileImage"/> bytes (rule 12 / §8.2). The full image is loaded only by the
+        /// admin detail read (base Mapster path). Shared by the list and the self read (<c>/Access/Me</c>).
+        /// </summary>
+        private static IQueryable<UserResponse> ProjectToResponse(IQueryable<User> query)
+            => query.Select(u => new UserResponse
+            {
+                Id = u.Id,
+                FirstName = u.FirstName,
+                LastName = u.LastName,
+                Email = u.Email,
+                Username = u.Username,
+                PhoneNumber = u.PhoneNumber,
+                Roles = u.UserRoles.Select(ur => ur.Role.Name).ToList(),
+                IsSuspended = u.IsSuspended,
+                SuspendedAt = u.SuspendedAt,
+                SuspensionReason = u.SuspensionReason,
+                CityId = u.CityId,
+                CityName = u.City != null ? u.City.Name : null,
+                IsOnboarded = u.IsOnboarded,
+                OnboardingPromptCount = u.OnboardingPromptCount,
+                // Thumbnail only — the full ProfileImage bytes are intentionally never selected here.
+                ProfileImageThumbnail = u.ProfileImageThumbnail,
+                CreatedAt = u.CreatedAt,
+                ModifiedAt = u.ModifiedAt
+            });
 
         public async Task<UserResponse> RegisterAsync(UserRegisterRequest request)
         {
@@ -212,6 +213,14 @@ namespace Travle.Services
 
             // Null members are ignored (Mapster IgnoreNullValues) so unspecified fields keep their value.
             _mapper.Map(request, user);
+
+            // A newly uploaded image gets a fresh server-side thumbnail — the only image bytes that ever
+            // travel back to a client (rule 12 / §8.2). Generated from the validated bytes, never client-supplied.
+            if (request.ProfileImage is { Length: > 0 })
+            {
+                var (thumbnail, _) = await _thumbnailGenerator.GenerateThumbnailAsync(request.ProfileImage);
+                user.ProfileImageThumbnail = thumbnail;
+            }
 
             await _dbContext.SaveChangesAsync();
 
@@ -312,16 +321,12 @@ namespace Travle.Services
             return _mapper.Map<UserResponse>(user);
         }
 
+        // Self/roles read (e.g. /Access/Me and the response after every profile mutation). Uses the shared
+        // projection so it ships the avatar thumbnail but never the heavy full image — the self screens only
+        // ever render the small avatar (rule 12 / §8.2).
         public async Task<UserResponse?> GetWithRolesByIdAsync(int id)
-        {
-            var user = await _dbContext.Users
-                .AsNoTracking()
-                .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
-                .Include(u => u.City)
-                .FirstOrDefaultAsync(u => u.Id == id);
-
-            return user is null ? null : _mapper.Map<UserResponse>(user);
-        }
+            => await ProjectToResponse(_dbContext.Users.AsNoTracking().Where(u => u.Id == id))
+                   .FirstOrDefaultAsync();
 
         public async Task<UserResponse> CompleteOnboardingAsync(UserOnboardingRequest request)
         {

@@ -32,8 +32,10 @@ namespace Travle.Services.Projections
                 EntranceFee = d.EntranceFee,
                 Status = d.Status.ToString(),
                 IsFeatured = d.IsFeatured,
-                AverageRating = d.AverageRating,
-                ReviewCount = d.Reviews.Count(r => !r.IsRemoved),
+                // Computed on read (not the denormalized column) so a suspended author's review drops out of
+                // the public rating immediately and returns on unsuspend — the denorm still feeds the recommender.
+                AverageRating = d.Reviews.Where(r => !r.IsRemoved && !r.User.IsSuspended).Select(r => (double?)r.Rating).Average() ?? 0d,
+                ReviewCount = d.Reviews.Count(r => !r.IsRemoved && !r.User.IsSuspended),
                 ViewCount = d.ViewCount,
                 SubmittedByUserId = d.SubmittedByUserId,
                 SubmittedByUsername = d.SubmittedByUser.Username,

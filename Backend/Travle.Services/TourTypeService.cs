@@ -25,12 +25,7 @@ namespace Travle.Services
 
         protected override IQueryable<TourType> ApplyFilters(IQueryable<TourType> query, TourTypeSearch? search)
         {
-            if (!string.IsNullOrWhiteSpace(search?.Name))
-            {
-                query = SearchCollation.HasDiacritics(search.Name)
-                    ? query.Where(t => EF.Functions.Collate(t.Name, SearchCollation.CaseInsensitiveAccentSensitive).Contains(search.Name))
-                    : query.Where(t => EF.Functions.Collate(t.Name, SearchCollation.CaseInsensitiveAccentInsensitive).Contains(search.Name));
-            }
+            query = query.WhereContains(search?.Name, t => t.Name);
 
             return query;
         }

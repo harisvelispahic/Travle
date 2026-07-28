@@ -6,9 +6,14 @@ import 'package:travle_ui/travle_ui.dart';
 import '../util/booking_display.dart';
 import '../widgets/booking_review_card.dart';
 
+/// Whether the list shows upcoming departures or past ones — each with the order
+/// that reads best: soonest-first for upcoming, most-recent-first for past.
+enum _Timeframe { upcoming, past }
+
 /// Admin's read-only view of every booking in the system (`GET /Bookings`),
-/// filterable by status. Bookings are never edited here — the admin oversees;
-/// organizers act. Transitions happen only through the state machine.
+/// filterable by status and split into upcoming / past departures. Bookings are
+/// never edited here — the admin oversees; organizers act. Transitions happen
+/// only through the state machine.
 class AdminBookingsScreen extends StatefulWidget {
   const AdminBookingsScreen({super.key});
 
@@ -18,6 +23,7 @@ class AdminBookingsScreen extends StatefulWidget {
 
 class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
   int? _statusId; // null = all statuses
+  _Timeframe _timeframe = _Timeframe.upcoming;
   bool _loading = true;
   String? _error;
   List<BookingResponse> _items = [];
@@ -34,10 +40,16 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
       _error = null;
     });
     try {
+      // Split by the schedule's departure relative to now, ordered so the most
+      // relevant row is first: upcoming → soonest first; past → most recent first.
+      final now = DateTime.now().toUtc();
+      final upcoming = _timeframe == _Timeframe.upcoming;
       final result = await context.read<BookingProvider>().get(
         filter: {
           'pageSize': 50,
           if (_statusId != null) 'statusId': _statusId,
+          if (upcoming) 'fromDate': now else 'toDate': now,
+          'sortBy': upcoming ? 'TourSchedule.StartsAt' : 'TourSchedule.StartsAt desc',
         },
       );
       if (!mounted) return;
@@ -63,6 +75,28 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
         children: [
           Row(
             children: [
+              SegmentedButton<_Timeframe>(
+                segments: const [
+                  ButtonSegment(
+                    value: _Timeframe.upcoming,
+                    label: Text('Upcoming'),
+                    icon: Icon(Icons.event_available_outlined),
+                  ),
+                  ButtonSegment(
+                    value: _Timeframe.past,
+                    label: Text('Past'),
+                    icon: Icon(Icons.history),
+                  ),
+                ],
+                selected: {_timeframe},
+                onSelectionChanged: _loading
+                    ? null
+                    : (selection) {
+                        setState(() => _timeframe = selection.first);
+                        _load();
+                      },
+              ),
+              const SizedBox(width: TravleTokens.space16),
               DropdownButton<int?>(
                 value: _statusId,
                 onChanged: _loading

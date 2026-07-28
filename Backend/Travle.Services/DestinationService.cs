@@ -59,19 +59,9 @@ namespace Travle.Services
                 return query;
             }
 
-            if (!string.IsNullOrWhiteSpace(search.Text))
-            {
-                var text = search.Text;
-                // Asymmetric accent handling driven by the term (see SearchCollation): plain terms match
-                // accent-insensitively; an accented term stays accent-sensitive. Literal collation per branch.
-                query = SearchCollation.HasDiacritics(text)
-                    ? query.Where(d =>
-                        EF.Functions.Collate(d.Name, SearchCollation.CaseInsensitiveAccentSensitive).Contains(text)
-                        || EF.Functions.Collate(d.Description, SearchCollation.CaseInsensitiveAccentSensitive).Contains(text))
-                    : query.Where(d =>
-                        EF.Functions.Collate(d.Name, SearchCollation.CaseInsensitiveAccentInsensitive).Contains(text)
-                        || EF.Functions.Collate(d.Description, SearchCollation.CaseInsensitiveAccentInsensitive).Contains(text));
-            }
+            // Accent-aware name/description search: plain terms match accent-insensitively, an accented term
+            // stays accent-sensitive (see TextSearch / SearchCollation).
+            query = query.WhereContains(search.Text, d => d.Name, d => d.Description);
 
             if (search.CategoryId.HasValue)
             {

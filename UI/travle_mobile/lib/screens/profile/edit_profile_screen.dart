@@ -54,7 +54,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       _username.text = user.username;
       _email.text = user.email;
       _phone.text = user.phoneNumber ?? '';
-      _currentImageBase64 = user.profileImage;
+      // Self reads carry only the thumbnail now; use it as the current-photo preview.
+      _currentImageBase64 = user.profileImageThumbnail ?? user.profileImage;
     }
     _bootstrap();
   }

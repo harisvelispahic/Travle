@@ -807,6 +807,38 @@ class _BookingReviewSectionState extends State<_BookingReviewSection> {
     }
   }
 
+  Future<void> _removeReview() async {
+    final review = _review;
+    if (review == null) return;
+
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Remove your review',
+      message: 'Are you sure you want to remove your review of this tour? '
+          'You can write a new one later.',
+      confirmLabel: 'Remove',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      await context.read<TourReviewProvider>().removeOwn(review.id);
+      if (!mounted) return;
+      // Clear the local review and reload the booking so it becomes reviewable again.
+      setState(() {
+        _review = null;
+        _busy = false;
+      });
+      AppSnackbars.success(context, 'Your review has been removed.');
+      widget.onChanged();
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      AppSnackbars.error(context, e.message);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final booking = widget.booking;
@@ -846,6 +878,7 @@ class _BookingReviewSectionState extends State<_BookingReviewSection> {
                   comment: review.comment,
                   isMine: true,
                   onEdit: _busy ? null : _editReview,
+                  onRemove: _busy ? null : _removeReview,
                 )
         else
           Column(

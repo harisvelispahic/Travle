@@ -50,7 +50,7 @@ class ProfileScreen extends StatelessWidget {
             child: Row(
               children: [
                 ProfileAvatar(
-                  base64Image: user?.profileImage,
+                  base64Image: user?.profileImageThumbnail ?? user?.profileImage,
                   radius: 32,
                   initials: _initials(user, auth.username),
                 ),

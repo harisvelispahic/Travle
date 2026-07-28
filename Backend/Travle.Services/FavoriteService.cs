@@ -95,7 +95,9 @@ namespace Travle.Services
             var now = DateTime.UtcNow;
 
             IQueryable<Tour> query = _dbContext.Tours.AsNoTracking()
-                .Where(t => _dbContext.Favorites.Any(f => f.UserId == userId && f.TourId == t.Id));
+                .Where(t => _dbContext.Favorites.Any(f => f.UserId == userId && f.TourId == t.Id))
+                // Hide a favorited tour whose organizer is currently suspended (reappears on unsuspend).
+                .Where(t => !t.Organizer.IsSuspended);
 
             query = ApplyTourText(query, search.Text);
             if (search.TourTypeId.HasValue)
@@ -199,36 +201,10 @@ namespace Travle.Services
         // plain term is accent-insensitive, an accented term stays accent-sensitive (compile-time literal
         // collation per branch).
         private static IQueryable<Destination> ApplyDestinationText(IQueryable<Destination> query, string? text)
-        {
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                return query;
-            }
-
-            return SearchCollation.HasDiacritics(text)
-                ? query.Where(d =>
-                    EF.Functions.Collate(d.Name, SearchCollation.CaseInsensitiveAccentSensitive).Contains(text)
-                    || EF.Functions.Collate(d.Description, SearchCollation.CaseInsensitiveAccentSensitive).Contains(text))
-                : query.Where(d =>
-                    EF.Functions.Collate(d.Name, SearchCollation.CaseInsensitiveAccentInsensitive).Contains(text)
-                    || EF.Functions.Collate(d.Description, SearchCollation.CaseInsensitiveAccentInsensitive).Contains(text));
-        }
+            => query.WhereContains(text, d => d.Name, d => d.Description);
 
         private static IQueryable<Tour> ApplyTourText(IQueryable<Tour> query, string? text)
-        {
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                return query;
-            }
-
-            return SearchCollation.HasDiacritics(text)
-                ? query.Where(t =>
-                    EF.Functions.Collate(t.Name, SearchCollation.CaseInsensitiveAccentSensitive).Contains(text)
-                    || EF.Functions.Collate(t.Description, SearchCollation.CaseInsensitiveAccentSensitive).Contains(text))
-                : query.Where(t =>
-                    EF.Functions.Collate(t.Name, SearchCollation.CaseInsensitiveAccentInsensitive).Contains(text)
-                    || EF.Functions.Collate(t.Description, SearchCollation.CaseInsensitiveAccentInsensitive).Contains(text));
-        }
+            => query.WhereContains(text, t => t.Name, t => t.Description);
 
         // Local paging (this service does not extend BaseReadService); same MaxPageSize clamp so a
         // favorites list can never return an unbounded set.

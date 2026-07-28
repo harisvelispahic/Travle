@@ -18,11 +18,16 @@ namespace Travle.Services.Database
 
         public string? PhoneNumber { get; set; }
 
-        /// <summary>Full-size profile image bytes. Kept out of list DTOs (12/§8.2 — thumbnails only).</summary>
+        /// <summary>Full-size profile image bytes. Never sent to clients on read paths — only the small
+        /// <see cref="ProfileImageThumbnail"/> travels (12/§8.2 — thumbnails only).</summary>
         public byte[]? ProfileImage { get; set; }
 
         /// <summary>Declared MIME type of <see cref="ProfileImage"/> (image/jpeg or image/png), verified against the bytes on upload.</summary>
         public string? ProfileImageContentType { get; set; }
+
+        /// <summary>Small JPEG thumbnail generated server-side from <see cref="ProfileImage"/> on upload; the
+        /// only image bytes shipped on read paths (list + self), so the avatar loads fast (12/§8.2).</summary>
+        public byte[]? ProfileImageThumbnail { get; set; }
 
         // Suspension = domain flag + audit (not on BaseEntity, per 02 §2b/§6a).
         public bool IsSuspended { get; set; }
