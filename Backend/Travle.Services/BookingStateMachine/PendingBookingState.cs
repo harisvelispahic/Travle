@@ -25,7 +25,7 @@ namespace Travle.Services.BookingStateMachine
                 "Booking confirmed",
                 "Your booking has been confirmed by the organizer.",
                 booking.Id);
-            // RECOMMENDER: the BookingConfirmed UserInteraction is recorded here in Phase 8 (04 §recording points).
+            await RecordBookingSignalAsync(booking, InteractionType.BookingConfirmed);
             await DbContext.SaveChangesAsync();
             return await BuildResponseAsync(booking.Id);
         }

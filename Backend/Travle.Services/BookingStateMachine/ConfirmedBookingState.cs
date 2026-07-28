@@ -24,7 +24,7 @@ namespace Travle.Services.BookingStateMachine
                 "Tour completed",
                 "Your tour is complete. Share your experience by leaving a review!",
                 booking.Id);
-            // RECOMMENDER: the BookingCompleted UserInteraction is recorded here in Phase 8 (04 §recording points).
+            await RecordBookingSignalAsync(booking, InteractionType.BookingCompleted);
             await DbContext.SaveChangesAsync();
             return await BuildResponseAsync(booking.Id);
         }

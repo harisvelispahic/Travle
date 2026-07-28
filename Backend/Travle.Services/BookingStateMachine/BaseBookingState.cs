@@ -2,9 +2,11 @@ using Travle.Model.Exceptions;
 using Travle.Model.Requests;
 using Travle.Model.Responses;
 using Travle.Services.Database;
+using Travle.Services.Recommender;
 using MapsterMapper;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Travle.Services.BookingStateMachine
 {
@@ -165,6 +167,44 @@ namespace Travle.Services.BookingStateMachine
                 RelatedEntityId = bookingId,
                 IsRead = false
             });
+
+        /// <summary>
+        /// Records the recommender signal for a booking that reached a strong lifecycle state
+        /// (Confirmed ⇒ <see cref="InteractionType.BookingConfirmed"/>, Completed ⇒
+        /// <see cref="InteractionType.BookingCompleted"/>): one append-only <see cref="UserInteraction"/>
+        /// per destination the booked tour visits, so a multi-stop tour feeds every stop's
+        /// category/tags/region into the user profile (04 §2). The weight comes from the single
+        /// authoritative <see cref="RecommenderOptions"/> table. Rows are left unsaved so they commit
+        /// inside the transition's own <c>SaveChangesAsync</c> — the signal and the status change are one
+        /// atomic write. Each transition happens exactly once per booking (the state machine forbids
+        /// re-confirming/re-completing), so no dedup guard is needed.
+        /// </summary>
+        protected async Task RecordBookingSignalAsync(Booking booking, InteractionType type)
+        {
+            var weights = ServiceProvider.GetRequiredService<IOptions<RecommenderOptions>>().Value.Weights;
+            var weight = type switch
+            {
+                InteractionType.BookingConfirmed => weights.BookingConfirmed,
+                InteractionType.BookingCompleted => weights.BookingCompleted,
+                _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a booking lifecycle signal.")
+            };
+
+            var destinationIds = await DbContext.TourSchedules
+                .Where(s => s.Id == booking.TourScheduleId)
+                .SelectMany(s => s.Tour.TourDestinations.Select(td => td.DestinationId))
+                .ToListAsync();
+
+            foreach (var destinationId in destinationIds)
+            {
+                DbContext.UserInteractions.Add(new UserInteraction
+                {
+                    UserId = booking.UserId,
+                    DestinationId = destinationId,
+                    InteractionType = type,
+                    Weight = weight
+                });
+            }
+        }
 
         /// <summary>
         /// Runs <paramref name="action"/> inside a DB transaction, enlisting in the caller's transaction
