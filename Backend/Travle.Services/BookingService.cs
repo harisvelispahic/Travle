@@ -138,6 +138,7 @@ namespace Travle.Services
 
             BookingProjections.FinalizeThumbnail(response);
             response.AllowedActions = _states.ResolveAllowedActionNames(response.StatusId);
+            ApplyReviewFlag(response);
             await ApplyCancellationRefundPreviewAsync(response);
             return response;
         }
@@ -326,6 +327,7 @@ namespace Travle.Services
             {
                 BookingProjections.FinalizeThumbnail(item);
                 item.AllowedActions = _states.ResolveAllowedActionNames(item.StatusId);
+                ApplyReviewFlag(item);
             }
 
             return new PageResult<BookingResponse> { Items = items, TotalCount = totalCount };
@@ -362,6 +364,14 @@ namespace Travle.Services
                 throw new ForbiddenException("You can only manage bookings on your own tours.");
             }
         }
+
+        // The "Leave a review" affordance: only for the booking's own traveler, only once it is Completed,
+        // and only while it has no review yet (ReviewId is projected including soft-removed rows, so a
+        // removed review still blocks a re-review — 03 §3). Everyone else (organizer/admin viewing) sees false.
+        private void ApplyReviewFlag(BookingResponse response)
+            => response.CanBeReviewed = response.StatusId == (int)BookingStatusCode.Completed
+                                        && response.ReviewId == null
+                                        && _currentUser.GetUserId() == response.UserId;
 
         // How much the traveler would be refunded if they cancelled this booking right now — resolved
         // from the global RefundPolicyTiers by hours-before-start. Populated only for the caller's own,

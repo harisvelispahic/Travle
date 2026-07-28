@@ -20,15 +20,21 @@ class BottomNavShell extends StatefulWidget {
 class _BottomNavShellState extends State<BottomNavShell> {
   int _index = 0;
 
+  static const int _favoritesIndex = 2;
+
   /// Bumped to signal the Search tab to take focus when opened from Home.
   final ValueNotifier<int> _searchFocusRequests = ValueNotifier<int>(0);
+
+  /// Bumped each time the Favorites tab is opened, so its lists reload (favorites
+  /// may have changed from a details screen since the tab was last seen).
+  final ValueNotifier<int> _favoritesReloadRequests = ValueNotifier<int>(0);
 
   static const List<String> _titles = ['Home', 'Search', 'Favorites', 'Profile'];
 
   late final List<Widget> _screens = [
     HomeScreen(onOpenSearch: _openSearch),
     SearchScreen(focusRequests: _searchFocusRequests),
-    const FavoritesScreen(),
+    FavoritesScreen(reloadRequests: _favoritesReloadRequests),
     const ProfileScreen(),
   ];
 
@@ -37,9 +43,17 @@ class _BottomNavShellState extends State<BottomNavShell> {
     _searchFocusRequests.value++;
   }
 
+  void _onDestinationSelected(int i) {
+    setState(() => _index = i);
+    if (i == _favoritesIndex) {
+      _favoritesReloadRequests.value++;
+    }
+  }
+
   @override
   void dispose() {
     _searchFocusRequests.dispose();
+    _favoritesReloadRequests.dispose();
     super.dispose();
   }
 
@@ -50,7 +64,7 @@ class _BottomNavShellState extends State<BottomNavShell> {
       body: IndexedStack(index: _index, children: _screens),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
+        onDestinationSelected: _onDestinationSelected,
         destinations: const [
           NavigationDestination(
               icon: Icon(Icons.home_outlined),

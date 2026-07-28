@@ -9,13 +9,15 @@ import 'package:travle_ui/travle_ui.dart';
 import '../../util/booking_display.dart';
 import '../../util/formatting.dart';
 import '../../widgets/entrance_fee_note.dart';
+import '../../widgets/review_card.dart';
+import '../../widgets/review_form_sheet.dart';
 import '../tour_details_screen.dart';
 
 /// The detail half of the traveler's booking master-detail. Shows the full
 /// booking (tour, schedule, party, total, status, audit) and the actions the
-/// current state permits: paying a held booking (stub until Stripe lands in
-/// Phase 6) and cancelling a Pending/Confirmed booking with the applicable
-/// refund-tier summary shown first.
+/// current state permits: paying a held booking, cancelling a Pending/Confirmed
+/// booking with the applicable refund-tier summary shown first, and — once the
+/// booking is Completed — leaving (or editing) a review of the tour.
 class BookingDetailsScreen extends StatefulWidget {
   const BookingDetailsScreen({super.key, required this.bookingId});
 
@@ -408,6 +410,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             ),
           ),
         ..._actions(booking),
+        _BookingReviewSection(booking: booking, onChanged: _load),
       ],
     );
   }
@@ -694,6 +697,173 @@ class _ConfirmingPaymentNotice extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The tour-review affordance on a completed booking (spec §2.1). For a reviewable
+/// booking it offers "Leave a review"; once reviewed it shows the review with an
+/// Edit action (or a notice if a moderator removed it). One review per booking is
+/// enforced server-side; the booking id stays occupied even after a removal.
+class _BookingReviewSection extends StatefulWidget {
+  const _BookingReviewSection({required this.booking, required this.onChanged});
+
+  final BookingResponse booking;
+
+  /// Reloads the booking so its `canBeReviewed`/`reviewId` reflect the change.
+  final VoidCallback onChanged;
+
+  @override
+  State<_BookingReviewSection> createState() => _BookingReviewSectionState();
+}
+
+class _BookingReviewSectionState extends State<_BookingReviewSection> {
+  TourReviewResponse? _review;
+  bool _loading = false;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.booking.reviewId != null) {
+      _loadReview();
+    }
+  }
+
+  Future<void> _loadReview() async {
+    setState(() => _loading = true);
+    try {
+      final review = await context
+          .read<TourReviewProvider>()
+          .getById(widget.booking.reviewId!);
+      if (!mounted) return;
+      setState(() {
+        _review = review;
+        _loading = false;
+      });
+    } on ApiClientException {
+      // The review section is secondary — fail quietly rather than block the page.
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _leaveReview() async {
+    final draft = await ReviewFormSheet.show(context, title: 'Review this tour');
+    if (draft == null || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      final created = await context.read<TourReviewProvider>().create(
+            TourReviewInsertRequest(
+              bookingId: widget.booking.id,
+              rating: draft.rating,
+              comment: draft.comment,
+            ),
+          );
+      if (!mounted) return;
+      setState(() {
+        _review = created;
+        _busy = false;
+      });
+      AppSnackbars.success(context, 'Thanks — your review has been posted.');
+      widget.onChanged();
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      AppSnackbars.error(context, e.message);
+    }
+  }
+
+  Future<void> _editReview() async {
+    final review = _review;
+    if (review == null) return;
+
+    final draft = await ReviewFormSheet.show(
+      context,
+      title: 'Edit your review',
+      initialRating: review.rating,
+      initialComment: review.comment,
+      submitLabel: 'Save changes',
+    );
+    if (draft == null || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      final updated = await context.read<TourReviewProvider>().updateReview(
+            review.id,
+            ReviewUpdateRequest(rating: draft.rating, comment: draft.comment),
+          );
+      if (!mounted) return;
+      setState(() {
+        _review = updated;
+        _busy = false;
+      });
+      AppSnackbars.success(context, 'Your review has been updated.');
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      AppSnackbars.error(context, e.message);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final booking = widget.booking;
+    final review = _review;
+
+    // Only relevant once the booking is Completed (reviewable or already reviewed).
+    if (review == null && !booking.canBeReviewed && booking.reviewId == null) {
+      return const SizedBox.shrink();
+    }
+
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: TravleTokens.space24),
+        Text('Your review', style: theme.textTheme.titleMedium),
+        const SizedBox(height: TravleTokens.space8),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: TravleTokens.space16),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (review != null)
+          review.isRemoved
+              ? _ReasonNotice(
+                  icon: Icons.gpp_bad_outlined,
+                  title: 'Review removed',
+                  text: review.removalReason == null
+                      ? 'Your review was removed by a moderator.'
+                      : 'Your review was removed by a moderator. '
+                          'Reason: ${review.removalReason}',
+                )
+              : ReviewCard(
+                  authorName: review.authorName,
+                  rating: review.rating,
+                  createdAt: review.createdAt,
+                  comment: review.comment,
+                  isMine: true,
+                  onEdit: _busy ? null : _editReview,
+                )
+        else
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "You've completed this tour — share your experience with other travelers.",
+                style: theme.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: TravleTokens.space12),
+              FilledButton.icon(
+                onPressed: _busy ? null : _leaveReview,
+                icon: const Icon(Icons.rate_review_outlined),
+                label: const Text('Leave a review'),
+              ),
+            ],
+          ),
+      ],
     );
   }
 }

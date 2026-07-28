@@ -54,6 +54,15 @@ namespace Travle.Model.Responses
         /// <summary>True once a Stripe payment has succeeded for this booking (drives "hide pay button").</summary>
         public bool IsPaid { get; set; }
 
+        /// <summary>
+        /// True when the viewer is this booking's traveler, the booking is Completed, and it has not been
+        /// reviewed yet — the mobile shows the "Leave a review" action only then (rule K).
+        /// </summary>
+        public bool CanBeReviewed { get; set; }
+
+        /// <summary>The id of this booking's tour review if one exists, else null (drives "Your review" / edit).</summary>
+        public int? ReviewId { get; set; }
+
         /// <summary>The transitions currently allowed (enum names), for button gating (rule K).</summary>
         public List<string> AllowedActions { get; set; } = new List<string>();
 

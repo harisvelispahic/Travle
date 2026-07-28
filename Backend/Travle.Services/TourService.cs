@@ -6,6 +6,7 @@ using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
 using Travle.Services.Database;
 using Travle.Services.Payments;
+using Travle.Services.Projections;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 
@@ -25,8 +26,6 @@ namespace Travle.Services
         : BaseCRUDService<Tour, TourResponse, TourSearch, TourInsertRequest, TourUpdateRequest>,
           ITourService
     {
-        private const string ThumbnailContentType = "image/jpeg";
-
         /// <summary>Upper bound on the upcoming slots embedded in a tour detail (the full history is paged).</summary>
         private const int UpcomingScheduleLimit = 50;
 
@@ -137,8 +136,9 @@ namespace Travle.Services
             query = ApplySorting(query, search);
             query = ApplyPaging(query, search);
 
-            var items = await ProjectToListResponse(query, now).ToListAsync();
-            FinalizeThumbnails(items);
+            var items = await TourProjections.ProjectToListResponse(query, now).ToListAsync();
+            TourProjections.FinalizeThumbnails(items);
+            await ApplyFavoriteFlagsAsync(items);
 
             return new PageResult<TourResponse> { Items = items, TotalCount = totalCount };
         }
@@ -460,50 +460,16 @@ namespace Travle.Services
             return await BuildDetailAsync(id);
         }
 
-        // Projects to the list/card shape entirely in SQL, pulling only the cover thumbnail (the ordered-
-        // first destination's primary thumbnail) plus lightweight counts — never any full ImageData.
-        private static IQueryable<TourResponse> ProjectToListResponse(IQueryable<Tour> query, DateTime now)
-            => query.Select(t => new TourResponse
-            {
-                Id = t.Id,
-                Name = t.Name,
-                Description = t.Description,
-                DurationMinutes = t.DurationMinutes,
-                PricePerPerson = t.PricePerPerson,
-                Capacity = t.Capacity,
-                TourTypeId = t.TourTypeId,
-                TourTypeName = t.TourType.Name,
-                OrganizerId = t.OrganizerId,
-                OrganizerName = t.Organizer.FirstName + " " + t.Organizer.LastName,
-                IsActive = t.IsActive,
-                DestinationCount = t.TourDestinations.Count,
-                // Per-person on-site entrance fees (informative; never part of the Travle price).
-                EntranceFeesPerPerson = t.TourDestinations.Sum(td => td.Destination.EntranceFee ?? 0m),
-                UpcomingScheduleCount = t.Schedules.Count(s => s.Status == ScheduleStatus.Active && s.StartsAt > now),
-                NextDepartureAt = t.Schedules
-                    .Where(s => s.Status == ScheduleStatus.Active && s.StartsAt > now)
-                    .OrderBy(s => s.StartsAt)
-                    .Select(s => (DateTime?)s.StartsAt)
-                    .FirstOrDefault(),
-                PrimaryThumbnail = t.TourDestinations
-                    .OrderBy(td => td.SortOrder)
-                    .Select(td => td.Destination.Images
-                        .OrderBy(i => i.SortOrder)
-                        .Select(i => i.ThumbnailData)
-                        .FirstOrDefault())
-                    .FirstOrDefault(),
-                CreatedAt = t.CreatedAt,
-                ModifiedAt = t.ModifiedAt
-            });
-
+        // The single Tour → list/card response projection lives in TourProjections (shared with the
+        // favorites service); reads here add the per-user favorite flag after materialization.
         private async Task<TourResponse> BuildDetailAsync(int id)
         {
             var now = DateTime.UtcNow;
 
-            var tour = await ProjectToListResponse(_dbContext.Tours.AsNoTracking().Where(t => t.Id == id), now)
+            var tour = await TourProjections.ProjectToListResponse(_dbContext.Tours.AsNoTracking().Where(t => t.Id == id), now)
                 .FirstOrDefaultAsync()
                 ?? throw new NotFoundException("Tour", id);
-            FinalizeThumbnail(tour);
+            TourProjections.FinalizeThumbnail(tour);
 
             tour.Destinations = await _dbContext.TourDestinations
                 .AsNoTracking()
@@ -526,7 +492,7 @@ namespace Travle.Services
 
             foreach (var stop in tour.Destinations)
             {
-                stop.ThumbnailContentType = stop.Thumbnail is { Length: > 0 } ? ThumbnailContentType : null;
+                stop.ThumbnailContentType = stop.Thumbnail is { Length: > 0 } ? TourProjections.ThumbnailContentType : null;
             }
 
             // Detail carries only the upcoming Active slots (bounded) — the organizer's full history is
@@ -540,6 +506,7 @@ namespace Travle.Services
             FinalizeScheduleFlags(slots, now);
             tour.Schedules = slots;
 
+            await ApplyFavoriteFlagsAsync(new[] { tour });
             return tour;
         }
 
@@ -588,18 +555,28 @@ namespace Travle.Services
             slot.IsDeletable = isActive && isFuture && slot.SeatsTaken == 0;
         }
 
-        // Thumbnails are always JPEG (the generator guarantees it), so the content type is a constant set
-        // after materialization rather than projected from the stored (original-format) column.
-        private static void FinalizeThumbnails(IEnumerable<TourResponse> items)
+        // Sets IsFavorite for the current user across a page of tours in one batch query (no N+1).
+        // Anonymous callers and empty pages short-circuit — nothing is favorited.
+        private async Task ApplyFavoriteFlagsAsync(IReadOnlyCollection<TourResponse> items)
         {
+            var userId = _currentUser.GetUserId();
+            if (userId is null || items.Count == 0)
+            {
+                return;
+            }
+
+            var ids = items.Select(i => i.Id).ToList();
+            var favoritedIds = (await _dbContext.Favorites
+                    .Where(f => f.UserId == userId.Value && f.TourId != null && ids.Contains(f.TourId.Value))
+                    .Select(f => f.TourId!.Value)
+                    .ToListAsync())
+                .ToHashSet();
+
             foreach (var item in items)
             {
-                FinalizeThumbnail(item);
+                item.IsFavorite = favoritedIds.Contains(item.Id);
             }
         }
-
-        private static void FinalizeThumbnail(TourResponse item)
-            => item.PrimaryThumbnailContentType = item.PrimaryThumbnail is { Length: > 0 } ? ThumbnailContentType : null;
 
         private static void ReconcileDestinations(Tour tour, List<int> destinationIds)
         {

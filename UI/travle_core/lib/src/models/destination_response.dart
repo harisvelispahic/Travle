@@ -26,6 +26,8 @@ class DestinationResponse {
     required this.viewCount,
     required this.submittedByUserId,
     required this.createdAt,
+    this.reviewCount = 0,
+    this.isFavorite = false,
     this.entranceFee,
     this.categoryName,
     this.cityName,
@@ -67,7 +69,14 @@ class DestinationResponse {
 
   final bool isFeatured;
   final double averageRating;
+
+  /// Number of non-removed reviews behind [averageRating] (shown as "(N reviews)").
+  final int reviewCount;
+
   final int viewCount;
+
+  /// Whether the current user has this destination in their favorites (heart state).
+  final bool isFavorite;
 
   final int submittedByUserId;
   final String? submittedByUsername;

@@ -26,6 +26,8 @@ BookingResponse _$BookingResponseFromJson(Map<String, dynamic> json) =>
       statusChangedAt: DateTime.parse(json['statusChangedAt'] as String),
       isPaid: json['isPaid'] as bool,
       createdAt: DateTime.parse(json['createdAt'] as String),
+      canBeReviewed: json['canBeReviewed'] as bool? ?? false,
+      reviewId: (json['reviewId'] as num?)?.toInt(),
       allowedActions:
           (json['allowedActions'] as List<dynamic>?)
               ?.map((e) => e as String)
@@ -74,6 +76,8 @@ Map<String, dynamic> _$BookingResponseToJson(BookingResponse instance) =>
       'cancellationReason': instance.cancellationReason,
       'expiresAt': instance.expiresAt?.toIso8601String(),
       'isPaid': instance.isPaid,
+      'canBeReviewed': instance.canBeReviewed,
+      'reviewId': instance.reviewId,
       'allowedActions': instance.allowedActions,
       'cancellationRefundPercentage': instance.cancellationRefundPercentage,
       'tourThumbnail': instance.tourThumbnail,

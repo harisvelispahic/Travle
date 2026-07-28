@@ -6,6 +6,7 @@ using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
 using Travle.Services.Database;
 using Travle.Services.Imaging;
+using Travle.Services.Projections;
 using Travle.Services.Recommender;
 using Travle.Services.Security;
 using FluentValidation;
@@ -26,8 +27,6 @@ namespace Travle.Services
         : BaseCRUDService<Destination, DestinationResponse, DestinationSearch, DestinationInsertRequest, DestinationUpdateRequest>,
           IDestinationService
     {
-        private const string ThumbnailContentType = "image/jpeg";
-
         private readonly IAppAuthorizationService _authorization;
         private readonly IAuthenticatedUserAccessor _currentUser;
         private readonly IThumbnailGenerator _thumbnailGenerator;
@@ -128,8 +127,9 @@ namespace Travle.Services
             query = ApplySorting(query, search);
             query = ApplyPaging(query, search);
 
-            var items = await ProjectToResponse(query).ToListAsync();
-            FinalizeThumbnails(items);
+            var items = await DestinationProjections.ProjectToResponse(query).ToListAsync();
+            DestinationProjections.FinalizeThumbnails(items);
+            await ApplyFavoriteFlagsAsync(items);
 
             return new PageResult<DestinationResponse> { Items = items, TotalCount = totalCount };
         }
@@ -422,74 +422,41 @@ namespace Travle.Services
 
         // --- helpers -----------------------------------------------------------------------------
 
-        // Projects to the response shape entirely in SQL, pulling only the primary image's thumbnail
-        // bytes (never the full ImageData of any image) plus lightweight image/tag metadata.
-        private static IQueryable<DestinationResponse> ProjectToResponse(IQueryable<Destination> query)
-            => query.Select(d => new DestinationResponse
-            {
-                Id = d.Id,
-                Name = d.Name,
-                Description = d.Description,
-                CategoryId = d.CategoryId,
-                CategoryName = d.Category.Name,
-                CityId = d.CityId,
-                CityName = d.City.Name,
-                RegionName = d.City.Region.Name,
-                CountryName = d.City.Region.Country.Name,
-                Latitude = d.Latitude,
-                Longitude = d.Longitude,
-                EntranceFee = d.EntranceFee,
-                Status = d.Status.ToString(),
-                IsFeatured = d.IsFeatured,
-                AverageRating = d.AverageRating,
-                ViewCount = d.ViewCount,
-                SubmittedByUserId = d.SubmittedByUserId,
-                SubmittedByUsername = d.SubmittedByUser.Username,
-                ModeratedByUserId = d.ModeratedByUserId,
-                ModeratedByUsername = d.ModeratedByUser != null ? d.ModeratedByUser.Username : null,
-                ModeratedAt = d.ModeratedAt,
-                RejectionReason = d.RejectionReason,
-                Tags = d.DestinationTags
-                    .Select(dt => new TagRef { Id = dt.TagId, Name = dt.Tag.Name })
-                    .ToList(),
-                Images = d.Images
-                    .OrderBy(i => i.SortOrder)
-                    .Select(i => new DestinationImageResponse
-                    {
-                        Id = i.Id,
-                        ContentType = i.ContentType,
-                        SortOrder = i.SortOrder
-                    })
-                    .ToList(),
-                PrimaryThumbnail = d.Images
-                    .OrderBy(i => i.SortOrder)
-                    .Select(i => i.ThumbnailData)
-                    .FirstOrDefault(),
-                CreatedAt = d.CreatedAt,
-                ModifiedAt = d.ModifiedAt
-            });
-
+        // The single Destination → response projection lives in DestinationProjections (shared with the
+        // favorites service); reads here add the per-user favorite flag after materialization.
         private async Task<DestinationResponse> RequireResponseAsync(int id)
         {
-            var response = await ProjectToResponse(_dbContext.Destinations.AsNoTracking().Where(d => d.Id == id))
+            var response = await DestinationProjections
+                .ProjectToResponse(_dbContext.Destinations.AsNoTracking().Where(d => d.Id == id))
                 .FirstOrDefaultAsync()
                 ?? throw new NotFoundException("Destination", id);
-            FinalizeThumbnail(response);
+            DestinationProjections.FinalizeThumbnail(response);
+            await ApplyFavoriteFlagsAsync(new[] { response });
             return response;
         }
 
-        // Thumbnails are always JPEG (the generator guarantees it), so the content type is a constant set
-        // after materialization rather than projected from the stored (original-format) column.
-        private static void FinalizeThumbnails(IEnumerable<DestinationResponse> items)
+        // Sets IsFavorite for the current user across a page in one batch query (no N+1). Anonymous callers
+        // and empty pages short-circuit — nothing is favorited.
+        private async Task ApplyFavoriteFlagsAsync(IReadOnlyCollection<DestinationResponse> items)
         {
+            var userId = _currentUser.GetUserId();
+            if (userId is null || items.Count == 0)
+            {
+                return;
+            }
+
+            var ids = items.Select(i => i.Id).ToList();
+            var favoritedIds = (await _dbContext.Favorites
+                    .Where(f => f.UserId == userId.Value && f.DestinationId != null && ids.Contains(f.DestinationId.Value))
+                    .Select(f => f.DestinationId!.Value)
+                    .ToListAsync())
+                .ToHashSet();
+
             foreach (var item in items)
             {
-                FinalizeThumbnail(item);
+                item.IsFavorite = favoritedIds.Contains(item.Id);
             }
         }
-
-        private static void FinalizeThumbnail(DestinationResponse item)
-            => item.PrimaryThumbnailContentType = item.PrimaryThumbnail is { Length: > 0 } ? ThumbnailContentType : null;
 
         private async Task EnsureReferencesExistAsync(int categoryId, int cityId, IEnumerable<int> tagIds)
         {

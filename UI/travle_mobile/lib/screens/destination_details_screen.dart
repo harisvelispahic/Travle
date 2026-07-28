@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
+import '../widgets/review_card.dart';
+import '../widgets/review_form_sheet.dart';
 import '../widgets/tour_card.dart';
 import 'tour_details_screen.dart';
 
@@ -13,10 +15,11 @@ import 'tour_details_screen.dart';
 /// and bumps ViewCount server-side (for an approved destination viewed by someone
 /// other than its submitter). Shows the full-image gallery (fetched from the image
 /// endpoint, decoded once), header + rating, tags, an expandable description, a
-/// location panel, and the tours that visit this destination (§Phase 4).
+/// location panel, the reviews (with the favorite toggle in the app bar), and the
+/// tours that visit this destination (§Phase 4 / 7).
 ///
-/// Reviews, similar destinations, and the favorite toggle arrive in their own
-/// phases (7 / 8) and are intentionally not stubbed here.
+/// The "Similar destinations" section is the recommender surface and arrives in
+/// Phase 8; it is intentionally not stubbed here.
 class DestinationDetailsScreen extends StatefulWidget {
   const DestinationDetailsScreen({
     super.key,
@@ -37,6 +40,8 @@ class DestinationDetailsScreen extends StatefulWidget {
 class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
   DestinationResponse? _destination;
   bool _loading = true;
+  bool _isFavorite = false;
+  bool _favoriteBusy = false;
   String? _error;
 
   @override
@@ -57,6 +62,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
       if (!mounted) return;
       setState(() {
         _destination = destination;
+        _isFavorite = destination.isFavorite;
         _loading = false;
       });
     } on ApiClientException catch (e) {
@@ -68,11 +74,52 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
     }
   }
 
+  Future<void> _toggleFavorite() async {
+    final destination = _destination;
+    if (destination == null || _favoriteBusy) return;
+
+    setState(() => _favoriteBusy = true);
+    try {
+      final result = await context
+          .read<FavoriteProvider>()
+          .toggleDestination(destination.id);
+      if (!mounted) return;
+      setState(() {
+        _isFavorite = result.isFavorite;
+        _favoriteBusy = false;
+      });
+      AppSnackbars.success(
+        context,
+        result.isFavorite
+            ? 'Added to your favorites.'
+            : 'Removed from your favorites.',
+      );
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      setState(() => _favoriteBusy = false);
+      AppSnackbars.error(context, e.message);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final title = _destination?.name ?? widget.initialName ?? 'Destination';
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: AppBar(
+        title: Text(title),
+        actions: [
+          if (_destination != null)
+            IconButton(
+              onPressed: _favoriteBusy ? null : _toggleFavorite,
+              icon: Icon(
+                _isFavorite ? Icons.favorite : Icons.favorite_border,
+                color: _isFavorite ? Theme.of(context).colorScheme.error : null,
+              ),
+              tooltip:
+                  _isFavorite ? 'Remove from favorites' : 'Add to favorites',
+            ),
+        ],
+      ),
       body: SafeArea(child: _buildBody()),
     );
   }
@@ -121,11 +168,255 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
             TravleTokens.space16,
             TravleTokens.space16,
           ),
+          child: _DestinationReviewsSection(
+            destinationId: destination.id,
+            // Posting/editing/removing a review changes the rolled-up average, so
+            // reload the whole detail to refresh the header rating.
+            onChanged: _load,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            TravleTokens.space16,
+            0,
+            TravleTokens.space16,
+            TravleTokens.space16,
+          ),
           child: _ToursSection(
             destinationId: destination.id,
             destinationName: destination.name,
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// The reviews for a destination: the average summary, the list, and — for the
+/// signed-in user — a "Write a review" / "Edit your review" affordance. Any
+/// registered user may review an approved destination once (the server enforces
+/// the one-active-review rule and the rating rollup). Loads its own list and, on
+/// any change, calls [onChanged] so the parent refreshes the header rating.
+class _DestinationReviewsSection extends StatefulWidget {
+  const _DestinationReviewsSection({
+    required this.destinationId,
+    required this.onChanged,
+  });
+
+  final int destinationId;
+  final VoidCallback onChanged;
+
+  @override
+  State<_DestinationReviewsSection> createState() =>
+      _DestinationReviewsSectionState();
+}
+
+class _DestinationReviewsSectionState
+    extends State<_DestinationReviewsSection> {
+  bool _loading = true;
+  bool _busy = false;
+  String? _error;
+  List<DestinationReviewResponse> _reviews = [];
+  int _total = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final result =
+          await context.read<DestinationReviewProvider>().forDestination(
+        widget.destinationId,
+        filter: {
+          'pageSize': 50,
+          'includeTotalCount': true,
+          'sortBy': 'CreatedAt desc',
+        },
+      );
+      if (!mounted) return;
+      setState(() {
+        _reviews = result.items;
+        _total = result.totalCount ?? result.items.length;
+        _loading = false;
+      });
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.message;
+        _loading = false;
+      });
+    }
+  }
+
+  DestinationReviewResponse? get _myReview {
+    final userId = context.read<AuthProvider>().userId;
+    if (userId == null) return null;
+    for (final r in _reviews) {
+      if (r.userId == userId) return r;
+    }
+    return null;
+  }
+
+  Future<void> _write() async {
+    final draft = await ReviewFormSheet.show(
+      context,
+      title: 'Write a review',
+    );
+    if (draft == null || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      await context.read<DestinationReviewProvider>().create(
+            DestinationReviewInsertRequest(
+              destinationId: widget.destinationId,
+              rating: draft.rating,
+              comment: draft.comment,
+            ),
+          );
+      if (!mounted) return;
+      setState(() => _busy = false);
+      AppSnackbars.success(context, 'Thanks — your review has been posted.');
+      widget.onChanged();
+      await _load();
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      AppSnackbars.error(context, e.message);
+    }
+  }
+
+  Future<void> _edit(DestinationReviewResponse review) async {
+    final draft = await ReviewFormSheet.show(
+      context,
+      title: 'Edit your review',
+      initialRating: review.rating,
+      initialComment: review.comment,
+      submitLabel: 'Save changes',
+    );
+    if (draft == null || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      await context.read<DestinationReviewProvider>().updateReview(
+            review.id,
+            ReviewUpdateRequest(rating: draft.rating, comment: draft.comment),
+          );
+      if (!mounted) return;
+      setState(() => _busy = false);
+      AppSnackbars.success(context, 'Your review has been updated.');
+      widget.onChanged();
+      await _load();
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      AppSnackbars.error(context, e.message);
+    }
+  }
+
+  Future<void> _remove(DestinationReviewResponse review) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Remove your review',
+      message: 'Are you sure you want to remove your review of this destination?',
+      confirmLabel: 'Remove',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      await context.read<DestinationReviewProvider>().removeOwn(review.id);
+      if (!mounted) return;
+      setState(() => _busy = false);
+      AppSnackbars.success(context, 'Your review has been removed.');
+      widget.onChanged();
+      await _load();
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      AppSnackbars.error(context, e.message);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final myReview = _myReview;
+    final currentUserId = context.read<AuthProvider>().userId;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                _total > 0 ? 'Reviews ($_total)' : 'Reviews',
+                style: theme.textTheme.titleMedium,
+              ),
+            ),
+            if (!_loading && _error == null)
+              TextButton.icon(
+                onPressed: _busy
+                    ? null
+                    : myReview == null
+                        ? _write
+                        : () => _edit(myReview),
+                icon: Icon(
+                  myReview == null ? Icons.rate_review_outlined : Icons.edit_outlined,
+                  size: 18,
+                ),
+                label: Text(myReview == null ? 'Write a review' : 'Edit yours'),
+              ),
+          ],
+        ),
+        const SizedBox(height: TravleTokens.space8),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: TravleTokens.space16),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_error != null)
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _error!,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.error),
+                ),
+              ),
+              TextButton(onPressed: _load, child: const Text('Retry')),
+            ],
+          )
+        else if (_reviews.isEmpty)
+          Text(
+            'No reviews yet. Be the first to share your experience.',
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          )
+        else
+          for (final review in _reviews)
+            ReviewCard(
+              authorName: review.authorName,
+              rating: review.rating,
+              createdAt: review.createdAt,
+              comment: review.comment,
+              isMine: review.userId == currentUserId,
+              onEdit: review.userId == currentUserId && !_busy
+                  ? () => _edit(review)
+                  : null,
+              onRemove: review.userId == currentUserId && !_busy
+                  ? () => _remove(review)
+                  : null,
+            ),
       ],
     );
   }

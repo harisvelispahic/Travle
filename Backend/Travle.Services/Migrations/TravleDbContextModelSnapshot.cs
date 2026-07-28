@@ -148,6 +148,18 @@ namespace Travle.Services.Migrations
                             TotalAmount = 50.00m,
                             TourScheduleId = 2,
                             UserId = 5
+                        },
+                        new
+                        {
+                            Id = 6,
+                            ConfirmedByUserId = 2,
+                            CreatedAt = new DateTime(2026, 6, 22, 10, 0, 0, 0, DateTimeKind.Utc),
+                            NumberOfPeople = 1,
+                            StatusChangedAt = new DateTime(2026, 6, 25, 14, 5, 0, 0, DateTimeKind.Utc),
+                            StatusId = 4,
+                            TotalAmount = 45.00m,
+                            TourScheduleId = 5,
+                            UserId = 4
                         });
                 });
 
@@ -1435,6 +1447,19 @@ namespace Travle.Services.Migrations
                             Status = 1,
                             StripePaymentIntentId = "pi_seed_0004",
                             SucceededAt = new DateTime(2026, 7, 14, 8, 1, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 5,
+                            Amount = 45.00m,
+                            BookingId = 6,
+                            CreatedAt = new DateTime(2026, 6, 22, 10, 0, 0, 0, DateTimeKind.Utc),
+                            Currency = "bam",
+                            PlatformFeeAmount = 4.50m,
+                            PlatformFeePercentage = 10.00m,
+                            Status = 1,
+                            StripePaymentIntentId = "pi_seed_0005",
+                            SucceededAt = new DateTime(2026, 6, 22, 10, 1, 0, 0, DateTimeKind.Utc)
                         });
                 });
 
@@ -2505,7 +2530,7 @@ namespace Travle.Services.Migrations
                             Capacity = 12,
                             CreatedAt = new DateTime(2026, 3, 9, 0, 0, 0, 0, DateTimeKind.Utc),
                             EndsAt = new DateTime(2026, 6, 25, 14, 0, 0, 0, DateTimeKind.Utc),
-                            SeatsTaken = 0,
+                            SeatsTaken = 1,
                             StartsAt = new DateTime(2026, 6, 25, 9, 0, 0, 0, DateTimeKind.Utc),
                             Status = 0,
                             TourId = 2

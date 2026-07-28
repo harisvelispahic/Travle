@@ -86,7 +86,8 @@ namespace Travle.Services.Database
         RoleApplicationRejected = 12,
         ReviewReceived = 13,
         AccountSuspended = 14,
-        ScheduleCancelled = 15
+        ScheduleCancelled = 15,
+        ReviewRemoved = 16
     }
 
     /// <summary>

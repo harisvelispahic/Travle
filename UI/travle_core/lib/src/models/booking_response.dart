@@ -28,6 +28,8 @@ class BookingResponse {
     required this.statusChangedAt,
     required this.isPaid,
     required this.createdAt,
+    this.canBeReviewed = false,
+    this.reviewId,
     this.allowedActions = const [],
     this.confirmedByUserId,
     this.confirmedByName,
@@ -80,6 +82,13 @@ class BookingResponse {
   final DateTime? expiresAt;
 
   final bool isPaid;
+
+  /// True when the viewer is this booking's traveler, it is Completed, and it has
+  /// no review yet — drives the "Leave a review" action.
+  final bool canBeReviewed;
+
+  /// The id of this booking's tour review if one exists, else null.
+  final int? reviewId;
 
   /// The transitions currently allowed (enum names: `Pay`/`Confirm`/`Reject`/`Cancel`).
   final List<String> allowedActions;

@@ -26,6 +26,9 @@ class TourResponse {
     required this.destinationCount,
     required this.upcomingScheduleCount,
     required this.createdAt,
+    this.averageRating = 0,
+    this.reviewCount = 0,
+    this.isFavorite = false,
     this.tourTypeName,
     this.organizerName,
     this.nextDepartureAt,
@@ -58,6 +61,15 @@ class TourResponse {
   final String? organizerName;
 
   final bool isActive;
+
+  /// Average of the tour's non-removed reviews (0 when it has none). Computed on read.
+  final double averageRating;
+
+  /// Number of non-removed reviews behind [averageRating].
+  final int reviewCount;
+
+  /// Whether the current user has this tour in their favorites (heart state).
+  final bool isFavorite;
 
   final int destinationCount;
   final int upcomingScheduleCount;

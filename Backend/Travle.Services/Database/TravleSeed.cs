@@ -321,7 +321,7 @@ namespace Travle.Services.Database
                 new { Id = 2, TourId = 1, StartsAt = new DateTime(2026, 8, 15, 10, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 8, 15, 12, 0, 0, DateTimeKind.Utc), Capacity = 15, SeatsTaken = 0, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
                 new { Id = 3, TourId = 1, StartsAt = new DateTime(2026, 9, 10, 10, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 9, 10, 12, 0, 0, DateTimeKind.Utc), Capacity = 15, SeatsTaken = 0, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
                 new { Id = 4, TourId = 2, StartsAt = new DateTime(2026, 8, 20, 9, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 8, 20, 14, 0, 0, DateTimeKind.Utc), Capacity = 12, SeatsTaken = 2, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
-                new { Id = 5, TourId = 2, StartsAt = new DateTime(2026, 6, 25, 9, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 6, 25, 14, 0, 0, DateTimeKind.Utc), Capacity = 12, SeatsTaken = 0, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
+                new { Id = 5, TourId = 2, StartsAt = new DateTime(2026, 6, 25, 9, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 6, 25, 14, 0, 0, DateTimeKind.Utc), Capacity = 12, SeatsTaken = 1, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
                 new { Id = 6, TourId = 3, StartsAt = new DateTime(2026, 8, 5, 9, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 8, 5, 12, 0, 0, DateTimeKind.Utc), Capacity = 20, SeatsTaken = 1, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
                 new { Id = 7, TourId = 3, StartsAt = new DateTime(2026, 5, 30, 9, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 5, 30, 12, 0, 0, DateTimeKind.Utc), Capacity = 20, SeatsTaken = 0, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
                 new { Id = 8, TourId = 4, StartsAt = new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc), EndsAt = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc), Capacity = 10, SeatsTaken = 0, Status = ScheduleStatus.Active, CreatedAt = SeedDate },
@@ -346,15 +346,18 @@ namespace Travle.Services.Database
         {
             // One booking in each of the demonstrable statuses (Completed, Confirmed, Cancelled, Pending,
             // Expired), so the state machine, reviews, refunds and history screens all have data. Travelers
-            // book (mobile = 4, traveler2 = 5); the organizer (2) owns every tour, so confirmations are by 2.
-            // Booking 5 is an Expired hold (payment never completed): its seats were released, so schedule 2
-            // keeps SeatsTaken = 0, and it carries no Payment row.
+            // book (mobile = 4, traveler2 = 5); the seeded tours 1–5 are organizer 2's, so their
+            // confirmations are by 2. Booking 5 is an Expired hold (payment never completed): its seats were
+            // released, so schedule 2 keeps SeatsTaken = 0, and it carries no Payment row. Booking 6 is a
+            // second Completed booking for the mobile user with NO review yet — it demonstrates the
+            // "Leave a review" flow (booking 1 is already reviewed, so it cannot).
             modelBuilder.Entity<Booking>().HasData(
                 new { Id = 1, UserId = 4, TourScheduleId = 1, NumberOfPeople = 2, TotalAmount = 50.00m, StatusId = 4, StatusChangedAt = new DateTime(2026, 6, 20, 12, 30, 0, DateTimeKind.Utc), ConfirmedByUserId = (int?)2, CreatedAt = new DateTime(2026, 6, 15, 9, 0, 0, DateTimeKind.Utc) },
                 new { Id = 2, UserId = 4, TourScheduleId = 6, NumberOfPeople = 1, TotalAmount = 30.00m, StatusId = 3, StatusChangedAt = new DateTime(2026, 7, 10, 11, 0, 0, DateTimeKind.Utc), ConfirmedByUserId = (int?)2, CreatedAt = new DateTime(2026, 7, 9, 15, 0, 0, DateTimeKind.Utc) },
                 new { Id = 3, UserId = 5, TourScheduleId = 9, NumberOfPeople = 3, TotalAmount = 120.00m, StatusId = 5, StatusChangedAt = new DateTime(2026, 7, 5, 10, 0, 0, DateTimeKind.Utc), CancelledByUserId = (int?)5, CancellationReason = "Change of travel plans.", CreatedAt = new DateTime(2026, 7, 1, 12, 0, 0, DateTimeKind.Utc) },
                 new { Id = 4, UserId = 4, TourScheduleId = 4, NumberOfPeople = 2, TotalAmount = 90.00m, StatusId = 2, StatusChangedAt = new DateTime(2026, 7, 14, 8, 0, 0, DateTimeKind.Utc), CreatedAt = new DateTime(2026, 7, 14, 8, 0, 0, DateTimeKind.Utc) },
-                new { Id = 5, UserId = 5, TourScheduleId = 2, NumberOfPeople = 2, TotalAmount = 50.00m, StatusId = 6, StatusChangedAt = new DateTime(2026, 7, 18, 14, 15, 0, DateTimeKind.Utc), ExpiresAt = (DateTime?)new DateTime(2026, 7, 18, 14, 15, 0, DateTimeKind.Utc), CreatedAt = new DateTime(2026, 7, 18, 14, 0, 0, DateTimeKind.Utc) }
+                new { Id = 5, UserId = 5, TourScheduleId = 2, NumberOfPeople = 2, TotalAmount = 50.00m, StatusId = 6, StatusChangedAt = new DateTime(2026, 7, 18, 14, 15, 0, DateTimeKind.Utc), ExpiresAt = (DateTime?)new DateTime(2026, 7, 18, 14, 15, 0, DateTimeKind.Utc), CreatedAt = new DateTime(2026, 7, 18, 14, 0, 0, DateTimeKind.Utc) },
+                new { Id = 6, UserId = 4, TourScheduleId = 5, NumberOfPeople = 1, TotalAmount = 45.00m, StatusId = 4, StatusChangedAt = new DateTime(2026, 6, 25, 14, 5, 0, DateTimeKind.Utc), ConfirmedByUserId = (int?)2, CreatedAt = new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc) }
             );
         }
 
@@ -365,7 +368,8 @@ namespace Travle.Services.Database
                 new { Id = 1, BookingId = 1, StripePaymentIntentId = "pi_seed_0001", Amount = 50.00m, Currency = "bam", PlatformFeePercentage = 10.00m, PlatformFeeAmount = 5.00m, Status = PaymentStatus.Succeeded, SucceededAt = (DateTime?)new DateTime(2026, 6, 15, 9, 1, 0, DateTimeKind.Utc), CreatedAt = new DateTime(2026, 6, 15, 9, 0, 0, DateTimeKind.Utc) },
                 new { Id = 2, BookingId = 2, StripePaymentIntentId = "pi_seed_0002", Amount = 30.00m, Currency = "bam", PlatformFeePercentage = 10.00m, PlatformFeeAmount = 3.00m, Status = PaymentStatus.Succeeded, SucceededAt = (DateTime?)new DateTime(2026, 7, 9, 15, 1, 0, DateTimeKind.Utc), CreatedAt = new DateTime(2026, 7, 9, 15, 0, 0, DateTimeKind.Utc) },
                 new { Id = 3, BookingId = 3, StripePaymentIntentId = "pi_seed_0003", Amount = 120.00m, Currency = "bam", PlatformFeePercentage = 10.00m, PlatformFeeAmount = 12.00m, Status = PaymentStatus.Refunded, SucceededAt = (DateTime?)new DateTime(2026, 7, 1, 12, 1, 0, DateTimeKind.Utc), CreatedAt = new DateTime(2026, 7, 1, 12, 0, 0, DateTimeKind.Utc) },
-                new { Id = 4, BookingId = 4, StripePaymentIntentId = "pi_seed_0004", Amount = 90.00m, Currency = "bam", PlatformFeePercentage = 10.00m, PlatformFeeAmount = 9.00m, Status = PaymentStatus.Succeeded, SucceededAt = (DateTime?)new DateTime(2026, 7, 14, 8, 1, 0, DateTimeKind.Utc), CreatedAt = new DateTime(2026, 7, 14, 8, 0, 0, DateTimeKind.Utc) }
+                new { Id = 4, BookingId = 4, StripePaymentIntentId = "pi_seed_0004", Amount = 90.00m, Currency = "bam", PlatformFeePercentage = 10.00m, PlatformFeeAmount = 9.00m, Status = PaymentStatus.Succeeded, SucceededAt = (DateTime?)new DateTime(2026, 7, 14, 8, 1, 0, DateTimeKind.Utc), CreatedAt = new DateTime(2026, 7, 14, 8, 0, 0, DateTimeKind.Utc) },
+                new { Id = 5, BookingId = 6, StripePaymentIntentId = "pi_seed_0005", Amount = 45.00m, Currency = "bam", PlatformFeePercentage = 10.00m, PlatformFeeAmount = 4.50m, Status = PaymentStatus.Succeeded, SucceededAt = (DateTime?)new DateTime(2026, 6, 22, 10, 1, 0, DateTimeKind.Utc), CreatedAt = new DateTime(2026, 6, 22, 10, 0, 0, DateTimeKind.Utc) }
             );
         }
 

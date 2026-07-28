@@ -36,7 +36,14 @@ namespace Travle.Model.Responses
 
         public bool IsFeatured { get; set; }
         public double AverageRating { get; set; }
+
+        /// <summary>Number of non-removed reviews behind <see cref="AverageRating"/> (shown as "(N reviews)").</summary>
+        public int ReviewCount { get; set; }
+
         public int ViewCount { get; set; }
+
+        /// <summary>Whether the current user has this destination in their favorites (drives the heart state).</summary>
+        public bool IsFavorite { get; set; }
 
         public int SubmittedByUserId { get; set; }
         public string? SubmittedByUsername { get; set; }

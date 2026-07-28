@@ -36,6 +36,18 @@ namespace Travle.Model.Responses
 
         public bool IsActive { get; set; }
 
+        /// <summary>
+        /// Average of this tour's non-removed reviews (0 when it has none). Computed on read — a tour has no
+        /// denormalized rating column (03 §4), unlike a destination.
+        /// </summary>
+        public double AverageRating { get; set; }
+
+        /// <summary>Number of non-removed reviews behind <see cref="AverageRating"/>.</summary>
+        public int ReviewCount { get; set; }
+
+        /// <summary>Whether the current user has this tour in their favorites (drives the heart state).</summary>
+        public bool IsFavorite { get; set; }
+
         /// <summary>Number of destinations this tour visits (shown on cards without loading the stops).</summary>
         public int DestinationCount { get; set; }
 

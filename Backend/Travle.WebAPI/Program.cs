@@ -139,6 +139,9 @@ builder.Services.AddScoped<IRoleApplicationService, RoleApplicationService>();
 builder.Services.AddScoped<IDestinationService, DestinationService>();
 builder.Services.AddScoped<ITourService, TourService>();
 builder.Services.AddScoped<IBookingService, BookingService>();
+builder.Services.AddScoped<IDestinationReviewService, DestinationReviewService>();
+builder.Services.AddScoped<ITourReviewService, TourReviewService>();
+builder.Services.AddScoped<IFavoriteService, FavoriteService>();
 
 // Booking state machine: the base acts as the factory host injected into the service, and each concrete
 // state is a scoped service resolved by BaseBookingState.GetState per the persisted status (state pattern).

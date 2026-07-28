@@ -8,8 +8,10 @@ import '../screens/admin_payments_screen.dart';
 import '../screens/destinations_moderation_screen.dart';
 import '../screens/organizer_bookings_screen.dart';
 import '../screens/organizer_destinations_screen.dart';
+import '../screens/organizer_reviews_screen.dart';
 import '../screens/organizer_tours_screen.dart';
 import '../screens/reference/reference_registry.dart';
+import '../screens/reviews_moderation_screen.dart';
 import '../screens/role_applications_review_screen.dart';
 
 /// Persistent chrome for the management app: a left sidebar (brand + navigation
@@ -81,6 +83,13 @@ class _SideNavShellState extends State<SideNavShell> {
       requiredRole: AppRole.organizer,
     ),
     _Leaf(
+      'myTourReviews',
+      Icons.reviews_outlined,
+      'Tour Reviews',
+      builder: (_) => const OrganizerReviewsScreen(),
+      requiredRole: AppRole.organizer,
+    ),
+    _Leaf(
       'allBookings',
       Icons.event_available_outlined,
       'All Bookings',
@@ -92,6 +101,13 @@ class _SideNavShellState extends State<SideNavShell> {
       Icons.receipt_long_outlined,
       'Payments',
       builder: (_) => const AdminPaymentsScreen(),
+      requiredRole: AppRole.admin,
+    ),
+    _Leaf(
+      'reviews',
+      Icons.rate_review_outlined,
+      'Reviews',
+      builder: (_) => const ReviewsModerationScreen(),
       requiredRole: AppRole.admin,
     ),
     const _Leaf('users', Icons.group_outlined, 'Users'),

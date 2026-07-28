@@ -47,6 +47,13 @@ namespace Travle.Services.BookingStateMachine
                 CancellationReason = b.CancellationReason,
                 ExpiresAt = b.ExpiresAt,
                 IsPaid = b.Payments.Any(p => p.Status == PaymentStatus.Succeeded),
+                // The tour review tied to this booking, if any (BookingId is unique per review, so at most
+                // one). Kept even when soft-removed so re-review stays blocked; CanBeReviewed is derived
+                // from this + status + viewer by the read service (which knows the current user).
+                ReviewId = b.TourSchedule.Tour.Reviews
+                    .Where(r => r.BookingId == b.Id)
+                    .Select(r => (int?)r.Id)
+                    .FirstOrDefault(),
                 TourThumbnail = b.TourSchedule.Tour.TourDestinations
                     .OrderBy(td => td.SortOrder)
                     .Select(td => td.Destination.Images

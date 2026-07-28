@@ -5,13 +5,16 @@ import 'package:travle_ui/travle_ui.dart';
 
 import '../util/formatting.dart';
 import '../widgets/entrance_fee_note.dart';
+import '../widgets/review_card.dart';
 import 'bookings/booking_details_screen.dart';
 import 'destination_details_screen.dart';
 
 /// Traveler-facing tour details. Fetches `GET /Tours/{id}`, showing the tour
-/// header (cover, type, price per person, duration), the ordered itinerary (each
-/// stop opens its destination details), and the upcoming departures with live
-/// free-seat counts and a Book action per bookable slot.
+/// header (cover, type, price per person, duration, rating), the ordered itinerary
+/// (each stop opens its destination details), the upcoming departures with live
+/// free-seat counts and a Book action per bookable slot, and the tour's reviews
+/// (with the favorite toggle in the app bar). Travelers write a tour review from
+/// their completed booking, not here.
 class TourDetailsScreen extends StatefulWidget {
   const TourDetailsScreen({
     super.key,
@@ -31,6 +34,8 @@ class TourDetailsScreen extends StatefulWidget {
 class _TourDetailsScreenState extends State<TourDetailsScreen> {
   TourResponse? _tour;
   bool _loading = true;
+  bool _isFavorite = false;
+  bool _favoriteBusy = false;
   String? _error;
 
   @override
@@ -49,6 +54,7 @@ class _TourDetailsScreenState extends State<TourDetailsScreen> {
       if (!mounted) return;
       setState(() {
         _tour = tour;
+        _isFavorite = tour.isFavorite;
         _loading = false;
       });
     } on ApiClientException catch (e) {
@@ -109,11 +115,50 @@ class _TourDetailsScreenState extends State<TourDetailsScreen> {
     }
   }
 
+  Future<void> _toggleFavorite() async {
+    final tour = _tour;
+    if (tour == null || _favoriteBusy) return;
+
+    setState(() => _favoriteBusy = true);
+    try {
+      final result = await context.read<FavoriteProvider>().toggleTour(tour.id);
+      if (!mounted) return;
+      setState(() {
+        _isFavorite = result.isFavorite;
+        _favoriteBusy = false;
+      });
+      AppSnackbars.success(
+        context,
+        result.isFavorite
+            ? 'Added to your favorites.'
+            : 'Removed from your favorites.',
+      );
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      setState(() => _favoriteBusy = false);
+      AppSnackbars.error(context, e.message);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final title = _tour?.name ?? widget.initialName ?? 'Tour';
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: AppBar(
+        title: Text(title),
+        actions: [
+          if (_tour != null)
+            IconButton(
+              onPressed: _favoriteBusy ? null : _toggleFavorite,
+              icon: Icon(
+                _isFavorite ? Icons.favorite : Icons.favorite_border,
+                color: _isFavorite ? Theme.of(context).colorScheme.error : null,
+              ),
+              tooltip:
+                  _isFavorite ? 'Remove from favorites' : 'Add to favorites',
+            ),
+        ],
+      ),
       body: SafeArea(child: _buildBody()),
     );
   }
@@ -168,6 +213,109 @@ class _TourDetailsScreenState extends State<TourDetailsScreen> {
           onBook: _book,
           canBook: tour.isActive,
         ),
+        const SizedBox(height: TravleTokens.space24),
+        Text('Reviews', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: TravleTokens.space8),
+        _TourReviews(tourId: tour.id),
+      ],
+    );
+  }
+}
+
+/// Read-only list of a tour's reviews (`GET /TourReviews?tourId=…`). Travelers
+/// write a tour review from their own completed booking (booking details), so this
+/// section only displays them.
+class _TourReviews extends StatefulWidget {
+  const _TourReviews({required this.tourId});
+
+  final int tourId;
+
+  @override
+  State<_TourReviews> createState() => _TourReviewsState();
+}
+
+class _TourReviewsState extends State<_TourReviews> {
+  bool _loading = true;
+  String? _error;
+  List<TourReviewResponse> _reviews = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final result = await context.read<TourReviewProvider>().forTour(
+        widget.tourId,
+        filter: {
+          'pageSize': 50,
+          'includeTotalCount': true,
+          'sortBy': 'CreatedAt desc',
+        },
+      );
+      if (!mounted) return;
+      setState(() {
+        _reviews = result.items;
+        _loading = false;
+      });
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.message;
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final currentUserId = context.read<AuthProvider>().userId;
+
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: TravleTokens.space16),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_error != null) {
+      return Row(
+        children: [
+          Expanded(
+            child: Text(
+              _error!,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.error),
+            ),
+          ),
+          TextButton(onPressed: _load, child: const Text('Retry')),
+        ],
+      );
+    }
+    if (_reviews.isEmpty) {
+      return Text(
+        'No reviews yet for this tour.',
+        style: theme.textTheme.bodyMedium
+            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+      );
+    }
+
+    return Column(
+      children: [
+        for (final review in _reviews)
+          ReviewCard(
+            authorName: review.authorName,
+            rating: review.rating,
+            createdAt: review.createdAt,
+            comment: review.comment,
+            isMine: review.userId == currentUserId,
+          ),
       ],
     );
   }
@@ -221,6 +369,12 @@ class _Header extends StatelessWidget {
                 text:
                     '${tour.destinationCount} ${tour.destinationCount == 1 ? 'stop' : 'stops'}',
                 color: muted,
+              ),
+              const SizedBox(height: TravleTokens.space8),
+              RatingStars(
+                value: tour.averageRating,
+                count: tour.reviewCount,
+                size: 18,
               ),
             ],
           ),
