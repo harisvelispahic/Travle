@@ -207,6 +207,13 @@ namespace Travle.Services.BookingStateMachine
         }
 
         /// <summary>
+        /// Drops the user's cached recommendations after a strong booking signal (04 §4). The cache is a
+        /// singleton resolved from the provider, so no concrete state's constructor needs to change.
+        /// </summary>
+        protected void InvalidateRecommendations(int userId)
+            => ServiceProvider.GetRequiredService<IRecommendationCache>().InvalidateUser(userId);
+
+        /// <summary>
         /// Runs <paramref name="action"/> inside a DB transaction, enlisting in the caller's transaction
         /// if one is already open (so a batch such as slot-cancel commits atomically) and otherwise
         /// opening its own. Used wherever a transition performs more than one write — a seat change plus

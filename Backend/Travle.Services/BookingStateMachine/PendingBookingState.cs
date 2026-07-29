@@ -27,6 +27,7 @@ namespace Travle.Services.BookingStateMachine
                 booking.Id);
             await RecordBookingSignalAsync(booking, InteractionType.BookingConfirmed);
             await DbContext.SaveChangesAsync();
+            InvalidateRecommendations(booking.UserId);
             return await BuildResponseAsync(booking.Id);
         }
 

@@ -186,10 +186,17 @@ builder.Services.AddSingleton<RabbitMqConnection>();
 builder.Services.AddSingleton<IEmailPublisher, RabbitMqEmailPublisher>();
 builder.Services.AddScoped<IPasswordResetService, PasswordResetService>();
 
-// Recommender tuning (signal weights = the "model" per 04 §2; onboarding cap). Defaults in the
-// options class match the doc; the Recommender config section overrides them.
+// Recommender tuning: signal weights + scoring constants = the "model" (04 §2/§3); onboarding cap.
+// Defaults in the options class match the doc; the Recommender config section overrides them.
 builder.Services.AddOptions<RecommenderOptions>()
     .Bind(builder.Configuration.GetSection(RecommenderOptions.SectionName));
+
+// On-demand recommender (04 §4): IMemoryCache backs both the per-user result cache (invalidated on
+// strong interactions) and the hot approved-destination catalog. The cache wrapper holds no per-request
+// state (singleton); the scoring service is scoped because it uses the DbContext.
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<IRecommendationCache, RecommendationCache>();
+builder.Services.AddScoped<IRecommendationService, RecommendationService>();
 
 // Reference-data CRUD services (Country → Region → City chaining + catalog lookups).
 builder.Services.AddScoped<ICountryService, CountryService>();

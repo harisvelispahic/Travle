@@ -27,17 +27,20 @@ namespace Travle.Services
         private readonly TravleDbContext _dbContext;
         private readonly IAppAuthorizationService _authorization;
         private readonly RecommenderOptions _recommenderOptions;
+        private readonly IRecommendationCache _recommendationCache;
         private readonly IValidator<FavoriteToggleRequest> _toggleValidator;
 
         public FavoriteService(
             TravleDbContext dbContext,
             IAppAuthorizationService authorization,
             IOptions<RecommenderOptions> recommenderOptions,
+            IRecommendationCache recommendationCache,
             IValidator<FavoriteToggleRequest> toggleValidator)
         {
             _dbContext = dbContext;
             _authorization = authorization;
             _recommenderOptions = recommenderOptions.Value;
+            _recommendationCache = recommendationCache;
             _toggleValidator = toggleValidator;
         }
 
@@ -162,6 +165,10 @@ namespace Travle.Services
                 Weight = _recommenderOptions.Weights.Favorite
             });
             await _dbContext.SaveChangesAsync();
+
+            // The new Favorite signal changed the user's profile → drop their cached recommendations (04 §4).
+            // (Un-favoriting leaves the append-only Favorite interaction untouched, so it needs no invalidation.)
+            _recommendationCache.InvalidateUser(userId);
             return Result("Destination", destinationId, isFavorite: true);
         }
 

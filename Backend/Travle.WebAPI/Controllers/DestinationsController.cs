@@ -19,8 +19,11 @@ namespace Travle.WebAPI.Controllers;
 public class DestinationsController
     : BaseCRUDController<DestinationResponse, DestinationSearch, DestinationInsertRequest, DestinationUpdateRequest, IDestinationService>
 {
-    public DestinationsController(IDestinationService service) : base(service)
+    private readonly IRecommendationService _recommendations;
+
+    public DestinationsController(IDestinationService service, IRecommendationService recommendations) : base(service)
     {
+        _recommendations = recommendations;
     }
 
     // Public catalogue: approved-only, and a text term logs a Search interaction (enforced in the service).
@@ -31,6 +34,12 @@ public class DestinationsController
     // submitter. Same return type as the inherited GetById, so it stays on the {id} route.
     public override async Task<ActionResult<DestinationResponse>> GetById(int id)
         => Ok(await _service.GetDetailAsync(id));
+
+    // Item-to-item "similar destinations" for the detail screen (04 §5); needs no user profile, so it works
+    // even for brand-new users. Delegates to the recommendation service.
+    [HttpGet("{id}/similar")]
+    public async Task<ActionResult<List<RecommendationItem>>> Similar(int id)
+        => Ok(await _recommendations.GetSimilarAsync(id));
 
     // The current curator/organizer's own submissions, any status.
     [HttpGet("mine")]

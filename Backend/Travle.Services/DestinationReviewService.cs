@@ -16,7 +16,7 @@ namespace Travle.Services
     /// Destination reviews domain service. Not a generic CRUD entity — the write verbs carry gating (the
     /// target must be approved; one active review per user; author-only edit/self-removal; admin-only
     /// moderation removal) and side effects (denormalized <c>AverageRating</c> recompute, a
-    /// <c>ReviewHigh</c> interaction for 4–5★, a notification on moderation removal). Reads are hand-written
+    /// <c>ReviewHigh</c> interaction reconciled to the current 4–5★ rating, a notification on moderation removal). Reads are hand-written
     /// projections (never Mapster), and public reads never surface soft-removed rows.
     /// </summary>
     public class DestinationReviewService
@@ -28,6 +28,7 @@ namespace Travle.Services
         private readonly IAppAuthorizationService _authorization;
         private readonly IAuthenticatedUserAccessor _currentUser;
         private readonly RecommenderOptions _recommenderOptions;
+        private readonly IRecommendationCache _recommendationCache;
         private readonly IValidator<DestinationReviewInsertRequest> _insertValidator;
         private readonly IValidator<DestinationReviewUpdateRequest> _updateValidator;
         private readonly IValidator<ReviewRemoveRequest> _removeValidator;
@@ -38,6 +39,7 @@ namespace Travle.Services
             IAppAuthorizationService authorization,
             IAuthenticatedUserAccessor currentUser,
             IOptions<RecommenderOptions> recommenderOptions,
+            IRecommendationCache recommendationCache,
             IValidator<DestinationReviewInsertRequest> insertValidator,
             IValidator<DestinationReviewUpdateRequest> updateValidator,
             IValidator<ReviewRemoveRequest> removeValidator)
@@ -46,6 +48,7 @@ namespace Travle.Services
             _authorization = authorization;
             _currentUser = currentUser;
             _recommenderOptions = recommenderOptions.Value;
+            _recommendationCache = recommendationCache;
             _insertValidator = insertValidator;
             _updateValidator = updateValidator;
             _removeValidator = removeValidator;
@@ -179,10 +182,12 @@ namespace Travle.Services
             await _dbContext.SaveChangesAsync();
 
             await RecomputeAverageRatingAsync(request.DestinationId);
-            await RecordReviewHighIfEligibleAsync(userId, request.DestinationId, request.Rating);
+            await ReconcileReviewHighAsync(userId, request.DestinationId, request.Rating >= HighRatingThreshold);
 
             await transaction.CommitAsync();
 
+            // A create may have added a ReviewHigh signal → drop the author's cached recommendations (04 §4).
+            _recommendationCache.InvalidateUser(userId);
             return await RequireResponseAsync(review.Id);
         }
 
@@ -206,11 +211,14 @@ namespace Travle.Services
 
             await _dbContext.SaveChangesAsync();
             await RecomputeAverageRatingAsync(review.DestinationId);
-            // A rating edited up into the 4–5★ band records the strong signal if not already captured.
-            await RecordReviewHighIfEligibleAsync(review.UserId, review.DestinationId, review.Rating);
+            // Reconcile the strong signal to the edited rating: a move up into the 4–5★ band adds the
+            // ReviewHigh row, a move below it drops the row (04 §2 reconcile-on-edit).
+            await ReconcileReviewHighAsync(review.UserId, review.DestinationId, review.Rating >= HighRatingThreshold);
 
             await transaction.CommitAsync();
 
+            // The reconcile may have added/removed the ReviewHigh signal → invalidate the author (04 §4).
+            _recommendationCache.InvalidateUser(review.UserId);
             return await RequireResponseAsync(id);
         }
 
@@ -233,8 +241,13 @@ namespace Travle.Services
 
             await _dbContext.SaveChangesAsync();
             await RecomputeAverageRatingAsync(review.DestinationId);
+            // The review is gone, so its ReviewHigh signal must go too (04 §2 reconcile-on-removal).
+            await ReconcileReviewHighAsync(review.UserId, review.DestinationId, shouldExist: false);
 
             await transaction.CommitAsync();
+
+            // The dropped ReviewHigh signal changed the profile → invalidate the author (04 §4).
+            _recommendationCache.InvalidateUser(review.UserId);
         }
 
         public async Task<DestinationReviewResponse> RemoveAsync(int id, ReviewRemoveRequest request)
@@ -272,9 +285,13 @@ namespace Travle.Services
 
             await _dbContext.SaveChangesAsync();
             await RecomputeAverageRatingAsync(review.DestinationId);
+            // Moderation removal retires the review, so its ReviewHigh signal is dropped as well (04 §2).
+            await ReconcileReviewHighAsync(review.UserId, review.DestinationId, shouldExist: false);
 
             await transaction.CommitAsync();
 
+            // The dropped ReviewHigh signal changed the profile → invalidate the author (04 §4).
+            _recommendationCache.InvalidateUser(review.UserId);
             return await RequireResponseAsync(id);
         }
 
@@ -318,32 +335,35 @@ namespace Travle.Services
                 .ExecuteUpdateAsync(setters => setters.SetProperty(d => d.AverageRating, average));
         }
 
-        // Records a ReviewHigh interaction for a 4–5★ review — but only once per (user, destination), so a
-        // later edit that stays high does not append a duplicate (the diary is append-only). Destination-
-        // targeted signals only (decision: tour reviews do not feed the recommender).
-        private async Task RecordReviewHighIfEligibleAsync(int userId, int destinationId, int rating)
+        // Keeps the ReviewHigh interaction in lockstep with the user's *current* review of a destination
+        // (04 §2 reconcile-on-edit). A 4–5★ review contributes exactly one ReviewHigh row; if the user later
+        // edits the rating below the threshold, or the review is removed (self or moderation), that row is
+        // dropped — its defining precondition ("rated 4–5") no longer holds, so unlike the other signals it
+        // is NOT append-only. A user has at most one active review per destination, so a single
+        // (user, destination) ReviewHigh row is the whole state. Destination-targeted only (tour reviews do
+        // not feed the recommender). Runs inside the caller's transaction.
+        private async Task ReconcileReviewHighAsync(int userId, int destinationId, bool shouldExist)
         {
-            if (rating < HighRatingThreshold)
-            {
-                return;
-            }
-
-            var alreadyRecorded = await _dbContext.UserInteractions.AnyAsync(i =>
+            var existing = await _dbContext.UserInteractions.FirstOrDefaultAsync(i =>
                 i.UserId == userId
                 && i.DestinationId == destinationId
                 && i.InteractionType == InteractionType.ReviewHigh);
-            if (alreadyRecorded)
+
+            if (shouldExist && existing is null)
             {
-                return;
+                _dbContext.UserInteractions.Add(new UserInteraction
+                {
+                    UserId = userId,
+                    DestinationId = destinationId,
+                    InteractionType = InteractionType.ReviewHigh,
+                    Weight = _recommenderOptions.Weights.ReviewHigh
+                });
+            }
+            else if (!shouldExist && existing is not null)
+            {
+                _dbContext.UserInteractions.Remove(existing);
             }
 
-            _dbContext.UserInteractions.Add(new UserInteraction
-            {
-                UserId = userId,
-                DestinationId = destinationId,
-                InteractionType = InteractionType.ReviewHigh,
-                Weight = _recommenderOptions.Weights.ReviewHigh
-            });
             await _dbContext.SaveChangesAsync();
         }
 

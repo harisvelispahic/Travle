@@ -20,6 +20,7 @@ namespace Travle.Services
         private readonly IAppAuthorizationService _authorization;
         private readonly IThumbnailGenerator _thumbnailGenerator;
         private readonly RecommenderOptions _recommenderOptions;
+        private readonly IRecommendationCache _recommendationCache;
         private readonly IValidator<UserRegisterRequest> _registerValidator;
         private readonly IValidator<UserUpdateRequest> _updateValidator;
         private readonly IValidator<UserPasswordChangeRequest> _passwordChangeValidator;
@@ -33,6 +34,7 @@ namespace Travle.Services
             IAppAuthorizationService authorization,
             IThumbnailGenerator thumbnailGenerator,
             IOptions<RecommenderOptions> recommenderOptions,
+            IRecommendationCache recommendationCache,
             IValidator<UserRegisterRequest> registerValidator,
             IValidator<UserUpdateRequest> updateValidator,
             IValidator<UserPasswordChangeRequest> passwordChangeValidator,
@@ -44,6 +46,7 @@ namespace Travle.Services
             _authorization = authorization;
             _thumbnailGenerator = thumbnailGenerator;
             _recommenderOptions = recommenderOptions.Value;
+            _recommendationCache = recommendationCache;
             _registerValidator = registerValidator;
             _updateValidator = updateValidator;
             _passwordChangeValidator = passwordChangeValidator;
@@ -390,6 +393,9 @@ namespace Travle.Services
 
             // Interactions + the flag in one SaveChanges → a single transaction.
             await _dbContext.SaveChangesAsync();
+
+            // Onboarding picks are strong signals → drop the user's cached recommendations (04 §4).
+            _recommendationCache.InvalidateUser(userId);
 
             return await RequireWithRolesAsync(userId);
         }
