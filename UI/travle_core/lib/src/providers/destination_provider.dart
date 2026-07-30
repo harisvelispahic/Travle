@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import '../models/destination_insert_request.dart';
 import '../models/destination_response.dart';
 import '../models/destination_update_request.dart';
+import '../models/recommendation_item.dart';
 import '../network/base_provider.dart';
 import '../network/search_result.dart';
 
@@ -77,4 +78,14 @@ class DestinationProvider extends BaseProvider<DestinationResponse> {
   /// Full image bytes for a destination image (`GET /Destinations/{id}/images/{imageId}`).
   Future<Uint8List> imageBytes(int destinationId, int imageId) =>
       getBytes('$destinationId/images/$imageId');
+
+  /// Item-to-item "similar destinations" (`GET /Destinations/{id}/similar`) — the
+  /// recommender's second surface. Needs no user profile, so it works even for
+  /// brand-new users; each item carries its own "why it's similar" reason.
+  Future<List<RecommendationItem>> similar(int id) async {
+    final json = await getAction('$id/similar') as List;
+    return json
+        .map((e) => RecommendationItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
 }

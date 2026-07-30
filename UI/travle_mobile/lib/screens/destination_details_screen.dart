@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
+import '../widgets/recommendation_card.dart';
 import '../widgets/review_card.dart';
 import '../widgets/review_form_sheet.dart';
 import '../widgets/tour_card.dart';
@@ -18,8 +19,9 @@ import 'tour_details_screen.dart';
 /// location panel, the reviews (with the favorite toggle in the app bar), and the
 /// tours that visit this destination (§Phase 4 / 7).
 ///
-/// The "Similar destinations" section is the recommender surface and arrives in
-/// Phase 8; it is intentionally not stubbed here.
+/// The "Similar destinations" strip at the bottom is the recommender's second
+/// surface (`GET /Destinations/{id}/similar`): item-to-item matches that need no
+/// user profile, so they work even for brand-new users.
 class DestinationDetailsScreen extends StatefulWidget {
   const DestinationDetailsScreen({
     super.key,
@@ -187,6 +189,7 @@ class _DestinationDetailsScreenState extends State<DestinationDetailsScreen> {
             destinationName: destination.name,
           ),
         ),
+        _SimilarSection(destinationId: destination.id),
       ],
     );
   }
@@ -521,6 +524,121 @@ class _ToursSectionState extends State<_ToursSection> {
               padding: const EdgeInsets.only(bottom: TravleTokens.space8),
               child: TourCard(tour: tour, onTap: () => _openTour(tour)),
             ),
+      ],
+    );
+  }
+}
+
+/// The recommender's "Similar destinations" strip (`GET /Destinations/{id}/similar`):
+/// item-to-item matches (no user profile), each with its own "why it's similar"
+/// reason. Loads independently and takes up no space when there are none.
+class _SimilarSection extends StatefulWidget {
+  const _SimilarSection({required this.destinationId});
+
+  final int destinationId;
+
+  @override
+  State<_SimilarSection> createState() => _SimilarSectionState();
+}
+
+class _SimilarSectionState extends State<_SimilarSection> {
+  bool _loading = true;
+  String? _error;
+  List<RecommendationItem> _items = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final items =
+          await context.read<DestinationProvider>().similar(widget.destinationId);
+      if (!mounted) return;
+      setState(() {
+        _items = items;
+        _loading = false;
+      });
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.message;
+        _loading = false;
+      });
+    }
+  }
+
+  void _open(DestinationResponse destination) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DestinationDetailsScreen(
+          destinationId: destination.id,
+          initialName: destination.name,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Nothing similar and nothing to retry → take up no space at all.
+    if (!_loading && _error == null && _items.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: TravleTokens.space16),
+          child: Text('Similar destinations', style: theme.textTheme.titleMedium),
+        ),
+        const SizedBox(height: TravleTokens.space12),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: TravleTokens.space16),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_error != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: TravleTokens.space16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _error!,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.error),
+                  ),
+                ),
+                TextButton(onPressed: _load, child: const Text('Retry')),
+              ],
+            ),
+          )
+        else
+          SizedBox(
+            height: 272,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: TravleTokens.space16),
+              itemCount: _items.length,
+              separatorBuilder: (_, _) =>
+                  const SizedBox(width: TravleTokens.space12),
+              itemBuilder: (_, i) => RecommendationCard(
+                item: _items[i],
+                onTap: () => _open(_items[i].destination),
+              ),
+            ),
+          ),
+        const SizedBox(height: TravleTokens.space16),
       ],
     );
   }

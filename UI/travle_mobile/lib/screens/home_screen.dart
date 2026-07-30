@@ -3,14 +3,18 @@ import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
+import '../widgets/recommendation_card.dart';
 import 'destination_details_screen.dart';
 
-/// Home landing screen (mockup Slika 6). A tap-through search bar hands off to the
-/// Search tab, then two horizontal sections of the approved catalogue: Featured
-/// destinations and "Popular right now" (most-viewed). The recommender-driven
-/// "Recommended for you" section and popular tours arrive in Phases 8 and 4;
-/// until the recommender exists every user is cold-start, so the popularity list
-/// stands in per the documented cold-start rule.
+/// Home landing screen. A gradient header with a tap-through search bar, then the
+/// recommender-driven "Recommended for you" carousel (with per-card reasons),
+/// followed by the Featured and "Popular right now" catalogue sections.
+///
+/// The recommendations come from `GET /Recommendations`: a warm user gets an
+/// explained, personalized list; a cold-start user gets a popularity list the UI
+/// labels honestly (and we drop the redundant separate "Popular" row for them).
+/// Recommendations are best-effort — if that call fails the catalogue sections
+/// still render, so the home screen is never blank because of the recommender.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, this.onOpenSearch});
 
@@ -23,6 +27,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  RecommendationResponse? _recommendations;
   List<DestinationResponse> _featured = [];
   List<DestinationResponse> _popular = [];
   bool _loading = true;
@@ -39,21 +44,34 @@ class _HomeScreenState extends State<HomeScreen> {
       _loading = true;
       _error = null;
     });
-    final provider = context.read<DestinationProvider>();
+
+    final destinations = context.read<DestinationProvider>();
+    final recommender = context.read<RecommendationProvider>();
+
+    // Recommendations are best-effort: a recommender hiccup must not blank the
+    // whole home screen, so we swallow its error and simply hide the section.
+    RecommendationResponse? recommendations;
     try {
-      final featured = await provider.get(filter: {
+      recommendations = await recommender.getForCurrentUser();
+    } on ApiClientException {
+      recommendations = null;
+    }
+
+    try {
+      final featured = await destinations.get(filter: {
         'isFeatured': true,
         'pageSize': 10,
         'includeTotalCount': false,
         'sortBy': 'AverageRating desc',
       });
-      final popular = await provider.get(filter: {
+      final popular = await destinations.get(filter: {
         'pageSize': 10,
         'includeTotalCount': false,
         'sortBy': 'ViewCount desc',
       });
       if (!mounted) return;
       setState(() {
+        _recommendations = recommendations;
         _featured = featured.items;
         _popular = popular.items;
         _loading = false;
@@ -103,18 +121,24 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    final hasContent = _featured.isNotEmpty || _popular.isNotEmpty;
+    final recommendations = _recommendations;
+    final recItems = recommendations?.items ?? const <RecommendationItem>[];
+    final isColdStart = recommendations?.isColdStart ?? false;
+
+    // Cold-start recommendations are themselves a popularity ranking, so the
+    // separate "Popular" row would just duplicate them — show it only for warm
+    // users (or if recommendations are missing entirely).
+    final showPopular = _popular.isNotEmpty && (!isColdStart || recItems.isEmpty);
+
+    final hasContent =
+        recItems.isNotEmpty || _featured.isNotEmpty || _popular.isNotEmpty;
 
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.symmetric(vertical: TravleTokens.space16),
+        padding: const EdgeInsets.only(bottom: TravleTokens.space16),
         children: [
-          Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: TravleTokens.space16),
-            child: _SearchBarButton(onTap: widget.onOpenSearch),
-          ),
+          _HomeHeader(onOpenSearch: widget.onOpenSearch),
           const SizedBox(height: TravleTokens.space24),
           if (!hasContent)
             const Padding(
@@ -126,13 +150,19 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             )
           else ...[
+            if (recItems.isNotEmpty)
+              _RecommendationSection(
+                items: recItems,
+                isColdStart: isColdStart,
+                onTap: _openDetails,
+              ),
             if (_featured.isNotEmpty)
               _CarouselSection(
                 title: 'Featured destinations',
                 destinations: _featured,
                 onTap: _openDetails,
               ),
-            if (_popular.isNotEmpty)
+            if (showPopular)
               _CarouselSection(
                 title: 'Popular right now',
                 destinations: _popular,
@@ -145,7 +175,60 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// The read-only search field on Home that routes to the Search tab.
+/// The gradient welcome header with the tap-through search bar.
+class _HomeHeader extends StatelessWidget {
+  const _HomeHeader({this.onOpenSearch});
+
+  final VoidCallback? onOpenSearch;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(
+        TravleTokens.space16,
+        TravleTokens.space32,
+        TravleTokens.space16,
+        TravleTokens.space24,
+      ),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [TravleTokens.forest, TravleTokens.forestMid],
+        ),
+        borderRadius: BorderRadius.vertical(
+          bottom: Radius.circular(TravleTokens.radius * 2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'LET’S EXPLORE',
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: TravleTokens.sage,
+              letterSpacing: 1.4,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: TravleTokens.space4),
+          Text(
+            'Where to next?',
+            style: theme.textTheme.headlineMedium?.copyWith(
+              color: TravleTokens.mint,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: TravleTokens.space16),
+          _SearchBarButton(onTap: onOpenSearch),
+        ],
+      ),
+    );
+  }
+}
+
+/// The read-only search field that routes to the Search tab.
 class _SearchBarButton extends StatelessWidget {
   const _SearchBarButton({this.onTap});
 
@@ -155,7 +238,7 @@ class _SearchBarButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Material(
-      color: theme.colorScheme.surfaceContainerHighest,
+      color: theme.colorScheme.surface,
       borderRadius: BorderRadius.circular(TravleTokens.radius),
       child: InkWell(
         borderRadius: BorderRadius.circular(TravleTokens.radius),
@@ -180,7 +263,76 @@ class _SearchBarButton extends StatelessWidget {
   }
 }
 
-/// A titled horizontal carousel of destination cards.
+/// The recommender's flagship section: a titled horizontal carousel of rich
+/// recommendation cards. Cold-start users see a "get you started" framing with no
+/// per-card reasons (they'd all be the same popularity label).
+class _RecommendationSection extends StatelessWidget {
+  const _RecommendationSection({
+    required this.items,
+    required this.isColdStart,
+    required this.onTap,
+  });
+
+  final List<RecommendationItem> items;
+  final bool isColdStart;
+  final void Function(DestinationResponse) onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final title = isColdStart ? 'Popular to get you started' : 'Recommended for you';
+    final subtitle = isColdStart
+        ? 'We’ll tailor these as you explore, favorite, and book.'
+        : null;
+    final showReason = !isColdStart;
+    final cardHeight = showReason ? 272.0 : 224.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: TravleTokens.space16),
+          child: Row(
+            children: [
+              Icon(Icons.auto_awesome, size: 20, color: theme.colorScheme.primary),
+              const SizedBox(width: TravleTokens.space8),
+              Expanded(child: Text(title, style: theme.textTheme.titleMedium)),
+            ],
+          ),
+        ),
+        if (subtitle != null) ...[
+          const SizedBox(height: TravleTokens.space4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: TravleTokens.space16),
+            child: Text(
+              subtitle,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ),
+        ],
+        const SizedBox(height: TravleTokens.space12),
+        SizedBox(
+          height: cardHeight,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: TravleTokens.space16),
+            itemCount: items.length,
+            separatorBuilder: (_, _) => const SizedBox(width: TravleTokens.space12),
+            itemBuilder: (_, i) => RecommendationCard(
+              item: items[i],
+              showReason: showReason,
+              onTap: () => onTap(items[i].destination),
+            ),
+          ),
+        ),
+        const SizedBox(height: TravleTokens.space24),
+      ],
+    );
+  }
+}
+
+/// A titled horizontal carousel of compact destination cards (Featured / Popular).
 class _CarouselSection extends StatelessWidget {
   const _CarouselSection({
     required this.title,
@@ -199,8 +351,7 @@ class _CarouselSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: TravleTokens.space16),
+          padding: const EdgeInsets.symmetric(horizontal: TravleTokens.space16),
           child: Text(title, style: theme.textTheme.titleMedium),
         ),
         const SizedBox(height: TravleTokens.space12),
@@ -208,12 +359,10 @@ class _CarouselSection extends StatelessWidget {
           height: 216,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding:
-                const EdgeInsets.symmetric(horizontal: TravleTokens.space16),
+            padding: const EdgeInsets.symmetric(horizontal: TravleTokens.space16),
             itemCount: destinations.length,
-            separatorBuilder: (_, _) =>
-                const SizedBox(width: TravleTokens.space12),
-            itemBuilder: (_, i) => _HomeDestinationCard(
+            separatorBuilder: (_, _) => const SizedBox(width: TravleTokens.space12),
+            itemBuilder: (_, i) => _MiniDestinationCard(
               destination: destinations[i],
               onTap: () => onTap(destinations[i]),
             ),
@@ -225,16 +374,17 @@ class _CarouselSection extends StatelessWidget {
   }
 }
 
-/// Compact destination card for the Home carousels: cover thumbnail on top, then
-/// name, location, and rating.
-class _HomeDestinationCard extends StatelessWidget {
-  const _HomeDestinationCard({required this.destination, required this.onTap});
+/// Compact destination card for the Featured / Popular carousels: cover thumbnail
+/// on top, then name, location, and rating.
+class _MiniDestinationCard extends StatelessWidget {
+  const _MiniDestinationCard({required this.destination, required this.onTap});
 
   final DestinationResponse destination;
   final VoidCallback onTap;
 
   String get _location => [destination.cityName, destination.regionName]
       .where((p) => p != null && p.isNotEmpty)
+      .cast<String>()
       .join(', ');
 
   @override
@@ -249,6 +399,7 @@ class _HomeDestinationCard extends StatelessWidget {
           onTap: onTap,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
               ThumbnailImage(
                 base64: destination.primaryThumbnail,
@@ -261,6 +412,7 @@ class _HomeDestinationCard extends StatelessWidget {
                 padding: const EdgeInsets.all(TravleTokens.space12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       destination.name,
