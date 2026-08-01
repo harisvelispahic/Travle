@@ -102,6 +102,24 @@ abstract class BaseProvider<T> with ChangeNotifier {
     return jsonDecode(response.body);
   }
 
+  /// PUTs [body] to `endpoint[/subPath]` and returns the decoded JSON (or null
+  /// for an empty response). Reuses the auth header + 401→refresh pass. For
+  /// non-`{id}` update routes (e.g. `Notifications/{id}/read`, `Notifications/read-all`).
+  Future<dynamic> putAction(String? subPath, [dynamic body]) async {
+    final url =
+        subPath == null ? '$_base$endpoint' : '$_base$endpoint/$subPath';
+    final response = await _send(
+      () => http.put(
+        Uri.parse(url),
+        headers: _headers(),
+        body: body == null ? null : jsonEncode(body),
+      ),
+    );
+    validateResponse(response);
+    if (response.body.isEmpty) return null;
+    return jsonDecode(response.body);
+  }
+
   /// DELETEs `endpoint/subPath` (for a non-`{id}` delete route, e.g.
   /// `Tours/Schedules/{scheduleId}`). Reuses the auth header + 401→refresh pass.
   Future<void> deleteAction(String subPath) async {

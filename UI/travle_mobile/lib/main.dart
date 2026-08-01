@@ -24,6 +24,13 @@ class TravleMobileApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
+        // Notifications react to auth: connect the SignalR feed + prime the badge
+        // on sign-in, tear it all down on sign-out (syncAuth is idempotent).
+        ChangeNotifierProxyProvider<AuthProvider, NotificationProvider>(
+          create: (_) => NotificationProvider(),
+          update: (_, auth, notifications) =>
+              notifications!..syncAuth(auth.isAuthenticated),
+        ),
         ChangeNotifierProvider(create: (_) => DestinationCategoryProvider()),
         ChangeNotifierProvider(create: (_) => DestinationProvider()),
         ChangeNotifierProvider(create: (_) => RecommendationProvider()),

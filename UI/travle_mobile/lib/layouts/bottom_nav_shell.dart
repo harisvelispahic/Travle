@@ -4,6 +4,7 @@ import '../screens/favorites_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/profile_screen.dart';
 import '../screens/search_screen.dart';
+import '../widgets/notification_bell.dart';
 
 /// Persistent chrome for authenticated mobile users: an app bar over the
 /// four-tab bottom navigation (Home · Search · Favorites · Profile). An
@@ -60,7 +61,10 @@ class _BottomNavShellState extends State<BottomNavShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_titles[_index])),
+      appBar: AppBar(
+        title: Text(_titles[_index]),
+        actions: const [NotificationBell()],
+      ),
       body: IndexedStack(index: _index, children: _screens),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,

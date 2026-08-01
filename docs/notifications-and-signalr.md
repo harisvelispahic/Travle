@@ -243,21 +243,70 @@ holding the Admin role via `NotificationRecipients.AdminUserIdsAsync` (one query
 
 ---
 
-## 8. The Flutter client (planned)
+## 8. The Flutter client
 
-Both apps are Flutter, so the realtime mechanism is **shared in `travle_core`** and each app only renders
-its own bell + centre:
+Both apps are Flutter, so the whole realtime + data mechanism lives **once in `travle_core`**; each app
+only renders its own bell + centre. The mobile (traveler/curator) UI is built; the desktop
+(organizer/admin) centre — same shared core, its own shell — is **(planned, 9h)**.
 
-- **`signalr_netcore`** builds a `HubConnection` to `{BASE_URL}/hubs/notifications` with
-  `accessTokenFactory` returning the token from secure storage, and `withAutomaticReconnect`.
-- **`NotificationProvider`** (`ChangeNotifier`, like the other providers): loads the list + unread count
-  via REST when the centre opens; listens to the hub's `notificationReceived` and **prepends** the new
-  item + bumps the badge; `markRead` / `markAllRead` call REST and update local state.
-- **Lifecycle:** connect after login (token available), reconnect after a token refresh (the
-  `accessTokenFactory` returns the *current* token on each reconnect, so rotation is handled), disconnect
-  on logout.
-- **UI:** an app-bar bell with an unread badge on both apps → a notification centre screen (list, unread
-  emphasis, relative time, tap = mark read + navigate to the related entity, "mark all as read"), live.
+### 8.1 Shared core (`travle_core`)
+
+- **`realtime/notification_realtime_service.dart`** — wraps `signalr_netcore`'s `HubConnection` to
+  `{BASE_URL}hubs/notifications`, authenticating with `accessTokenFactory: () => AuthProvider.accessToken`
+  (SignalR appends it as the `access_token` query param, matching the API's bearer wiring). It registers a
+  handler for the server's `NotificationReceived` method and calls back into the provider.
+  `withAutomaticReconnect` covers transient drops; `connect()` is idempotent so it doubles as a retry.
+- **`providers/notification_provider.dart`** — `extends BaseProvider<NotificationResponse>`, so the REST
+  verbs, the auth header, and the 401→refresh→retry pass come for free. Holds the loaded list + the unread
+  count; `loadFirstPage` / `loadMore` page the list, `refreshUnreadCount` drives the badge, `markRead` /
+  `markAllRead` update optimistically then confirm server-side, and `_onPushed` prepends a live push +
+  bumps the badge. **`syncAuth(isAuthenticated)`** ties it to the session: connect the socket + prime the
+  badge on sign-in, tear everything down on sign-out (idempotent, so repeated calls are safe).
+- **`models/notification_response.dart`** (+ generated `.g.dart`) — the client mirror of the backend
+  `NotificationResponse`; the exact same JSON shape arrives from REST **and** from SignalR, so both build
+  it identically. Includes a `copyWith` for the optimistic mark-as-read.
+- **`network/base_provider.dart`** — gained **`putAction(subPath, [body])`** (mirrors `postAction`) for the
+  `{id}/read` and `read-all` routes.
+- **`travle_core.dart`** / **`pubspec.yaml`** — barrel exports for the model + provider; the
+  `signalr_netcore` dependency.
+
+### 8.2 Mobile UI (`travle_mobile`)
+
+- **`main.dart`** — registers the provider with a
+  `ChangeNotifierProxyProvider<AuthProvider, NotificationProvider>` whose `update` calls `syncAuth`, so the
+  socket follows the session automatically.
+- **`widgets/notification_bell.dart`** — the app-bar bell; a Material `Badge` shows the live unread count
+  (`context.select` on the provider); tap opens the centre. Mounted in
+  **`layouts/bottom_nav_shell.dart`**'s `AppBar.actions`.
+- **`screens/notifications_screen.dart`** — the centre: the list (type icon, bold-while-unread title,
+  truncated body, relative time, unread dot), pull-to-refresh, infinite scroll, and an always-visible
+  "mark all as read" app-bar action (disabled with a reason when nothing is unread) guarded by a
+  confirmation dialog. A row opens the detail (it does **not** jump straight to the entity).
+- **`screens/notification_detail_screen.dart`** — the full view of one notification: the complete,
+  untruncated body (so a rejection reason / cancellation note is never cut off), the type, the exact local
+  time, and the read state. Opening it marks the notification read; when it carries a `relatedEntityId` of
+  a navigable type, a **"View booking" / "View destination"** button deep-links there. All notification
+  navigation lives here.
+- **`util/notification_display.dart`** — shared presentation helpers keyed on the backend type name:
+  `notificationIcon`, `notificationIsNegative` (error vs primary color), `notificationTypeLabel`
+  (`"BookingConfirmed"` → `"Booking Confirmed"`), and the time formatters (both reinterpret the server's
+  UTC-wall-clock timestamp via `asUtc` before display).
+
+### 8.3 Flutter ↔ backend correspondence
+
+What on the client talks to what on the server:
+
+| Flutter (client) | Backend | Carries |
+|---|---|---|
+| `NotificationResponse` model | `Travle.Model/Responses/NotificationResponse` | identical JSON (REST **and** push) |
+| `NotificationRealtimeService` → `HubConnection("…hubs/notifications")` + `accessTokenFactory` | `NotificationHub` @ `/hubs/notifications` + JWT `access_token`-in-query wiring (`Program.cs`) | the authenticated WebSocket |
+| `.on('NotificationReceived', …)` | `SignalRNotificationPush.NotificationReceived` → `Clients.Group("user-{id}")` | the live push payload |
+| `NotificationProvider.loadFirstPage/loadMore` → `get('Notifications')` | `NotificationsController` `GET /Notifications` (`NotificationService`) | the paged list |
+| `refreshUnreadCount` → `getAction('unread-count')` | `GET /Notifications/unread-count` | the badge count |
+| `markRead` → `putAction('{id}/read')` | `PUT /Notifications/{id}/read` | mark one read |
+| `markAllRead` → `putAction('read-all')` | `PUT /Notifications/read-all` | mark all read |
+| `notificationIcon` / `notificationTypeLabel(type)` | `NotificationType` enum **name** in the DTO | type → icon/label |
+| detail screen `_openRelated` (booking/destination) | `Notification.RelatedEntityId` | the deep-link target |
 
 ---
 
@@ -286,11 +335,17 @@ its own bell + centre:
 
 ---
 
-## 11. Known gaps & future events (hardening phase)
+## 11. Known gaps, non-goals & future events
 
-- **Destination removed/unpublished ⇒ notify affected organizers.** When a curator's destination is
-  taken down, any organizer whose tour includes it should be told, since it affects their live tours.
-  Deferred to the hardening phase.
+- **OS / system push notifications are a non-goal (out of scope).** The spec lists *"FCM/OS push
+  notifications"* among its hard non-goals, so notifications surface **only in-app** (the live centre +
+  badge) while the app is open with a socket. Reaching a backgrounded or closed app would require Firebase
+  Cloud Messaging (Android) / a local-notifications plugin and a push service — deliberately excluded, on
+  both mobile and desktop. A closed client simply sees everything on its next open (REST load), which the
+  durable DB row guarantees.
+- **Destination removed/unpublished ⇒ notify affected organizers** (hardening phase). When a curator's
+  destination is taken down, any organizer whose tour includes it should be told, since it affects their
+  live tours.
 - Any additional cross-role ripple events discovered during hardening land here first, then in §7.
 
 ---
@@ -320,13 +375,22 @@ its own bell + centre:
   every notification message (password-reset, a type it already knew, still sent). Fixed by rebuilding the
   worker (`docker compose up -d --build travle-worker`). Lesson recorded in §14. Added §13 (file-by-file
   reference).
+- **2026-08-02** — **9f + 9g shipped: shared Flutter client + mobile UI (analyzer clean), user-verified live.**
+  - `travle_core`: `NotificationRealtimeService` (signalr_netcore), `NotificationProvider`,
+    `NotificationResponse` model, `putAction` on `BaseProvider`, barrel + `signalr_netcore` dep.
+  - `travle_mobile`: proxy-provider wiring in `main.dart`, app-bar `NotificationBell` + badge, the
+    notification **centre** (`notifications_screen.dart`), a full **detail screen**
+    (`notification_detail_screen.dart` — untruncated body + "view related" deep-link; every row opens this,
+    not the entity directly), shared `util/notification_display.dart`, and mark-all-as-read with a
+    confirmation dialog. §8 rewritten to as-built; §8.3 adds the client↔server correspondence table.
+  - Recorded the OS/system-push non-goal in §11. **Remaining:** 9h desktop centre (same shared core).
 
 ---
 
 ## 13. File-by-file reference (backend)
 
-Every file created or changed for the backend of this feature and why it exists. Flutter files are added
-here when §8 lands.
+Every file created or changed for the **backend** of this feature and why it exists. The **Flutter**
+file-by-file is in §8.1–8.2, with the client↔server correspondence in §8.3.
 
 ### New files
 
