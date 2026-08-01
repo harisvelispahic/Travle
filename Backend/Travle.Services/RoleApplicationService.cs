@@ -5,6 +5,7 @@ using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
 using Travle.Services.Database;
+using Travle.Services.Notifications;
 using Travle.Services.Security;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
@@ -16,6 +17,7 @@ namespace Travle.Services
           IRoleApplicationService
     {
         private readonly IAppAuthorizationService _authorization;
+        private readonly INotificationDispatcher _notifications;
         private readonly IValidator<RoleApplicationSubmitRequest> _submitValidator;
         private readonly IValidator<RoleApplicationRejectRequest> _rejectValidator;
 
@@ -23,11 +25,13 @@ namespace Travle.Services
             TravleDbContext dbContext,
             MapsterMapper.IMapper mapper,
             IAppAuthorizationService authorization,
+            INotificationDispatcher notifications,
             IValidator<RoleApplicationSubmitRequest> submitValidator,
             IValidator<RoleApplicationRejectRequest> rejectValidator)
             : base(mapper, dbContext)
         {
             _authorization = authorization;
+            _notifications = notifications;
             _submitValidator = submitValidator;
             _rejectValidator = rejectValidator;
         }
@@ -165,7 +169,23 @@ namespace Travle.Services
             };
 
             _dbContext.RoleApplications.Add(application);
+
+            // Application row + admin notifications commit together (two SaveChanges → one transaction, rule 7):
+            // the first save assigns the application id the admin notifications deep-link to.
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
             await _dbContext.SaveChangesAsync();
+
+            var adminIds = await NotificationRecipients.AdminUserIdsAsync(_dbContext);
+            foreach (var adminId in adminIds)
+            {
+                _notifications.Enqueue(adminId, NotificationType.RoleApplicationSubmitted,
+                    "New role application",
+                    $"A new {role.Name} application was submitted and is awaiting your review.",
+                    application.Id);
+            }
+            await _dbContext.SaveChangesAsync();
+
+            await transaction.CommitAsync();
 
             return await RequireResponseAsync(application.Id);
         }
@@ -277,22 +297,11 @@ namespace Travle.Services
             }
         }
 
-        // INTERIM: the Notifications service and SignalR real-time push do not exist yet (they arrive in
-        // Phase 9). The in-app row is written directly here so the decision is recorded and visible now;
-        // when the notification pipeline lands, this must be routed through it (real-time push + any
-        // email). Tracked in the travle-notifications-deferred memory.
+        // Applicant-facing decision notification (approve/reject). Staged for the caller's SaveChanges so it
+        // commits with the decision; the SignalR push and the email fire on the post-commit flush. Both
+        // decisions email the applicant (spec §5 "application results").
         private void AddDecisionNotification(int userId, NotificationType type, string title, string text, int relatedEntityId)
-        {
-            _dbContext.Notifications.Add(new Notification
-            {
-                UserId = userId,
-                Type = type,
-                Title = title,
-                Text = text,
-                RelatedEntityId = relatedEntityId,
-                IsRead = false
-            });
-        }
+            => _notifications.Enqueue(userId, type, title, text, relatedEntityId, alsoEmail: true);
 
         private async Task<RoleApplication> LoadWithNavigationsAsync(int id)
             => await _dbContext.RoleApplications

@@ -24,7 +24,7 @@ namespace Travle.Services.BookingStateMachine
             AddNotification(booking.UserId, NotificationType.BookingConfirmed,
                 "Booking confirmed",
                 "Your booking has been confirmed by the organizer.",
-                booking.Id);
+                booking.Id, alsoEmail: true);
             await RecordBookingSignalAsync(booking, InteractionType.BookingConfirmed);
             await DbContext.SaveChangesAsync();
             InvalidateRecommendations(booking.UserId);
@@ -43,7 +43,7 @@ namespace Travle.Services.BookingStateMachine
                 AddNotification(booking.UserId, NotificationType.BookingRejected,
                     "Booking rejected",
                     $"Your booking was rejected by the organizer. Reason: {reason}. A full refund will be issued.",
-                    booking.Id);
+                    booking.Id, alsoEmail: true);
                 await DbContext.SaveChangesAsync();
                 return await BuildResponseAsync(booking.Id);
             });

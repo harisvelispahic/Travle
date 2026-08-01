@@ -19,6 +19,9 @@ namespace Travle.Services.Messaging
         public Task PublishPasswordResetAsync(PasswordResetEmailMessage message, CancellationToken cancellationToken = default)
             => PublishAsync(MessagingConstants.EmailType.PasswordReset, message, cancellationToken);
 
+        public Task PublishNotificationAsync(NotificationEmailMessage message, CancellationToken cancellationToken = default)
+            => PublishAsync(MessagingConstants.EmailType.Notification, message, cancellationToken);
+
         private async Task PublishAsync<T>(string type, T message, CancellationToken cancellationToken)
         {
             var connection = await _connection.GetConnectionAsync(cancellationToken);

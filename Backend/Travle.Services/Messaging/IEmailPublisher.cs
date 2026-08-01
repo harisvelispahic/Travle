@@ -9,5 +9,8 @@ namespace Travle.Services.Messaging
     public interface IEmailPublisher
     {
         Task PublishPasswordResetAsync(PasswordResetEmailMessage message, CancellationToken cancellationToken = default);
+
+        /// <summary>Enqueues the email leg of an in-app notification (generic title/body, subject per type).</summary>
+        Task PublishNotificationAsync(NotificationEmailMessage message, CancellationToken cancellationToken = default);
     }
 }

@@ -8,11 +8,14 @@ using Travle.Services.BookingStateMachine;
 using Travle.Services.Database;
 using Travle.Services.Imaging;
 using Travle.Services.Messaging;
+using Travle.Services.Notifications;
 using Travle.Services.Payments;
 using Travle.Services.Recommender;
 using Travle.Services.Security;
 using Travle.Services.Validators;
 using Travle.WebAPI.Authorization;
+using Travle.WebAPI.Filters;
+using Travle.WebAPI.Hubs;
 using Travle.WebAPI.Middleware;
 using Travle.WebAPI.OpenApi;
 using Travle.WebAPI.Options;
@@ -65,7 +68,12 @@ builder.Services.AddExceptionHandler<ValidationExceptionHandler>();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 
-builder.Services.AddControllers()
+builder.Services.AddControllers(options =>
+    {
+        // After every successful action, flush any notifications staged during it (SignalR push + email)
+        // now that their transaction has committed. Global so no controller has to remember to.
+        options.Filters.Add<NotificationFlushFilter>();
+    })
     .ConfigureApiBehaviorOptions(options =>
     {
         // Keep model-binding / [ApiController] validation failures in the same ErrorResponse
@@ -143,6 +151,14 @@ builder.Services.AddScoped<IDestinationReviewService, DestinationReviewService>(
 builder.Services.AddScoped<ITourReviewService, TourReviewService>();
 builder.Services.AddScoped<IFavoriteService, FavoriteService>();
 
+// Notifications (Phase 9). The dispatcher (write side) and the read service are request-scoped; the
+// SignalR push adapter bridges the dispatcher to the hub. AddSignalR wires the hub runtime; the hub is
+// mapped after auth below. See docs/notifications-and-signalr.md.
+builder.Services.AddScoped<INotificationDispatcher, NotificationDispatcher>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<INotificationRealtimePush, SignalRNotificationPush>();
+builder.Services.AddSignalR();
+
 // Booking state machine: the base acts as the factory host injected into the service, and each concrete
 // state is a scoped service resolved by BaseBookingState.GetState per the persisted status (state pattern).
 builder.Services.AddScoped<BaseBookingState>();
@@ -154,8 +170,12 @@ builder.Services.AddScoped<CompletedBookingState>();
 builder.Services.AddScoped<CancelledBookingState>();
 builder.Services.AddScoped<ExpiredBookingState>();
 
-// In-process scheduler (IHostedService): expires 15-min PaymentInProgress holds and auto-completes
-// Confirmed bookings past their schedule end. Lives in the API, not the RabbitMQ worker container.
+// In-process scheduler (IHostedService): expires 15-min PaymentInProgress holds, auto-completes Confirmed
+// bookings past their schedule end, and raises the 24-hour pre-tour reminder. Lives in the API, not the
+// RabbitMQ worker container. The reminder window is configurable (BookingReminder section).
+builder.Services.AddOptions<BookingReminderOptions>()
+    .Bind(builder.Configuration.GetSection(BookingReminderOptions.SectionName))
+    .ValidateDataAnnotations();
 builder.Services.AddHostedService<BookingLifecycleWorker>();
 
 // Payments: Stripe settings bound once and validated at startup (fail fast on a missing secret key, like
@@ -248,6 +268,23 @@ builder.Services.AddAuthentication(options =>
         RoleClaimType = ClaimTypes.Role,
         NameClaimType = ClaimTypes.NameIdentifier
     };
+
+    // A WebSocket handshake can't carry an Authorization header, so the SignalR client passes the JWT as
+    // an `access_token` query parameter. Accept it only for the hub path; every other request keeps using
+    // the standard Authorization header. The token is still fully signature-validated above.
+    o.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            if (!string.IsNullOrEmpty(accessToken)
+                && context.HttpContext.Request.Path.StartsWithSegments("/hubs"))
+            {
+                context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        }
+    };
 });
 
 builder.Services.AddAuthorization(options =>
@@ -291,6 +328,10 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// Real-time notifications hub. Authorization is enforced by [Authorize] on the hub; the access_token
+// query param (wired above) authenticates the WebSocket handshake.
+app.MapHub<NotificationHub>("/hubs/notifications");
 
 app.Run();
 

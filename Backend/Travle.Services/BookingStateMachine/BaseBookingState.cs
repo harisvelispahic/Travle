@@ -2,6 +2,7 @@ using Travle.Model.Exceptions;
 using Travle.Model.Requests;
 using Travle.Model.Responses;
 using Travle.Services.Database;
+using Travle.Services.Notifications;
 using Travle.Services.Recommender;
 using MapsterMapper;
 using Microsoft.EntityFrameworkCore;
@@ -131,7 +132,7 @@ namespace Travle.Services.BookingStateMachine
             AddNotification(booking.UserId, NotificationType.ScheduleCancelled,
                 "Schedule cancelled",
                 $"A tour schedule you booked was cancelled by the organizer. Reason: {reason}. A full refund will be issued.",
-                booking.Id);
+                booking.Id, alsoEmail: true);
 
             await DbContext.SaveChangesAsync();
             return await BuildResponseAsync(booking.Id);
@@ -153,20 +154,15 @@ namespace Travle.Services.BookingStateMachine
                 .ExecuteUpdateAsync(set => set.SetProperty(s => s.SeatsTaken, s => s.SeatsTaken - people));
 
         /// <summary>
-        /// In-app notification row (interim direct write — the Notification service + SignalR push land in
-        /// Phase 9; tracked in the travle-notifications-deferred memory). Left unsaved for the caller's
-        /// SaveChanges so it commits inside the same transaction as the status change.
+        /// Stages a booking notification through the Phase 9 dispatcher (resolved from the scoped provider,
+        /// the same instance the request/worker flushes). The row is left unsaved for the caller's
+        /// SaveChanges, so it commits inside the same transaction as the status change; the SignalR push and
+        /// any email fire on the post-commit flush. Set <paramref name="alsoEmail"/> for the events the spec
+        /// also emails (confirmation, rejection, slot cancellation).
         /// </summary>
-        protected void AddNotification(int userId, NotificationType type, string title, string text, int bookingId)
-            => DbContext.Notifications.Add(new Notification
-            {
-                UserId = userId,
-                Type = type,
-                Title = title,
-                Text = text,
-                RelatedEntityId = bookingId,
-                IsRead = false
-            });
+        protected void AddNotification(int userId, NotificationType type, string title, string text, int bookingId, bool alsoEmail = false)
+            => ServiceProvider.GetRequiredService<INotificationDispatcher>()
+                .Enqueue(userId, type, title, text, bookingId, alsoEmail);
 
         /// <summary>
         /// Records the recommender signal for a booking that reached a strong lifecycle state

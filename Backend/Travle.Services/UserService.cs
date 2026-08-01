@@ -6,6 +6,7 @@ using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
 using Travle.Services.Database;
 using Travle.Services.Imaging;
+using Travle.Services.Notifications;
 using Travle.Services.Recommender;
 using Travle.Services.Security;
 using FluentValidation;
@@ -21,6 +22,7 @@ namespace Travle.Services
         private readonly IThumbnailGenerator _thumbnailGenerator;
         private readonly RecommenderOptions _recommenderOptions;
         private readonly IRecommendationCache _recommendationCache;
+        private readonly INotificationDispatcher _notifications;
         private readonly IValidator<UserRegisterRequest> _registerValidator;
         private readonly IValidator<UserUpdateRequest> _updateValidator;
         private readonly IValidator<UserPasswordChangeRequest> _passwordChangeValidator;
@@ -35,6 +37,7 @@ namespace Travle.Services
             IThumbnailGenerator thumbnailGenerator,
             IOptions<RecommenderOptions> recommenderOptions,
             IRecommendationCache recommendationCache,
+            INotificationDispatcher notifications,
             IValidator<UserRegisterRequest> registerValidator,
             IValidator<UserUpdateRequest> updateValidator,
             IValidator<UserPasswordChangeRequest> passwordChangeValidator,
@@ -47,6 +50,7 @@ namespace Travle.Services
             _thumbnailGenerator = thumbnailGenerator;
             _recommenderOptions = recommenderOptions.Value;
             _recommendationCache = recommendationCache;
+            _notifications = notifications;
             _registerValidator = registerValidator;
             _updateValidator = updateValidator;
             _passwordChangeValidator = passwordChangeValidator;
@@ -280,6 +284,14 @@ namespace Travle.Services
 
             // Suspending revokes access immediately: drop all of the user's refresh tokens.
             _dbContext.RefreshTokens.RemoveRange(_dbContext.RefreshTokens.Where(rt => rt.UserId == id));
+
+            // The suspended user learns why by email (their session is being revoked, so email is the channel
+            // that reaches them); the in-app row is also kept for transparency if they are later reinstated.
+            // Staged so it commits with the suspension; the email fires on the post-commit flush.
+            _notifications.Enqueue(id, NotificationType.AccountSuspended,
+                "Account suspended",
+                $"Your Travle account has been suspended. Reason: {request.Reason}",
+                relatedEntityId: null, alsoEmail: true);
 
             await _dbContext.SaveChangesAsync();
 

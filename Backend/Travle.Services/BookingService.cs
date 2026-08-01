@@ -6,6 +6,7 @@ using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
 using Travle.Services.BookingStateMachine;
 using Travle.Services.Database;
+using Travle.Services.Notifications;
 using Travle.Services.Payments;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
@@ -25,6 +26,7 @@ namespace Travle.Services
         private readonly IAuthenticatedUserAccessor _currentUser;
         private readonly BaseBookingState _states;
         private readonly IRefundService _refunds;
+        private readonly INotificationDispatcher _notifications;
         private readonly IValidator<BookingRejectRequest> _rejectValidator;
         private readonly IValidator<BookingCancelRequest> _cancelValidator;
 
@@ -35,6 +37,7 @@ namespace Travle.Services
             IAuthenticatedUserAccessor currentUser,
             BaseBookingState states,
             IRefundService refunds,
+            INotificationDispatcher notifications,
             IValidator<BookingRejectRequest> rejectValidator,
             IValidator<BookingCancelRequest> cancelValidator)
             : base(mapper, dbContext)
@@ -43,6 +46,7 @@ namespace Travle.Services
             _currentUser = currentUser;
             _states = states;
             _refunds = refunds;
+            _notifications = notifications;
             _rejectValidator = rejectValidator;
             _cancelValidator = cancelValidator;
         }
@@ -281,6 +285,46 @@ namespace Travle.Services
             }
 
             return completed;
+        }
+
+        public async Task<int> SendDueRemindersAsync(int windowHours, CancellationToken cancellationToken = default)
+        {
+            var now = DateTime.UtcNow;
+            var windowEnd = now.AddHours(windowHours);
+
+            // Confirmed bookings whose schedule starts within the reminder window and that haven't been
+            // reminded yet. The "already reminded" guard is a NOT EXISTS against the notification rows
+            // themselves (a correlated subquery, so no N+1) — no extra column, and it survives restarts.
+            var due = await _dbContext.Bookings
+                .AsNoTracking()
+                .Where(b => b.StatusId == (int)BookingStatusCode.Confirmed
+                            && b.TourSchedule.StartsAt > now
+                            && b.TourSchedule.StartsAt <= windowEnd
+                            && !_dbContext.Notifications.Any(n =>
+                                n.Type == NotificationType.BookingReminder && n.RelatedEntityId == b.Id))
+                .Select(b => new
+                {
+                    b.Id,
+                    b.UserId,
+                    TourName = b.TourSchedule.Tour.Name,
+                    b.TourSchedule.StartsAt
+                })
+                .ToListAsync(cancellationToken);
+
+            foreach (var booking in due)
+            {
+                _notifications.Enqueue(booking.UserId, NotificationType.BookingReminder,
+                    "Upcoming tour reminder",
+                    $"Reminder: your tour '{booking.TourName}' starts on {booking.StartsAt:dd MMM yyyy HH:mm} UTC. We look forward to seeing you!",
+                    booking.Id, alsoEmail: true);
+            }
+
+            if (due.Count > 0)
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+
+            return due.Count;
         }
 
         // --- helpers ---------------------------------------------------------------------------------

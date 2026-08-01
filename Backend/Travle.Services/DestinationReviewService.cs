@@ -5,6 +5,7 @@ using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
 using Travle.Services.Database;
+using Travle.Services.Notifications;
 using Travle.Services.Recommender;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
@@ -29,6 +30,7 @@ namespace Travle.Services
         private readonly IAuthenticatedUserAccessor _currentUser;
         private readonly RecommenderOptions _recommenderOptions;
         private readonly IRecommendationCache _recommendationCache;
+        private readonly INotificationDispatcher _notifications;
         private readonly IValidator<DestinationReviewInsertRequest> _insertValidator;
         private readonly IValidator<DestinationReviewUpdateRequest> _updateValidator;
         private readonly IValidator<ReviewRemoveRequest> _removeValidator;
@@ -40,6 +42,7 @@ namespace Travle.Services
             IAuthenticatedUserAccessor currentUser,
             IOptions<RecommenderOptions> recommenderOptions,
             IRecommendationCache recommendationCache,
+            INotificationDispatcher notifications,
             IValidator<DestinationReviewInsertRequest> insertValidator,
             IValidator<DestinationReviewUpdateRequest> updateValidator,
             IValidator<ReviewRemoveRequest> removeValidator)
@@ -49,6 +52,7 @@ namespace Travle.Services
             _currentUser = currentUser;
             _recommenderOptions = recommenderOptions.Value;
             _recommendationCache = recommendationCache;
+            _notifications = notifications;
             _insertValidator = insertValidator;
             _updateValidator = updateValidator;
             _removeValidator = removeValidator;
@@ -148,13 +152,13 @@ namespace Travle.Services
             var userId = _authorization.RequireUserId();
             await _insertValidator.ValidateAndThrowAsync(request);
 
-            var status = await _dbContext.Destinations
+            var destination = await _dbContext.Destinations
                 .Where(d => d.Id == request.DestinationId)
-                .Select(d => (DestinationStatus?)d.Status)
+                .Select(d => new { d.Status, d.SubmittedByUserId, d.Name })
                 .FirstOrDefaultAsync()
                 ?? throw new NotFoundException("Destination", request.DestinationId);
 
-            if (status != DestinationStatus.Approved)
+            if (destination.Status != DestinationStatus.Approved)
             {
                 throw new BusinessRuleException("Only an approved destination can be reviewed.");
             }
@@ -183,6 +187,16 @@ namespace Travle.Services
 
             await RecomputeAverageRatingAsync(request.DestinationId);
             await ReconcileReviewHighAsync(userId, request.DestinationId, request.Rating >= HighRatingThreshold);
+
+            // Tell the curator who submitted the destination that it received a new review (never self-notify).
+            if (destination.SubmittedByUserId != userId)
+            {
+                _notifications.Enqueue(destination.SubmittedByUserId, NotificationType.ReviewReceived,
+                    "New review",
+                    $"Your destination '{destination.Name}' received a new review.",
+                    request.DestinationId);
+                await _dbContext.SaveChangesAsync();
+            }
 
             await transaction.CommitAsync();
 
@@ -271,15 +285,10 @@ namespace Travle.Services
             review.RemovedByUserId = adminId;
             review.RemovalReason = reason;
 
-            _dbContext.Notifications.Add(new Notification
-            {
-                UserId = review.UserId,
-                Type = NotificationType.ReviewRemoved,
-                Title = "Review removed",
-                Text = $"Your review of '{review.Destination.Name}' was removed by a moderator. Reason: {reason}",
-                RelatedEntityId = review.DestinationId,
-                IsRead = false
-            });
+            _notifications.Enqueue(review.UserId, NotificationType.ReviewRemoved,
+                "Review removed",
+                $"Your review of '{review.Destination.Name}' was removed by a moderator. Reason: {reason}",
+                review.DestinationId);
 
             await using var transaction = await _dbContext.Database.BeginTransactionAsync();
 

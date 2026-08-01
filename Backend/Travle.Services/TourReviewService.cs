@@ -5,6 +5,7 @@ using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
 using Travle.Services.Database;
+using Travle.Services.Notifications;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 
@@ -22,6 +23,7 @@ namespace Travle.Services
     {
         private readonly IAppAuthorizationService _authorization;
         private readonly IAuthenticatedUserAccessor _currentUser;
+        private readonly INotificationDispatcher _notifications;
         private readonly IValidator<TourReviewInsertRequest> _insertValidator;
         private readonly IValidator<TourReviewUpdateRequest> _updateValidator;
         private readonly IValidator<ReviewRemoveRequest> _removeValidator;
@@ -31,6 +33,7 @@ namespace Travle.Services
             MapsterMapper.IMapper mapper,
             IAppAuthorizationService authorization,
             IAuthenticatedUserAccessor currentUser,
+            INotificationDispatcher notifications,
             IValidator<TourReviewInsertRequest> insertValidator,
             IValidator<TourReviewUpdateRequest> updateValidator,
             IValidator<ReviewRemoveRequest> removeValidator)
@@ -38,6 +41,7 @@ namespace Travle.Services
         {
             _authorization = authorization;
             _currentUser = currentUser;
+            _notifications = notifications;
             _insertValidator = insertValidator;
             _updateValidator = updateValidator;
             _removeValidator = removeValidator;
@@ -151,7 +155,14 @@ namespace Travle.Services
 
             var booking = await _dbContext.Bookings
                 .Where(b => b.Id == request.BookingId)
-                .Select(b => new { b.UserId, b.StatusId, TourId = b.TourSchedule.TourId })
+                .Select(b => new
+                {
+                    b.UserId,
+                    b.StatusId,
+                    TourId = b.TourSchedule.TourId,
+                    OrganizerId = b.TourSchedule.Tour.OrganizerId,
+                    TourName = b.TourSchedule.Tour.Name
+                })
                 .FirstOrDefaultAsync()
                 ?? throw new NotFoundException("Booking", request.BookingId);
 
@@ -184,6 +195,7 @@ namespace Travle.Services
                 existing.IsRemoved = false;
                 existing.RemovedByUserId = null;
                 existing.RemovalReason = null;
+                NotifyOrganizerOfReview(booking.OrganizerId, userId, booking.TourId, booking.TourName);
                 await _dbContext.SaveChangesAsync();
 
                 return await RequireResponseAsync(existing.Id);
@@ -199,6 +211,7 @@ namespace Travle.Services
             };
 
             _dbContext.TourReviews.Add(review);
+            NotifyOrganizerOfReview(booking.OrganizerId, userId, booking.TourId, booking.TourName);
             await _dbContext.SaveChangesAsync();
 
             return await RequireResponseAsync(review.Id);
@@ -273,20 +286,30 @@ namespace Travle.Services
             review.RemovedByUserId = adminId;
             review.RemovalReason = reason;
 
-            _dbContext.Notifications.Add(new Notification
-            {
-                UserId = review.UserId,
-                Type = NotificationType.ReviewRemoved,
-                Title = "Review removed",
-                Text = $"Your review of the tour '{review.Tour.Name}' was removed by a moderator. Reason: {reason}",
-                RelatedEntityId = review.TourId,
-                IsRead = false
-            });
+            _notifications.Enqueue(review.UserId, NotificationType.ReviewRemoved,
+                "Review removed",
+                $"Your review of the tour '{review.Tour.Name}' was removed by a moderator. Reason: {reason}",
+                review.TourId);
 
             // Review update + notification insert commit together in a single SaveChanges.
             await _dbContext.SaveChangesAsync();
 
             return await RequireResponseAsync(id);
+        }
+
+        // Notifies the tour's organizer that one of their tours received a new review; never self-notifies (a
+        // traveler who also happens to organize the tour). Staged for the caller's SaveChanges.
+        private void NotifyOrganizerOfReview(int organizerId, int reviewerId, int tourId, string tourName)
+        {
+            if (organizerId == reviewerId)
+            {
+                return;
+            }
+
+            _notifications.Enqueue(organizerId, NotificationType.ReviewReceived,
+                "New tour review",
+                $"Your tour '{tourName}' received a new review.",
+                tourId);
         }
 
         // --- helpers ---------------------------------------------------------------------------------

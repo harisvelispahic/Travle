@@ -6,6 +6,7 @@ using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
 using Travle.Services.Database;
 using Travle.Services.Imaging;
+using Travle.Services.Notifications;
 using Travle.Services.Projections;
 using Travle.Services.Recommender;
 using Travle.Services.Security;
@@ -31,6 +32,7 @@ namespace Travle.Services
         private readonly IAuthenticatedUserAccessor _currentUser;
         private readonly IThumbnailGenerator _thumbnailGenerator;
         private readonly RecommenderOptions _recommenderOptions;
+        private readonly INotificationDispatcher _notifications;
         private readonly IValidator<DestinationRejectRequest> _rejectValidator;
 
         public DestinationService(
@@ -40,6 +42,7 @@ namespace Travle.Services
             IAuthenticatedUserAccessor currentUser,
             IThumbnailGenerator thumbnailGenerator,
             IOptions<RecommenderOptions> recommenderOptions,
+            INotificationDispatcher notifications,
             IValidator<DestinationInsertRequest> insertValidator,
             IValidator<DestinationUpdateRequest> updateValidator,
             IValidator<DestinationRejectRequest> rejectValidator)
@@ -49,6 +52,7 @@ namespace Travle.Services
             _currentUser = currentUser;
             _thumbnailGenerator = thumbnailGenerator;
             _recommenderOptions = recommenderOptions.Value;
+            _notifications = notifications;
             _rejectValidator = rejectValidator;
         }
 
@@ -235,7 +239,14 @@ namespace Travle.Services
             }
 
             _dbContext.Destinations.Add(destination);
+
+            // Destination (with its images/tags) + admin "awaiting moderation" notifications commit together
+            // (two SaveChanges → one transaction, rule 7): the first save assigns the id they deep-link to.
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
             await _dbContext.SaveChangesAsync();
+            await NotifyAdminsOfSubmissionAsync(destination.Name, destination.Id);
+            await _dbContext.SaveChangesAsync();
+            await transaction.CommitAsync();
 
             return await RequireResponseAsync(destination.Id);
         }
@@ -254,6 +265,11 @@ namespace Travle.Services
             _authorization.EnsureSelfOrAdmin(destination.SubmittedByUserId, "destination");
             await EnsureReferencesExistAsync(request.CategoryId, request.CityId, request.TagIds);
 
+            // Whether this edit is bringing the destination back into the moderation queue from a decided
+            // state — captured before the status is reset, so admins are only re-notified on a real re-entry
+            // (not on repeated edits of an already-pending one).
+            var wasPending = destination.Status == DestinationStatus.Pending;
+
             destination.Name = request.Name.Trim();
             destination.Description = request.Description.Trim();
             destination.CategoryId = request.CategoryId;
@@ -271,7 +287,14 @@ namespace Travle.Services
             ReconcileTags(destination, request.TagIds);
             await ReconcileImagesAsync(destination, request.Images);
 
-            // All reconciliation is tracked in one SaveChanges → a single implicit transaction.
+            // Re-entering the queue from an approved/rejected state notifies the admins; the notifications are
+            // staged onto the same SaveChanges as the edit, so they commit atomically with it.
+            if (!wasPending)
+            {
+                await NotifyAdminsOfSubmissionAsync(destination.Name, id);
+            }
+
+            // All reconciliation (and any admin notifications) is tracked in one SaveChanges → one transaction.
             await _dbContext.SaveChangesAsync();
 
             return await RequireResponseAsync(id);
@@ -572,20 +595,23 @@ namespace Travle.Services
             }
         }
 
-        // INTERIM: the Notifications service + SignalR push arrive in Phase 9. The in-app row is written
-        // directly here so moderation decisions are recorded and visible now; route it through the
-        // notification pipeline (real-time push + email) once that lands. See travle-notifications-deferred.
+        // Curator-facing moderation decision (approve/reject). Staged for the caller's SaveChanges so it
+        // commits with the decision; the SignalR push and the email fire on the post-commit flush. Both
+        // decisions email the submitter (spec §5 "status changes").
         private void AddModerationNotification(int userId, NotificationType type, string title, string text, int relatedEntityId)
+            => _notifications.Enqueue(userId, type, title, text, relatedEntityId, alsoEmail: true);
+
+        // Fan-out to every admin that a destination is (re-)entering the moderation queue.
+        private async Task NotifyAdminsOfSubmissionAsync(string destinationName, int destinationId)
         {
-            _dbContext.Notifications.Add(new Notification
+            var adminIds = await NotificationRecipients.AdminUserIdsAsync(_dbContext);
+            foreach (var adminId in adminIds)
             {
-                UserId = userId,
-                Type = type,
-                Title = title,
-                Text = text,
-                RelatedEntityId = relatedEntityId,
-                IsRead = false
-            });
+                _notifications.Enqueue(adminId, NotificationType.DestinationSubmitted,
+                    "Destination awaiting moderation",
+                    $"'{destinationName}' was submitted and is awaiting moderation.",
+                    destinationId);
+            }
         }
     }
 }

@@ -87,7 +87,16 @@ namespace Travle.Services.Database
         ReviewReceived = 13,
         AccountSuspended = 14,
         ScheduleCancelled = 15,
-        ReviewRemoved = 16
+        ReviewRemoved = 16,
+
+        /// <summary>Organizer: a traveler's payment cleared and a booking now awaits their confirmation.</summary>
+        BookingPlaced = 17,
+
+        /// <summary>Admin: a user submitted a Curator/Organizer role application for review.</summary>
+        RoleApplicationSubmitted = 18,
+
+        /// <summary>Admin: a destination was submitted (or edited back to Pending) and needs moderation.</summary>
+        DestinationSubmitted = 19
     }
 
     /// <summary>

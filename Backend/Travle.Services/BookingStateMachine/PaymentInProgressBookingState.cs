@@ -24,10 +24,22 @@ namespace Travle.Services.BookingStateMachine
             // this same DbContext scope commit in the SaveChanges below.
             MarkStatus(booking, BookingStatusCode.Pending);
             booking.ExpiresAt = null;
+
             AddNotification(booking.UserId, NotificationType.PaymentSucceeded,
                 "Payment received",
                 "Your payment succeeded. Your booking is now awaiting the organizer's confirmation.",
                 booking.Id);
+
+            // Tell the organizer a paid booking is now waiting for their confirmation or rejection.
+            var organizerId = await DbContext.TourSchedules
+                .Where(s => s.Id == booking.TourScheduleId)
+                .Select(s => s.Tour.OrganizerId)
+                .FirstAsync();
+            AddNotification(organizerId, NotificationType.BookingPlaced,
+                "New booking to confirm",
+                "A traveler paid for a booking on one of your tour schedules and is awaiting your confirmation.",
+                booking.Id);
+
             await DbContext.SaveChangesAsync();
             return await BuildResponseAsync(booking.Id);
         }

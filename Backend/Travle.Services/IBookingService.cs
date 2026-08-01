@@ -42,5 +42,12 @@ namespace Travle.Services
 
         /// <summary>Scheduler tick: auto-complete every Confirmed booking whose schedule has ended. Returns the count.</summary>
         Task<int> AutoCompletePastConfirmedAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Scheduler tick: raise the 24-hour pre-tour reminder (in-app + email) for every Confirmed booking
+        /// whose schedule starts within <paramref name="windowHours"/> and hasn't been reminded yet. Stages
+        /// the notifications and saves; the caller flushes the dispatcher. Returns the count reminded.
+        /// </summary>
+        Task<int> SendDueRemindersAsync(int windowHours, CancellationToken cancellationToken = default);
     }
 }

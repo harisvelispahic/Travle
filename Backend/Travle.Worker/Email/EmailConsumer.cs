@@ -144,6 +144,12 @@ namespace Travle.Worker.Email
                     await SendPasswordResetAsync(message);
                     break;
 
+                case MessagingConstants.EmailType.Notification:
+                    var notification = JsonSerializer.Deserialize<NotificationEmailMessage>(eventArgs.Body.Span)
+                        ?? throw new InvalidOperationException("Empty notification payload.");
+                    await SendNotificationAsync(notification);
+                    break;
+
                 default:
                     // Unknown type: don't retry, don't loop — log and let it be acked (dropped).
                     _logger.LogWarning("Received an email message with unknown type '{Type}'; discarding.", type);
@@ -162,6 +168,20 @@ namespace Travle.Worker.Email
                 "— The Travle team";
 
             return _emailSender.SendAsync(message.ToEmail, message.ToName, subject, body, _stoppingToken);
+        }
+
+        // The email leg of an in-app notification. One generic renderer for every event kind: the subject is
+        // already chosen per notification type by the API, and the title/body carry the same copy shown in-app.
+        private Task SendNotificationAsync(NotificationEmailMessage message)
+        {
+            var body =
+                $"Hello {message.ToName},\n\n" +
+                $"{message.Title}\n\n" +
+                $"{message.Body}\n\n" +
+                "You can review this and all your notifications in the Travle app.\n\n" +
+                "— The Travle team";
+
+            return _emailSender.SendAsync(message.ToEmail, message.ToName, message.Subject, body, _stoppingToken);
         }
 
         private static string? ReadTypeHeader(BasicDeliverEventArgs eventArgs)

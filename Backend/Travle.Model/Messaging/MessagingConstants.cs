@@ -17,6 +17,9 @@ namespace Travle.Model.Messaging
         public static class EmailType
         {
             public const string PasswordReset = "password-reset";
+
+            /// <summary>The email leg of an in-app notification — rendered from a generic title/body.</summary>
+            public const string Notification = "notification";
         }
     }
 }

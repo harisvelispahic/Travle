@@ -1,5 +1,6 @@
 using Travle.Model.Exceptions;
 using Travle.Services.Database;
+using Travle.Services.Notifications;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -15,12 +16,18 @@ namespace Travle.Services.Payments
     {
         private readonly TravleDbContext _dbContext;
         private readonly IStripeService _stripe;
+        private readonly INotificationDispatcher _notifications;
         private readonly ILogger<RefundService> _logger;
 
-        public RefundService(TravleDbContext dbContext, IStripeService stripe, ILogger<RefundService> logger)
+        public RefundService(
+            TravleDbContext dbContext,
+            IStripeService stripe,
+            INotificationDispatcher notifications,
+            ILogger<RefundService> logger)
         {
             _dbContext = dbContext;
             _stripe = stripe;
+            _notifications = notifications;
             _logger = logger;
         }
 
@@ -109,15 +116,10 @@ namespace Travle.Services.Payments
                 // Notify the traveler only when money actually comes back (a 0% tier records the row silently).
                 if (amount > 0)
                 {
-                    _dbContext.Notifications.Add(new Notification
-                    {
-                        UserId = payment.Booking.UserId,
-                        Type = NotificationType.RefundIssued,
-                        Title = "Refund issued",
-                        Text = $"A refund of {amount:0.00} KM ({percentage}%) has been issued to your original payment method.",
-                        RelatedEntityId = payment.BookingId,
-                        IsRead = false
-                    });
+                    _notifications.Enqueue(payment.Booking.UserId, NotificationType.RefundIssued,
+                        "Refund issued",
+                        $"A refund of {amount:0.00} KM ({percentage}%) has been issued to your original payment method.",
+                        payment.BookingId, alsoEmail: true);
                 }
 
                 await _dbContext.SaveChangesAsync(cancellationToken);
