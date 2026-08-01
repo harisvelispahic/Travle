@@ -41,3 +41,17 @@ String formatDuration(int minutes) {
 
 /// "25.00 KM" — a price in the displayed currency.
 String formatPrice(double amount) => '${amount.toStringAsFixed(2)} KM';
+
+/// Reinterprets a server timestamp (a UTC wall-clock value parsed without a zone
+/// marker, so Dart tags it local) as the real UTC instant it represents. Use this
+/// before computing a duration against [DateTime.now] or converting `toLocal`, so
+/// the result is correct regardless of the device's time zone.
+DateTime asUtc(DateTime serverTime) => DateTime.utc(
+      serverTime.year,
+      serverTime.month,
+      serverTime.day,
+      serverTime.hour,
+      serverTime.minute,
+      serverTime.second,
+      serverTime.millisecond,
+    );

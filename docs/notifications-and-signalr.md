@@ -246,8 +246,8 @@ holding the Admin role via `NotificationRecipients.AdminUserIdsAsync` (one query
 ## 8. The Flutter client
 
 Both apps are Flutter, so the whole realtime + data mechanism lives **once in `travle_core`**; each app
-only renders its own bell + centre. The mobile (traveler/curator) UI is built; the desktop
-(organizer/admin) centre — same shared core, its own shell — is **(planned, 9h)**.
+only renders its own bell + centre. Both the mobile (traveler/curator) and the desktop (organizer/admin)
+UIs are built on that shared core.
 
 ### 8.1 Shared core (`travle_core`)
 
@@ -307,6 +307,29 @@ What on the client talks to what on the server:
 | `markAllRead` → `putAction('read-all')` | `PUT /Notifications/read-all` | mark all read |
 | `notificationIcon` / `notificationTypeLabel(type)` | `NotificationType` enum **name** in the DTO | type → icon/label |
 | detail screen `_openRelated` (booking/destination) | `Notification.RelatedEntityId` | the deep-link target |
+
+### 8.4 Desktop UI (`travle_desktop`)
+
+The management app reuses the **identical** `travle_core` core; only the shell and the deep-link targets
+differ.
+
+- **`main.dart`** — the same `ChangeNotifierProxyProvider<AuthProvider, NotificationProvider>` wiring.
+- **`widgets/notification_bell.dart`** — bell + live badge, mounted in the **top bar** of
+  **`layouts/side_nav_shell.dart`** (right-aligned beside the section title). It forwards an
+  `onNavigateToSection` callback.
+- **`screens/notifications_screen.dart`** — the centre, width-constrained for desktop; same
+  list / pull-to-refresh / paging / mark-all-with-confirmation as mobile.
+- **`screens/notification_detail_screen.dart`** — the same full detail, but its "view related" **jumps to
+  the relevant side-nav section** (Tour Bookings, Tour Reviews, Role Requests, Destinations) rather than
+  pushing an entity page. Desktop's management screens are shell-embedded lists (not pushable by id), so
+  the detail calls `onNavigateToSection(key)` then pops the overlays and the shell switches its
+  `_selectedKey`. Defines the `NavigateToSection` typedef and the type→section map.
+- **`util/notification_display.dart`** — desktop's copy of the display helpers (icons/labels/times), on the
+  desktop `formatting.dart` (`asUtc` added there for parity with mobile).
+
+**The one deliberate divergence from mobile:** mobile deep-links to the exact **entity** (booking/destination
+detail pages exist there); desktop deep-links to the **section** where the item is actioned (the shell has
+no per-record pages). Everything else — the core, the bell, the centre, the detail, mark-all — is the same.
 
 ---
 
@@ -384,6 +407,12 @@ What on the client talks to what on the server:
     not the entity directly), shared `util/notification_display.dart`, and mark-all-as-read with a
     confirmation dialog. §8 rewritten to as-built; §8.3 adds the client↔server correspondence table.
   - Recorded the OS/system-push non-goal in §11. **Remaining:** 9h desktop centre (same shared core).
+- **2026-08-02** — **9h shipped: desktop notification centre (analyzer clean).** `travle_desktop` gains its
+  bell (in the side-nav top bar), centre, and detail on the shared `travle_core` core, plus its own
+  `util/notification_display.dart` and `asUtc` in `util/formatting.dart`. Provider wired via the same
+  proxy-provider pattern. Deep-link differs by design (see §8.4): desktop "view related" switches the
+  side-nav **section** (via an `onNavigateToSection` callback threaded bell→centre→detail) instead of
+  pushing a per-record page. **Phase 9 Flutter is complete on both apps.**
 
 ---
 

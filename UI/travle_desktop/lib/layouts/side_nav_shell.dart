@@ -13,6 +13,7 @@ import '../screens/organizer_tours_screen.dart';
 import '../screens/reference/reference_registry.dart';
 import '../screens/reviews_moderation_screen.dart';
 import '../screens/role_applications_review_screen.dart';
+import '../widgets/notification_bell.dart';
 
 /// Persistent chrome for the management app: a left sidebar (brand + navigation
 /// + account/logout) beside a content area. "Reference Data" (admin-only) is an
@@ -207,10 +208,20 @@ class _SideNavShellState extends State<SideNavShell> {
                   color: theme.colorScheme.surface,
                   elevation: 1,
                   child: Padding(
-                    padding: const EdgeInsets.all(TravleTokens.space16),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(title, style: theme.textTheme.titleLarge),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: TravleTokens.space16,
+                      vertical: TravleTokens.space8,
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(title, style: theme.textTheme.titleLarge),
+                        ),
+                        NotificationBell(
+                          onNavigateToSection: (key) =>
+                              setState(() => _selectedKey = key),
+                        ),
+                      ],
                     ),
                   ),
                 ),
