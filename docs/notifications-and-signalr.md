@@ -261,7 +261,9 @@ UIs are built on that shared core.
   count; `loadFirstPage` / `loadMore` page the list, `refreshUnreadCount` drives the badge, `markRead` /
   `markAllRead` update optimistically then confirm server-side, and `_onPushed` prepends a live push +
   bumps the badge. **`syncAuth(isAuthenticated)`** ties it to the session: connect the socket + prime the
-  badge on sign-in, tear everything down on sign-out (idempotent, so repeated calls are safe).
+  badge on sign-in, tear everything down on sign-out (idempotent, so repeated calls are safe). It also
+exposes a broadcast **`pushes`** stream so an app can react to individual push types beyond the list/badge
+(used by the mobile shell — see §8.2).
 - **`models/notification_response.dart`** (+ generated `.g.dart`) — the client mirror of the backend
   `NotificationResponse`; the exact same JSON shape arrives from REST **and** from SignalR, so both build
   it identically. Includes a `copyWith` for the optimistic mark-as-read.
@@ -287,6 +289,15 @@ UIs are built on that shared core.
   time, and the read state. Opening it marks the notification read; when it carries a `relatedEntityId` of
   a navigable type, a **"View booking" / "View destination"** button deep-links there. All notification
   navigation lives here.
+- **`layouts/bottom_nav_shell.dart`** — besides hosting the bell, it subscribes to the provider's
+  `pushes`. On a `RoleApplicationApproved` push that granted a **mobile** role the current token lacks
+  (Curator — which unlocks submitting destinations), it force-logs-out via a "sign in again" dialog, so the
+  next sign-in issues a JWT carrying the role and the app's permissions update. Becoming an **Organizer** (a
+  desktop role) grants nothing on mobile, so it's ignored. The role check is `AuthProvider.newlyGrantedRoles()`,
+  which diffs `/Access/Me`'s live DB roles against the token's. This is the SignalR-triggered resolution of
+  the long-deferred "force re-login after a live role grant" item — impossible before the hub existed
+  (approving a role revokes refresh tokens, but the stateless access token stayed valid for up to its
+  lifetime, so the new role only appeared after natural expiry).
 - **`util/notification_display.dart`** — shared presentation helpers keyed on the backend type name:
   `notificationIcon`, `notificationIsNegative` (error vs primary color), `notificationTypeLabel`
   (`"BookingConfirmed"` → `"Booking Confirmed"`), and the time formatters (both reinterpret the server's

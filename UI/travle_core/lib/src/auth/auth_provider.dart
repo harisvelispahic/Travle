@@ -270,6 +270,18 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Roles the server now reports for the user that the current access token does
+  /// **not** yet carry — e.g. a Curator role an admin just approved (the stateless
+  /// token still lists only Traveler until the next sign-in). Empty on any failure.
+  /// The mobile shell uses this after a role-grant push to force a re-login, so the
+  /// fresh JWT (and thus the app's permissions) picks up the new role. `/Access/Me`
+  /// returns the live DB roles, so this reflects the grant immediately.
+  Future<Set<String>> newlyGrantedRoles() async {
+    final me = await _fetchMe();
+    if (me == null) return <String>{};
+    return me.roles.toSet().difference(_roles.toSet());
+  }
+
   bool _isSuccess(http.Response response) =>
       response.statusCode >= 200 && response.statusCode < 300;
 

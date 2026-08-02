@@ -22,6 +22,11 @@ class NotificationProvider extends BaseProvider<NotificationResponse> {
 
   late final NotificationRealtimeService _realtime;
 
+  // Broadcasts each live push so an app can react to specific types beyond the
+  // list/badge (e.g. the mobile shell force-logs-out on a role-grant push).
+  final StreamController<NotificationResponse> _pushes =
+      StreamController<NotificationResponse>.broadcast();
+
   final List<NotificationResponse> _items = <NotificationResponse>[];
   int _unreadCount = 0;
   bool _loading = false;
@@ -38,6 +43,10 @@ class NotificationProvider extends BaseProvider<NotificationResponse> {
   bool get isLoading => _loading;
   bool get hasMore => _hasMore;
   bool get isConnected => _realtime.isConnected;
+
+  /// Fires for every live (SignalR) push, for app-level reactions to specific
+  /// notification types. The list/badge are already updated by the time it fires.
+  Stream<NotificationResponse> get pushes => _pushes.stream;
 
   @override
   NotificationResponse fromJson(Map<String, dynamic> json) =>
@@ -150,11 +159,13 @@ class NotificationProvider extends BaseProvider<NotificationResponse> {
     _items.insert(0, notification);
     if (!notification.isRead) _unreadCount++;
     notifyListeners();
+    _pushes.add(notification);
   }
 
   @override
   void dispose() {
     unawaited(_realtime.disconnect());
+    unawaited(_pushes.close());
     super.dispose();
   }
 }
