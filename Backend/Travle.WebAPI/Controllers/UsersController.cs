@@ -9,10 +9,11 @@ using Microsoft.AspNetCore.Mvc;
 namespace Travle.WebAPI.Controllers;
 
 /// <summary>
-/// User administration and self-service. Read/suspend are admin-only; profile edit and password
-/// change are open to any authenticated user but the service enforces "self, or admin" and takes
-/// the acting user from the JWT. There is no delete endpoint — users are suspended, never removed
-/// (03 §3).
+/// User administration and self-service. Admin-only: list/read, create, suspend/unsuspend, and role
+/// grant/revoke. Profile edit and password change are open to any authenticated user but the service
+/// enforces "self, or admin" and takes the acting user from the JWT. There is no delete endpoint —
+/// users are suspended, never removed (03 §3); admin edit of another user's profile is intentionally
+/// absent (suspension and role management are the only admin mutations).
 /// </summary>
 [ApiController]
 [Route("[controller]")]
@@ -30,6 +31,23 @@ public class UsersController : BaseReadController<UserResponse, UserSearch, IUse
     [Authorize(Policy = AuthPolicies.AdminOnly)]
     public override Task<ActionResult<UserResponse>> GetById(int id)
         => base.GetById(id);
+
+    // Admin account creation — the only path to an Admin account, and to any multi-role account. Distinct
+    // from the anonymous, Traveler-only self-registration at POST /Access/Register.
+    [Authorize(Policy = AuthPolicies.AdminOnly)]
+    [HttpPost]
+    public async Task<ActionResult<UserResponse>> Create([FromBody] AdminCreateUserRequest request)
+        => Ok(await _service.CreateAsync(request));
+
+    [Authorize(Policy = AuthPolicies.AdminOnly)]
+    [HttpPost("{id}/Roles")]
+    public async Task<ActionResult<UserResponse>> GrantRole(int id, [FromBody] UserRoleGrantRequest request)
+        => Ok(await _service.GrantRoleAsync(id, request));
+
+    [Authorize(Policy = AuthPolicies.AdminOnly)]
+    [HttpDelete("{id}/Roles/{roleId}")]
+    public async Task<ActionResult<UserResponse>> RevokeRole(int id, int roleId)
+        => Ok(await _service.RevokeRoleAsync(id, roleId));
 
     [HttpPut("{id}")]
     public async Task<ActionResult<UserResponse>> Update(int id, [FromBody] UserUpdateRequest request)

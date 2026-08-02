@@ -24,9 +24,11 @@ namespace Travle.Services
         private readonly IRecommendationCache _recommendationCache;
         private readonly INotificationDispatcher _notifications;
         private readonly IValidator<UserRegisterRequest> _registerValidator;
+        private readonly IValidator<AdminCreateUserRequest> _createValidator;
         private readonly IValidator<UserUpdateRequest> _updateValidator;
         private readonly IValidator<UserPasswordChangeRequest> _passwordChangeValidator;
         private readonly IValidator<UserSuspendRequest> _suspendValidator;
+        private readonly IValidator<UserRoleGrantRequest> _roleGrantValidator;
         private readonly IValidator<UserOnboardingRequest> _onboardingValidator;
 
         public UserService(
@@ -39,9 +41,11 @@ namespace Travle.Services
             IRecommendationCache recommendationCache,
             INotificationDispatcher notifications,
             IValidator<UserRegisterRequest> registerValidator,
+            IValidator<AdminCreateUserRequest> createValidator,
             IValidator<UserUpdateRequest> updateValidator,
             IValidator<UserPasswordChangeRequest> passwordChangeValidator,
             IValidator<UserSuspendRequest> suspendValidator,
+            IValidator<UserRoleGrantRequest> roleGrantValidator,
             IValidator<UserOnboardingRequest> onboardingValidator)
             : base(mapper, dbContext)
         {
@@ -52,9 +56,11 @@ namespace Travle.Services
             _recommendationCache = recommendationCache;
             _notifications = notifications;
             _registerValidator = registerValidator;
+            _createValidator = createValidator;
             _updateValidator = updateValidator;
             _passwordChangeValidator = passwordChangeValidator;
             _suspendValidator = suspendValidator;
+            _roleGrantValidator = roleGrantValidator;
             _onboardingValidator = onboardingValidator;
         }
 
@@ -189,6 +195,144 @@ namespace Travle.Services
             await _dbContext.SaveChangesAsync();
 
             return await RequireWithRolesAsync(user.Id);
+        }
+
+        public async Task<UserResponse> CreateAsync(AdminCreateUserRequest request)
+        {
+            // Admin-only. The controller policy is the first gate; this makes the service its own boundary
+            // so the check holds regardless of how the method is reached.
+            _authorization.EnsureInRole(RoleNames.Admin);
+
+            await _createValidator.ValidateAndThrowAsync(request);
+
+            if (await _dbContext.Users.AnyAsync(u => u.Email == request.Email))
+            {
+                throw new ConflictException($"Email '{request.Email}' is already in use.");
+            }
+
+            if (await _dbContext.Users.AnyAsync(u => u.Username == request.Username))
+            {
+                throw new ConflictException($"Username '{request.Username}' is already in use.");
+            }
+
+            // Verify every requested role exists so a bad id surfaces as a friendly 400, not an FK failure.
+            var roleIds = request.RoleIds.Distinct().ToList();
+            if (await _dbContext.Roles.CountAsync(r => roleIds.Contains(r.Id)) != roleIds.Count)
+            {
+                throw new BusinessRuleException("One or more selected roles do not exist.");
+            }
+
+            var salt = _cryptoService.GenerateSalt();
+
+            var user = new User
+            {
+                FirstName = request.FirstName,
+                LastName = request.LastName,
+                Email = request.Email,
+                Username = request.Username,
+                PhoneNumber = request.PhoneNumber,
+                PasswordSalt = salt,
+                PasswordHash = _cryptoService.GenerateHash(request.Password, salt),
+                UserRoles = roleIds.Select(roleId => new UserRole { RoleId = roleId }).ToList()
+            };
+
+            _dbContext.Users.Add(user);
+
+            // Account row + welcome notification commit together (two SaveChanges → one transaction, rule 7):
+            // the first save assigns the user id the notification is addressed to. The message never carries
+            // the password — only the username, so the new user knows how to sign in.
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+            await _dbContext.SaveChangesAsync();
+
+            _notifications.Enqueue(user.Id, NotificationType.AccountCreated,
+                "Welcome to Travle",
+                $"An account has been created for you. Sign in with the username '{user.Username}'.",
+                relatedEntityId: null, alsoEmail: true);
+            await _dbContext.SaveChangesAsync();
+
+            await transaction.CommitAsync();
+
+            return await RequireWithRolesAsync(user.Id);
+        }
+
+        public async Task<UserResponse> GrantRoleAsync(int id, UserRoleGrantRequest request)
+        {
+            _authorization.EnsureInRole(RoleNames.Admin);
+
+            await _roleGrantValidator.ValidateAndThrowAsync(request);
+
+            var user = await _dbContext.Users
+                .Include(u => u.UserRoles)
+                .FirstOrDefaultAsync(u => u.Id == id)
+                ?? throw new NotFoundException("User", id);
+
+            var role = await _dbContext.Roles.FirstOrDefaultAsync(r => r.Id == request.RoleId)
+                ?? throw new BusinessRuleException("The selected role does not exist.");
+
+            if (user.UserRoles.Any(ur => ur.RoleId == role.Id))
+            {
+                throw new BusinessRuleException($"This user already holds the {role.Name} role.");
+            }
+
+            _dbContext.UserRoles.Add(new UserRole { UserId = id, RoleId = role.Id });
+
+            // Force re-auth so the next token carries the new role (mirrors the application-approve path):
+            // revoke the user's refresh tokens. Their current access token stays valid until it expires.
+            _dbContext.RefreshTokens.RemoveRange(_dbContext.RefreshTokens.Where(rt => rt.UserId == id));
+
+            _notifications.Enqueue(id, NotificationType.RoleGranted,
+                "Role granted",
+                $"You have been granted the {role.Name} role.",
+                relatedEntityId: null, alsoEmail: true);
+
+            // Role grant + token revoke + notification in one SaveChanges = one implicit transaction.
+            await _dbContext.SaveChangesAsync();
+
+            return await RequireWithRolesAsync(id);
+        }
+
+        public async Task<UserResponse> RevokeRoleAsync(int id, int roleId)
+        {
+            _authorization.EnsureInRole(RoleNames.Admin);
+            var adminId = _authorization.RequireUserId();
+
+            var user = await _dbContext.Users
+                .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
+                .FirstOrDefaultAsync(u => u.Id == id)
+                ?? throw new NotFoundException("User", id);
+
+            var userRole = user.UserRoles.FirstOrDefault(ur => ur.RoleId == roleId)
+                ?? throw new BusinessRuleException("This user does not hold that role.");
+
+            var roleName = userRole.Role.Name;
+
+            // An admin cannot strip Admin from their own account (self-lockout prevention).
+            if (roleName == RoleNames.Admin && id == adminId)
+            {
+                throw new BusinessRuleException("You cannot remove the Admin role from your own account.");
+            }
+
+            // Never remove the last remaining Admin — the platform must always keep at least one.
+            if (roleName == RoleNames.Admin
+                && await _dbContext.UserRoles.CountAsync(ur => ur.Role.Name == RoleNames.Admin) <= 1)
+            {
+                throw new BusinessRuleException("You cannot remove the last remaining Admin.");
+            }
+
+            _dbContext.UserRoles.Remove(userRole);
+
+            // Same re-auth rationale as granting: drop the user's refresh tokens so the removed role can no
+            // longer be carried by a freshly refreshed token.
+            _dbContext.RefreshTokens.RemoveRange(_dbContext.RefreshTokens.Where(rt => rt.UserId == id));
+
+            _notifications.Enqueue(id, NotificationType.RoleRevoked,
+                "Role removed",
+                $"Your {roleName} role has been removed.",
+                relatedEntityId: null, alsoEmail: true);
+
+            await _dbContext.SaveChangesAsync();
+
+            return await RequireWithRolesAsync(id);
         }
 
         public async Task<UserResponse> UpdateProfileAsync(int id, UserUpdateRequest request)

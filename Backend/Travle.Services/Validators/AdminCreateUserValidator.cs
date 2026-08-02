@@ -1,0 +1,50 @@
+using Travle.Model.Requests;
+using FluentValidation;
+
+namespace Travle.Services.Validators
+{
+    /// <summary>
+    /// Shape validation for admin account creation. Mirrors <see cref="UserRegisterValidator"/> (same
+    /// field limits and password policy) and additionally requires at least one role. Whether the roles
+    /// and city actually exist, and whether the email/username are free, are DB-dependent business rules
+    /// checked in the service.
+    /// </summary>
+    public class AdminCreateUserValidator : AbstractValidator<AdminCreateUserRequest>
+    {
+        public AdminCreateUserValidator()
+        {
+            RuleFor(x => x.FirstName)
+                .NotEmpty().WithMessage("First name is required.")
+                .MaximumLength(50).WithMessage("First name cannot exceed 50 characters.");
+
+            RuleFor(x => x.LastName)
+                .NotEmpty().WithMessage("Last name is required.")
+                .MaximumLength(50).WithMessage("Last name cannot exceed 50 characters.");
+
+            RuleFor(x => x.Email)
+                .NotEmpty().WithMessage("Email is required.")
+                .EmailAddress().WithMessage("Email must be a valid email address.")
+                .MaximumLength(100).WithMessage("Email cannot exceed 100 characters.");
+
+            RuleFor(x => x.Username)
+                .NotEmpty().WithMessage("Username is required.")
+                .MinimumLength(3).WithMessage("Username must be at least 3 characters.")
+                .MaximumLength(100).WithMessage("Username cannot exceed 100 characters.");
+
+            RuleFor(x => x.Password)
+                .NotEmpty().WithMessage("Password is required.")
+                .MinimumLength(8).WithMessage("Password must be at least 8 characters.")
+                .MaximumLength(100).WithMessage("Password cannot exceed 100 characters.");
+
+            RuleFor(x => x.PhoneNumber)
+                .MaximumLength(20).WithMessage("Phone number cannot exceed 20 characters.")
+                .When(x => !string.IsNullOrEmpty(x.PhoneNumber));
+
+            RuleFor(x => x.RoleIds)
+                .NotEmpty().WithMessage("Select at least one role.");
+
+            RuleForEach(x => x.RoleIds)
+                .GreaterThan(0).WithMessage("Each selected role must be valid.");
+        }
+    }
+}

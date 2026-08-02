@@ -42,16 +42,20 @@ Per 04 (Option A + slim C): scoring service, IMemoryCache + invalidation, `GET /
 Notifications entity + service (row per relevant event), SignalR hub (JWT, `user-{id}` groups, membership check), **mobile** notification center (read/unread, mark-as-read, live); desktop client is stretch. RabbitMQ publisher hardening (singleton connection); worker consumers for all email types + 24h reminders (email + in-app row); retry/backoff/logging.
 **DoD:** booking confirmation pops in-app within a second and lands by email; killing the worker mid-queue loses nothing.
 
-## Phase 10 — Reports & dashboard
+## Phase 10 — User management
+Admin user administration (the piece deferred since Phase 1's suspensions). Backend: admin **create user** (`POST /Users`, `AdminOnly`) with any combination of the four roles, an admin-set initial password, and email/username dedupe; **grant/revoke roles** on existing users (`POST`/`DELETE /Users/{id}/Roles`) with guardrails — no removing your own Admin role, no removing the last Admin; every role change revokes the target's refresh tokens (re-auth picks up the new set, mirroring the application-approve path) and notifies them. Read-only `GET /Roles` lookup for the assignment dropdown. **No update-by-admin, no delete** — suspension stays the only removal path (03 §3); no schema change/migration. Desktop: admin **Users** list (avatar thumbnail, name, username, role chips, suspended badge; search by name/role/status; paginated) → detail pane (suspend/unsuspend with reason + role management), **create-user** form (role multi-select); shared read-only `UserDetailCard`. Desktop self-service: the sidebar account tile becomes clickable → **Account** screen (view + edit own profile + change own password), reusing `UserDetailCard`. Fix the `Users` leaf to be admin-only.
+**DoD:** an admin creates an account in any role combination and it signs in; granting/revoking a role forces the target's re-auth and lands a notification; self-Admin and last-Admin removals are blocked; suspend/unsuspend unchanged; a desktop organizer/admin edits their own profile and changes their own password.
+
+## Phase 11 — Reports & dashboard
 Admin dashboard (metrics + bookings-per-month chart + recent activity). Two PDF reports (popular destinations by period; revenue by category/region) — downloadable + printable; single-GroupBy aggregates. Organizer statistics screen.
 **DoD:** PDFs open with real seeded data; aggregates hand-verified once.
 
-## Phase 11 — Hardening pass
+## Phase 12 — Hardening pass
 Sweep `01-course-constraints.md` section by section: endpoint authorization matrix; pagination caps; N+1 hunt; IMemoryCache on hot reference reads; validation-message audit (both apps); UI-rules audit; greps: template leftovers, `DateTime.Now`, `.Result|.Wait(|GetAwaiter`, empty catch, commented-out code.
 **DoD:** every checklist box ticks or has a written justified exception.
 
-## Phase 12 — Packaging & submission
+## Phase 13 — Packaging & submission
 README (run steps + credentials table); `.env-tajne.zip` swap; `flutter clean` + release builds (APK @10.0.2.2 verified via fresh AVD install; Windows exe @localhost); `fit-build-20gg-mm-dd.zip`; enable release immutability → draft → verify → publish; DL: exact tag + password. Cold-machine test: clone → compose up → run builds → exercise every core flow.
 **DoD:** a stranger runs everything from the README alone; nothing touched after the deadline.
 
-## Stretch (only after Phase 11): dedicated mobile map screen (see 00 §3.1), desktop SignalR client, curator statistics, autocomplete.
+## Stretch (only after Phase 12): dedicated mobile map screen (see 00 §3.1), desktop SignalR client, curator statistics, autocomplete.

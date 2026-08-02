@@ -143,6 +143,7 @@ TypeAdapterConfig<RoleApplication, RoleApplicationResponse>.NewConfig()
 
 // register application services
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<IRoleApplicationService, RoleApplicationService>();
 builder.Services.AddScoped<IDestinationService, DestinationService>();
 builder.Services.AddScoped<ITourService, TourService>();

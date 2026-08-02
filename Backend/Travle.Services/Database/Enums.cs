@@ -96,7 +96,16 @@ namespace Travle.Services.Database
         RoleApplicationSubmitted = 18,
 
         /// <summary>Admin: a destination was submitted (or edited back to Pending) and needs moderation.</summary>
-        DestinationSubmitted = 19
+        DestinationSubmitted = 19,
+
+        /// <summary>A user whose account was created for them by an admin (welcome / first sign-in prompt).</summary>
+        AccountCreated = 20,
+
+        /// <summary>A user who was granted a role directly by an admin (outside the application flow).</summary>
+        RoleGranted = 21,
+
+        /// <summary>A user who had a role removed by an admin.</summary>
+        RoleRevoked = 22
     }
 
     /// <summary>

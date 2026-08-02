@@ -9,6 +9,22 @@ namespace Travle.Services
         /// <summary>Self-service registration; always assigns the Traveler role.</summary>
         Task<UserResponse> RegisterAsync(UserRegisterRequest request);
 
+        /// <summary>
+        /// Admin action: create an account with an admin-set password and any combination of roles
+        /// (the only path to an Admin account). Distinct from <see cref="RegisterAsync"/>, which is the
+        /// anonymous Traveler-only self-registration.
+        /// </summary>
+        Task<UserResponse> CreateAsync(AdminCreateUserRequest request);
+
+        /// <summary>Admin action: grant a role to an existing user and revoke their refresh tokens.</summary>
+        Task<UserResponse> GrantRoleAsync(int id, UserRoleGrantRequest request);
+
+        /// <summary>
+        /// Admin action: remove a role from an existing user and revoke their refresh tokens. Blocks
+        /// removing the caller's own Admin role and removing the last remaining Admin.
+        /// </summary>
+        Task<UserResponse> RevokeRoleAsync(int id, int roleId);
+
         /// <summary>Profile edit. Caller must be the user themselves or an admin (checked from the JWT).</summary>
         Task<UserResponse> UpdateProfileAsync(int id, UserUpdateRequest request);
 
