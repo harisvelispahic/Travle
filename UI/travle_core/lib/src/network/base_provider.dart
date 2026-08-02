@@ -129,6 +129,18 @@ abstract class BaseProvider<T> with ChangeNotifier {
     validateResponse(response);
   }
 
+  /// DELETEs `endpoint/subPath` and returns the decoded JSON body (or null for an
+  /// empty response). Like [deleteAction] but for delete routes that return the
+  /// mutated resource, e.g. `Users/{id}/Roles/{roleId}` → the updated user.
+  Future<dynamic> deleteActionJson(String subPath) async {
+    final response = await _send(
+      () => http.delete(Uri.parse('$_base$endpoint/$subPath'), headers: _headers()),
+    );
+    validateResponse(response);
+    if (response.body.isEmpty) return null;
+    return jsonDecode(response.body);
+  }
+
   /// GETs raw bytes from `endpoint/subPath` (e.g. a document/image download).
   /// Reuses the auth header + 401→refresh pass.
   Future<Uint8List> getBytes(String subPath) async {

@@ -3,6 +3,7 @@
 library;
 
 export 'src/app_config.dart';
+export 'src/models/admin_create_user_request.dart';
 export 'src/models/booking_insert_request.dart';
 export 'src/models/booking_response.dart';
 export 'src/models/booking_status_response.dart';
@@ -65,6 +66,7 @@ export 'src/providers/recommendation_provider.dart';
 export 'src/providers/refund_policy_tier_provider.dart';
 export 'src/providers/region_provider.dart';
 export 'src/providers/role_application_provider.dart';
+export 'src/providers/role_provider.dart';
 export 'src/providers/tag_provider.dart';
 export 'src/providers/tour_provider.dart';
 export 'src/providers/tour_review_provider.dart';

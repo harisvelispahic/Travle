@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
+import '../screens/account_screen.dart';
 import '../screens/admin_bookings_screen.dart';
 import '../screens/admin_payments_screen.dart';
 import '../screens/destinations_moderation_screen.dart';
@@ -13,6 +14,7 @@ import '../screens/organizer_tours_screen.dart';
 import '../screens/reference/reference_registry.dart';
 import '../screens/reviews_moderation_screen.dart';
 import '../screens/role_applications_review_screen.dart';
+import '../screens/users_screen.dart';
 import '../widgets/notification_bell.dart';
 
 /// Persistent chrome for the management app: a left sidebar (brand + navigation
@@ -111,7 +113,13 @@ class _SideNavShellState extends State<SideNavShell> {
       builder: (_) => const ReviewsModerationScreen(),
       requiredRole: AppRole.admin,
     ),
-    const _Leaf('users', Icons.group_outlined, 'Users'),
+    _Leaf(
+      'users',
+      Icons.group_outlined,
+      'Users',
+      builder: (_) => const UsersScreen(),
+      requiredRole: AppRole.admin,
+    ),
     _Leaf(
       'roleRequests',
       Icons.how_to_reg_outlined,
@@ -192,6 +200,11 @@ class _SideNavShellState extends State<SideNavShell> {
                     auth.roles.isEmpty ? 'No roles' : auth.roles.join(' · '),
                     style: TextStyle(color: onPrimary.withValues(alpha: 0.7)),
                   ),
+                  trailing: Icon(Icons.chevron_right,
+                      color: onPrimary.withValues(alpha: 0.7)),
+                  selected: _selectedKey == 'account',
+                  selectedTileColor: onPrimary.withValues(alpha: 0.16),
+                  onTap: () => setState(() => _selectedKey = 'account'),
                 ),
                 ListTile(
                   leading: Icon(Icons.logout, color: onPrimary),
@@ -277,6 +290,10 @@ class _SideNavShellState extends State<SideNavShell> {
   /// Resolves the current selection to its (title, content) pair.
   (String, Widget) _resolveContent(BuildContext context, List<String> roles) {
     final isAdmin = roles.contains(AppRole.admin);
+    // The signed-in user's own account — available to every role.
+    if (_selectedKey == 'account') {
+      return ('Account', const AccountScreen());
+    }
     if (_selectedKey.startsWith('ref:') && isAdmin) {
       final index = int.parse(_selectedKey.substring(4));
       if (index >= 0 && index < _modules.length) {
