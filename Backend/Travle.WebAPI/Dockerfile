@@ -7,6 +7,12 @@ EXPOSE 5121
 ENV ASPNETCORE_URLS=http://+:5121
 ENV ASPNETCORE_ENVIRONMENT=Development
 
+# QuestPDF renders the report PDFs via SkiaSharp, which needs fontconfig present on Linux. The library
+# bundles its own fonts, so no font packages are required — only the native dependency.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libfontconfig1 \
+    && rm -rf /var/lib/apt/lists/*
+
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY . .

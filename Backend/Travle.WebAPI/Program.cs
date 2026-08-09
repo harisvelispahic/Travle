@@ -11,6 +11,7 @@ using Travle.Services.Messaging;
 using Travle.Services.Notifications;
 using Travle.Services.Payments;
 using Travle.Services.Recommender;
+using Travle.Services.Reports;
 using Travle.Services.Security;
 using Travle.Services.Validators;
 using Travle.WebAPI.Authorization;
@@ -48,6 +49,10 @@ for (var dir = new DirectoryInfo(Directory.GetCurrentDirectory()); dir is not nu
 }
 
 var builder = WebApplication.CreateBuilder(args);
+
+// QuestPDF Community licence (free under the revenue threshold — fine for a seminar project). Must be
+// set once before any report PDF is generated. See docs/context §Phase 11.
+QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
 // CORS policy names and the origins it allows (explicit, from configuration — never AllowAnyOrigin).
 const string TravleCorsPolicy = "TravleCors";
@@ -151,6 +156,10 @@ builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IDestinationReviewService, DestinationReviewService>();
 builder.Services.AddScoped<ITourReviewService, TourReviewService>();
 builder.Services.AddScoped<IFavoriteService, FavoriteService>();
+
+// Reporting module (Phase 11): dashboard + PDF reports + organizer statistics. Read-only aggregates;
+// the PDFs are composed with QuestPDF (Community licence set below).
+builder.Services.AddScoped<IReportService, ReportService>();
 
 // Notifications (Phase 9). The dispatcher (write side) and the read service are request-scoped; the
 // SignalR push adapter bridges the dispatcher to the hub. AddSignalR wires the hub runtime; the hub is
@@ -309,6 +318,10 @@ await ApplyMigrationsAsync(app);
 // a generated placeholder image + thumbnail so lists/details have images on first run (course §E).
 await SeedDestinationImagesAsync(app);
 
+// Runtime seed of historical bookings/payments spread across the trailing year, so the Phase 11 reports
+// and the bookings-per-month chart have real, non-trivial data. Idempotent (runs once).
+await SeedHistoricalActivityAsync(app);
+
 // Must be the first middleware so it wraps the entire pipeline: any exception thrown downstream
 // is routed through the registered IExceptionHandler chain.
 app.UseExceptionHandler();
@@ -401,4 +414,15 @@ static async Task SeedDestinationImagesAsync(WebApplication app)
 
     await dbContext.SaveChangesAsync();
     logger.LogInformation("Seeded placeholder images for {Count} destination(s).", destinationsWithoutImages.Count);
+}
+
+// Idempotent runtime seed of historical bookings/payments across the trailing year (see
+// HistoricalActivitySeeder). Runs after migration in its own scope; a sentinel intent id makes reruns
+// a no-op, so it never duplicates on subsequent boots.
+static async Task SeedHistoricalActivityAsync(WebApplication app)
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<TravleDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    await HistoricalActivitySeeder.SeedAsync(dbContext, logger);
 }

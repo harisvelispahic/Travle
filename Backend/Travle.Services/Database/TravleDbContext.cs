@@ -69,8 +69,11 @@ namespace Travle.Services.Database
         /// <summary>
         /// Single source of truth for audit timestamps: stamps <see cref="BaseEntity.CreatedAt"/> on
         /// insert and <see cref="BaseEntity.ModifiedAt"/> on update, in UTC, for every tracked
-        /// <see cref="BaseEntity"/>. Services must never set these by hand. Runs on every save path
-        /// (sync and async) because both public overloads funnel through these two overrides.
+        /// <see cref="BaseEntity"/>. Services must never set these by hand — a fresh entity always has an
+        /// unset (default) <see cref="BaseEntity.CreatedAt"/>, so it is always stamped with "now". The one
+        /// exception is data seeding/import (e.g. the historical activity seeder), which legitimately
+        /// carries real past dates: an explicitly provided <see cref="BaseEntity.CreatedAt"/> is preserved.
+        /// Runs on every save path (sync and async) because both public overloads funnel through here.
         /// </summary>
         private void ApplyAuditTimestamps()
         {
@@ -81,7 +84,10 @@ namespace Travle.Services.Database
                 switch (entry.State)
                 {
                     case EntityState.Added:
-                        entry.Entity.CreatedAt = now;
+                        if (entry.Entity.CreatedAt == default)
+                        {
+                            entry.Entity.CreatedAt = now;
+                        }
                         break;
                     case EntityState.Modified:
                         entry.Entity.ModifiedAt = now;

@@ -6,7 +6,10 @@ import 'package:travle_ui/travle_ui.dart';
 import '../screens/account_screen.dart';
 import '../screens/admin_bookings_screen.dart';
 import '../screens/admin_payments_screen.dart';
+import '../screens/dashboard_screen.dart';
 import '../screens/destinations_moderation_screen.dart';
+import '../screens/organizer_stats_screen.dart';
+import '../screens/reports_screen.dart';
 import '../screens/organizer_bookings_screen.dart';
 import '../screens/organizer_destinations_screen.dart';
 import '../screens/organizer_reviews_screen.dart';
@@ -20,9 +23,9 @@ import '../widgets/notification_bell.dart';
 /// Persistent chrome for the management app: a left sidebar (brand + navigation
 /// + account/logout) beside a content area. "Reference Data" (admin-only) is an
 /// inline expandable group revealing the reference tables; each opens the generic
-/// CRUD screen. The remaining destinations are placeholders filled in by their
-/// phase (Bookings §Phase 5, Dashboard §Phase 10). Destinations (§Phase 3),
-/// My Tours (§Phase 4) and Role Requests are live.
+/// CRUD screen. Admins land on the Dashboard and have the Reports module (§Phase 11);
+/// organizers land on their Statistics screen (§Phase 11). All other destinations
+/// are live from their respective phases.
 class SideNavShell extends StatefulWidget {
   const SideNavShell({super.key});
 
@@ -32,7 +35,13 @@ class SideNavShell extends StatefulWidget {
 
 /// A flat sidebar destination (not the Reference Data group).
 class _Leaf {
-  const _Leaf(this.key, this.icon, this.label, {this.builder, this.requiredRole});
+  const _Leaf(
+    this.key,
+    this.icon,
+    this.label, {
+    this.builder,
+    this.requiredRole,
+  });
   final String key;
   final IconData icon;
   final String label;
@@ -50,11 +59,28 @@ class _SideNavShellState extends State<SideNavShell> {
   String _selectedKey = 'dashboard';
   bool _referenceExpanded = false;
 
+  /// One-time guard: pick a role-appropriate landing screen on the first build with
+  /// known roles (the Dashboard is admin-only, so organizers open their Statistics).
+  bool _defaultApplied = false;
+
   late final _modules = buildReferenceModules();
 
   // Leaves shown above/below the Reference Data group, in order.
-  static const _topLeaves = <_Leaf>[
-    _Leaf('dashboard', Icons.dashboard_outlined, 'Dashboard'),
+  static final _topLeaves = <_Leaf>[
+    _Leaf(
+      'dashboard',
+      Icons.dashboard_outlined,
+      'Dashboard',
+      builder: (_) => const DashboardScreen(),
+      requiredRole: AppRole.admin,
+    ),
+    _Leaf(
+      'statistics',
+      Icons.insights_outlined,
+      'Statistics',
+      builder: (_) => const OrganizerStatsScreen(),
+      requiredRole: AppRole.organizer,
+    ),
   ];
   static final _bottomLeaves = <_Leaf>[
     _Leaf(
@@ -107,6 +133,13 @@ class _SideNavShellState extends State<SideNavShell> {
       requiredRole: AppRole.admin,
     ),
     _Leaf(
+      'reports',
+      Icons.assessment_outlined,
+      'Reports',
+      builder: (_) => const ReportsScreen(),
+      requiredRole: AppRole.admin,
+    ),
+    _Leaf(
       'reviews',
       Icons.rate_review_outlined,
       'Reviews',
@@ -143,8 +176,8 @@ class _SideNavShellState extends State<SideNavShell> {
     }
   }
 
-  Iterable<_Leaf> _visible(List<_Leaf> leaves, List<String> roles) =>
-      leaves.where((l) => l.requiredRole == null || roles.contains(l.requiredRole));
+  Iterable<_Leaf> _visible(List<_Leaf> leaves, List<String> roles) => leaves
+      .where((l) => l.requiredRole == null || roles.contains(l.requiredRole));
 
   @override
   Widget build(BuildContext context) {
@@ -154,64 +187,85 @@ class _SideNavShellState extends State<SideNavShell> {
     final roles = auth.roles;
     final isAdmin = roles.contains(AppRole.admin);
 
+    // On the first build with known roles, land a non-admin organizer on their
+    // Statistics screen (the Dashboard is admin-only).
+    if (!_defaultApplied && roles.isNotEmpty) {
+      _defaultApplied = true;
+      if (!isAdmin && roles.contains(AppRole.organizer)) {
+        _selectedKey = 'statistics';
+      }
+    }
+
     final (title, content) = _resolveContent(context, roles);
 
     return Scaffold(
       body: Row(
         children: [
-          Container(
-            width: 248,
+          Material(
+            // A Material (not a plain coloured Container) so the nav ListTiles paint
+            // their selection highlight and ink on this forest surface directly.
             color: theme.colorScheme.primary,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(TravleTokens.space24),
-                  child: Row(
-                    children: [
-                      Icon(Icons.travel_explore, color: onPrimary),
-                      const SizedBox(width: TravleTokens.space12),
-                      Text(
-                        'Travle',
-                        style: theme.textTheme.titleLarge
-                            ?.copyWith(color: onPrimary),
-                      ),
-                    ],
+            child: SizedBox(
+              width: 248,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(TravleTokens.space24),
+                    child: Row(
+                      children: [
+                        Icon(Icons.travel_explore, color: onPrimary),
+                        const SizedBox(width: TravleTokens.space12),
+                        Text(
+                          'Travle',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            color: onPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: ListView(
-                    padding: EdgeInsets.zero,
-                    children: [
-                      for (final leaf in _visible(_topLeaves, roles))
-                        _navTile(leaf.key, leaf.icon, leaf.label, onPrimary),
-                      if (isAdmin) ..._referenceGroup(onPrimary),
-                      for (final leaf in _visible(_bottomLeaves, roles))
-                        _navTile(leaf.key, leaf.icon, leaf.label, onPrimary),
-                    ],
+                  Expanded(
+                    child: ListView(
+                      padding: EdgeInsets.zero,
+                      children: [
+                        for (final leaf in _visible(_topLeaves, roles))
+                          _navTile(leaf.key, leaf.icon, leaf.label, onPrimary),
+                        if (isAdmin) ..._referenceGroup(onPrimary),
+                        for (final leaf in _visible(_bottomLeaves, roles))
+                          _navTile(leaf.key, leaf.icon, leaf.label, onPrimary),
+                      ],
+                    ),
                   ),
-                ),
-                Divider(color: onPrimary.withValues(alpha: 0.2), height: 1),
-                ListTile(
-                  leading: Icon(Icons.account_circle_outlined, color: onPrimary),
-                  title: Text(auth.username ?? 'Signed in',
-                      style: TextStyle(color: onPrimary)),
-                  subtitle: Text(
-                    auth.roles.isEmpty ? 'No roles' : auth.roles.join(' · '),
-                    style: TextStyle(color: onPrimary.withValues(alpha: 0.7)),
+                  Divider(color: onPrimary.withValues(alpha: 0.2), height: 1),
+                  ListTile(
+                    leading: Icon(
+                      Icons.account_circle_outlined,
+                      color: onPrimary,
+                    ),
+                    title: Text(
+                      auth.username ?? 'Signed in',
+                      style: TextStyle(color: onPrimary),
+                    ),
+                    subtitle: Text(
+                      auth.roles.isEmpty ? 'No roles' : auth.roles.join(' · '),
+                      style: TextStyle(color: onPrimary.withValues(alpha: 0.7)),
+                    ),
+                    trailing: Icon(
+                      Icons.chevron_right,
+                      color: onPrimary.withValues(alpha: 0.7),
+                    ),
+                    selected: _selectedKey == 'account',
+                    selectedTileColor: onPrimary.withValues(alpha: 0.16),
+                    onTap: () => setState(() => _selectedKey = 'account'),
                   ),
-                  trailing: Icon(Icons.chevron_right,
-                      color: onPrimary.withValues(alpha: 0.7)),
-                  selected: _selectedKey == 'account',
-                  selectedTileColor: onPrimary.withValues(alpha: 0.16),
-                  onTap: () => setState(() => _selectedKey = 'account'),
-                ),
-                ListTile(
-                  leading: Icon(Icons.logout, color: onPrimary),
-                  title: Text('Log out', style: TextStyle(color: onPrimary)),
-                  onTap: _logout,
-                ),
-              ],
+                  ListTile(
+                    leading: Icon(Icons.logout, color: onPrimary),
+                    title: Text('Log out', style: TextStyle(color: onPrimary)),
+                    onTap: _logout,
+                  ),
+                ],
+              ),
             ),
           ),
           Expanded(
@@ -277,13 +331,17 @@ class _SideNavShellState extends State<SideNavShell> {
           _referenceExpanded ? Icons.expand_less : Icons.expand_more,
           color: onPrimary,
         ),
-        onTap: () =>
-            setState(() => _referenceExpanded = !_referenceExpanded),
+        onTap: () => setState(() => _referenceExpanded = !_referenceExpanded),
       ),
       if (_referenceExpanded)
         for (var i = 0; i < _modules.length; i++)
-          _navTile('ref:$i', _modules[i].icon, _modules[i].title, onPrimary,
-              child: true),
+          _navTile(
+            'ref:$i',
+            _modules[i].icon,
+            _modules[i].title,
+            onPrimary,
+            child: true,
+          ),
     ];
   }
 

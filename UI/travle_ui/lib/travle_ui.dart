@@ -13,6 +13,7 @@ export 'src/widgets/empty_state.dart';
 export 'src/widgets/profile_avatar.dart';
 export 'src/widgets/rating_input.dart';
 export 'src/widgets/rating_stars.dart';
+export 'src/widgets/stat_tile.dart';
 export 'src/widgets/status_pill.dart';
 export 'src/widgets/thumbnail_image.dart';
 export 'src/widgets/travle_text_field.dart';
