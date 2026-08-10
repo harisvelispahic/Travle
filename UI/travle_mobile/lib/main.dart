@@ -6,15 +6,15 @@ import 'package:travle_ui/travle_ui.dart';
 
 import 'app/auth_gate.dart';
 
-void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  // The mobile app is portrait-only — lock it upright so no screen ever rotates.
-  SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
-  runApp(const TravleMobileApp());
-}
+void main() => runTravleApp(() {
+      WidgetsFlutterBinding.ensureInitialized();
+      // The mobile app is portrait-only — lock it upright so no screen rotates.
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+      runApp(const TravleMobileApp());
+    });
 
 class TravleMobileApp extends StatelessWidget {
   const TravleMobileApp({super.key});

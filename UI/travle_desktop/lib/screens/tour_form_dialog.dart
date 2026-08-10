@@ -23,6 +23,8 @@ class _Stop {
   _Stop({
     required this.destinationId,
     required this.name,
+    required this.latitude,
+    required this.longitude,
     this.cityName,
     this.thumbnail,
   }) : key = UniqueKey();
@@ -30,6 +32,8 @@ class _Stop {
   final Key key;
   final int destinationId;
   final String name;
+  final double latitude;
+  final double longitude;
   final String? cityName;
   final String? thumbnail;
 }
@@ -117,6 +121,8 @@ class _TourFormDialogState extends State<TourFormDialog> {
           stops.add(_Stop(
             destinationId: d.destinationId,
             name: d.name,
+            latitude: d.latitude,
+            longitude: d.longitude,
             cityName: d.cityName,
             thumbnail: d.thumbnail,
           ));
@@ -153,6 +159,8 @@ class _TourFormDialogState extends State<TourFormDialog> {
         _stops.add(_Stop(
           destinationId: d.id,
           name: d.name,
+          latitude: d.latitude,
+          longitude: d.longitude,
           cityName: d.cityName,
           thumbnail: d.primaryThumbnail,
         ));
@@ -456,7 +464,33 @@ class _TourFormDialogState extends State<TourFormDialog> {
               ),
             ),
           )
-        else
+        else ...[
+          Builder(
+            builder: (context) {
+              final points = [
+                for (final stop in _stops)
+                  MapPoint(
+                    latitude: stop.latitude,
+                    longitude: stop.longitude,
+                    label: stop.name,
+                  ),
+              ];
+              return TravleMapView(
+                points: points,
+                height: 220,
+                numbered: true,
+                connect: true,
+                onTap: () => showTravleMap(
+                  context,
+                  points: points,
+                  title: 'Itinerary',
+                  numbered: true,
+                  connect: true,
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: TravleTokens.space12),
           ReorderableListView(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -475,6 +509,7 @@ class _TourFormDialogState extends State<TourFormDialog> {
                 ),
             ],
           ),
+        ],
       ],
     );
   }

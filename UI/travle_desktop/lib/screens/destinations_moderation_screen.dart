@@ -416,19 +416,39 @@ class _DestinationModerationCard extends StatelessWidget {
             ),
             const SizedBox(height: TravleTokens.space12),
             Text(d.description, style: theme.textTheme.bodyMedium),
-            if (d.images.isNotEmpty) ...[
-              const SizedBox(height: TravleTokens.space8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: OutlinedButton.icon(
-                  onPressed: onViewPhotos,
-                  icon: const Icon(Icons.photo_library_outlined),
-                  label: Text(
-                    'View ${d.images.length} ${d.images.length == 1 ? 'photo' : 'photos'}',
+            const SizedBox(height: TravleTokens.space8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Wrap(
+                spacing: TravleTokens.space12,
+                runSpacing: TravleTokens.space8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () => showTravleMap(
+                      context,
+                      points: [
+                        MapPoint(
+                          latitude: d.latitude,
+                          longitude: d.longitude,
+                          label: d.name,
+                        ),
+                      ],
+                      title: d.name,
+                    ),
+                    icon: const Icon(Icons.map_outlined),
+                    label: const Text('View on map'),
                   ),
-                ),
+                  if (d.images.isNotEmpty)
+                    OutlinedButton.icon(
+                      onPressed: onViewPhotos,
+                      icon: const Icon(Icons.photo_library_outlined),
+                      label: Text(
+                        'View ${d.images.length} ${d.images.length == 1 ? 'photo' : 'photos'}',
+                      ),
+                    ),
+                ],
               ),
-            ],
+            ),
             if (!d.isPending) ...[
               const SizedBox(height: TravleTokens.space12),
               _DecisionSummary(destination: d),

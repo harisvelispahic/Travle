@@ -15,6 +15,13 @@ dependencies:
   travle_core:
     path: ../travle_core
 
+  # Maps (destination picker + read-only destination/itinerary views). flutter_map
+  # is the Flutter-native tile-map (the Leaflet equivalent) — pure Dart, runs on
+  # Android + Windows with no native config; latlong2 supplies its LatLng type.
+  # Both are kept behind travle_ui's map widgets so screens use plain doubles.
+  flutter_map: ^8.2.1
+  latlong2: ^0.9.1
+
 dev_dependencies:
   flutter_lints: ^6.0.0
 

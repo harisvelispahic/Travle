@@ -837,9 +837,8 @@ class _ExpandableTextState extends State<_ExpandableText> {
   }
 }
 
-/// A simple location panel: the full address chain plus coordinates. A dedicated
-/// interactive map preview is a documented stretch feature (00 §3.1); until then
-/// this presents the location without raw IDs.
+/// Location panel: a map pinned at the destination plus the full address chain
+/// and coordinates. No raw IDs — the map and address read for a human.
 class _LocationPanel extends StatelessWidget {
   const _LocationPanel({required this.destination});
 
@@ -865,6 +864,28 @@ class _LocationPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          TravleMapView(
+            points: [
+              MapPoint(
+                latitude: destination.latitude,
+                longitude: destination.longitude,
+                label: destination.name,
+              ),
+            ],
+            height: 200,
+            onTap: () => showTravleMap(
+              context,
+              points: [
+                MapPoint(
+                  latitude: destination.latitude,
+                  longitude: destination.longitude,
+                  label: destination.name,
+                ),
+              ],
+              title: destination.name,
+            ),
+          ),
+          const SizedBox(height: TravleTokens.space12),
           if (_address.isNotEmpty)
             Row(
               children: [

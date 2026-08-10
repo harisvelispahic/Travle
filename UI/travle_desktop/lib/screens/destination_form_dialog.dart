@@ -55,8 +55,6 @@ class _DestinationFormDialogState extends State<DestinationFormDialog> {
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
   final _description = TextEditingController();
-  final _latitude = TextEditingController();
-  final _longitude = TextEditingController();
   final _entranceFee = TextEditingController();
 
   List<DestinationCategoryResponse> _categories = [];
@@ -65,6 +63,7 @@ class _DestinationFormDialogState extends State<DestinationFormDialog> {
 
   int? _categoryId;
   int? _cityId;
+  MapCoordinate? _location;
   final Set<int> _selectedTagIds = {};
   final List<_ImageItem> _images = [];
 
@@ -85,8 +84,7 @@ class _DestinationFormDialogState extends State<DestinationFormDialog> {
     if (existing != null) {
       _name.text = existing.name;
       _description.text = existing.description;
-      _latitude.text = existing.latitude.toString();
-      _longitude.text = existing.longitude.toString();
+      _location = MapCoordinate(existing.latitude, existing.longitude);
       if (existing.entranceFee != null) {
         _entranceFee.text = existing.entranceFee!.toStringAsFixed(2);
       }
@@ -101,8 +99,6 @@ class _DestinationFormDialogState extends State<DestinationFormDialog> {
   void dispose() {
     _name.dispose();
     _description.dispose();
-    _latitude.dispose();
-    _longitude.dispose();
     _entranceFee.dispose();
     super.dispose();
   }
@@ -224,8 +220,8 @@ class _DestinationFormDialogState extends State<DestinationFormDialog> {
       _submitError = null;
     });
     try {
-      final latitude = double.parse(_latitude.text.trim());
-      final longitude = double.parse(_longitude.text.trim());
+      final latitude = _location!.latitude;
+      final longitude = _location!.longitude;
       final feeText = _entranceFee.text.trim();
       final entranceFee = feeText.isEmpty ? null : double.parse(feeText);
       if (widget.isEditing) {
@@ -428,10 +424,13 @@ class _DestinationFormDialogState extends State<DestinationFormDialog> {
             const SizedBox(height: TravleTokens.space8),
             _buildImageGrid(theme),
             const SizedBox(height: TravleTokens.space24),
-            _LocationSection(
-              latitude: _latitude,
-              longitude: _longitude,
+            MapLocationField(
+              initialValue: _location,
               enabled: !_submitting,
+              onChanged: (coordinate) => _location = coordinate,
+              validator: (coordinate) => coordinate == null
+                  ? 'Please choose a location on the map'
+                  : null,
             ),
           ],
         ),
@@ -662,81 +661,6 @@ class _ImageThumb extends StatelessWidget {
   }
 }
 
-/// Manual latitude/longitude entry. Interim: a map picker (Leaflet /
-/// OpenRouteService) will replace these fields later — keeping the coordinate
-/// entry isolated here makes that swap a one-widget change.
-class _LocationSection extends StatelessWidget {
-  const _LocationSection({
-    required this.latitude,
-    required this.longitude,
-    required this.enabled,
-  });
-
-  final TextEditingController latitude;
-  final TextEditingController longitude;
-  final bool enabled;
-
-  static final _coordinateFormatter =
-      FilteringTextInputFormatter.allow(RegExp(r'[0-9.\-]'));
-
-  String? _validate(String? value, String field, double min, double max) {
-    final required = Validators.required(value, field: field);
-    if (required != null) return required;
-    final parsed = double.tryParse(value!.trim());
-    if (parsed == null) return '$field must be a number';
-    if (parsed < min || parsed > max) {
-      return '$field must be between $min and $max';
-    }
-    return null;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Location', style: theme.textTheme.titleMedium),
-        const SizedBox(height: TravleTokens.space4),
-        Text(
-          'Enter the coordinates for now — a map picker is coming soon.',
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-        ),
-        const SizedBox(height: TravleTokens.space16),
-        Row(
-          children: [
-            Expanded(
-              child: TravleTextField(
-                controller: latitude,
-                label: 'Latitude',
-                enabled: enabled,
-                keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true, signed: true),
-                inputFormatters: [_coordinateFormatter],
-                textInputAction: TextInputAction.next,
-                validator: (v) => _validate(v, 'Latitude', -90, 90),
-              ),
-            ),
-            const SizedBox(width: TravleTokens.space16),
-            Expanded(
-              child: TravleTextField(
-                controller: longitude,
-                label: 'Longitude',
-                enabled: enabled,
-                keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true, signed: true),
-                inputFormatters: [_coordinateFormatter],
-                textInputAction: TextInputAction.done,
-                validator: (v) => _validate(v, 'Longitude', -180, 180),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
 
 /// Inline banner for a server-side submit error, shown inside the form so the
 /// user's input is preserved.

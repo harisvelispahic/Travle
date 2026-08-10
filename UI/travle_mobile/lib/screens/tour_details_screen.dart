@@ -203,6 +203,32 @@ class _TourDetailsScreenState extends State<TourDetailsScreen> {
         const SizedBox(height: TravleTokens.space24),
         Text('Itinerary', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: TravleTokens.space8),
+        Builder(
+          builder: (context) {
+            final points = [
+              for (final stop in tour.destinations)
+                MapPoint(
+                  latitude: stop.latitude,
+                  longitude: stop.longitude,
+                  label: stop.name,
+                ),
+            ];
+            return TravleMapView(
+              points: points,
+              height: 240,
+              numbered: true,
+              connect: true,
+              onTap: () => showTravleMap(
+                context,
+                points: points,
+                title: '${tour.name} — itinerary',
+                numbered: true,
+                connect: true,
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: TravleTokens.space12),
         _Itinerary(stops: tour.destinations, onTapStop: _openStop),
         const SizedBox(height: TravleTokens.space24),
         Text('Upcoming departures',

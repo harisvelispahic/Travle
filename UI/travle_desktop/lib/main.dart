@@ -5,9 +5,9 @@ import 'package:travle_ui/travle_ui.dart';
 
 import 'app/auth_gate.dart';
 
-void main() {
-  runApp(const TravleDesktopApp());
-}
+void main() => runTravleApp(() {
+      runApp(const TravleDesktopApp());
+    });
 
 class TravleDesktopApp extends StatelessWidget {
   const TravleDesktopApp({super.key});
