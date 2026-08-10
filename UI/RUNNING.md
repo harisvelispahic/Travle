@@ -42,7 +42,8 @@ Two env files; pick one per run:
 
 | File | BASE_URL | Use when |
 |---|---|---|
-| `env.json` | `http://localhost:5126/` | **Physical phone over USB** (with `adb reverse`) — the default |
+| `env.json` | `http://localhost:5126/` | **Physical phone over USB or Wi-Fi** (with `adb reverse`), dev API — the default |
+| `env.docker.json` | `http://localhost:5121/` | **Physical phone**, `docker compose` API (with `adb reverse`) |
 | `env.emulator.json` | `http://10.0.2.2:5126/` | **Android emulator** (AVD) |
 
 `10.0.2.2` is a magic alias that exists **only inside the emulator** — it points at
@@ -72,6 +73,51 @@ to `localhost` (exactly what the desktop app already uses).
    ```
 4. **Verify** from the phone's browser: `http://localhost:5126/scalar/` should load.
    If it does, login will work too.
+
+### Physical phone over Wi-Fi (no cable) — `run-mobile-wifi.ps1`
+
+Same setup as USB, minus the cable: the script establishes the adb link over
+Wi-Fi instead. The important part is that **`adb reverse` works over the wireless
+adb transport exactly like over USB**, so the API can stay bound to `localhost`,
+`BASE_URL` stays `http://localhost:5126/`, and no firewall rule or `0.0.0.0` rebind
+is needed. It uses "ADB over TCP/IP" (`adb tcpip 5555`), auto-detects and remembers
+the phone's IP, then runs `adb reverse` + `flutter run` for you.
+
+```powershell
+UI\run-mobile-wifi.ps1              # dev API on 5126 (env.json)
+UI\run-mobile-wifi.ps1 -Docker      # docker-compose API on 5121 (env.docker.json)
+UI\run-mobile-wifi.ps1 -Ip 192.168.1.42   # skip auto-detect, use this IP
+UI\run-mobile-wifi.ps1 -Reset       # forget the saved IP, redo USB setup
+```
+
+VS Code shortcut: **Terminal → Run Task → "run mobile over Wi-Fi (dev 5126)"**.
+
+Prerequisites: compilable Flutter code, and the phone on the **same Wi-Fi** as the
+laptop. The one exception is the **first run** (and any run after the phone reboots,
+which clears TCP/IP mode): plug the phone in via USB once so the script can flip it
+to Wi-Fi and learn its IP. It prints "you can UNPLUG the USB cable now" once the
+wireless link is up; after that, runs are cable-free.
+
+What it does, in order:
+
+1. Reuses an existing Wi-Fi adb link if one is up; else `adb connect`s the
+   saved/`-Ip` address; else (cable present) runs `adb tcpip 5555`, reads the phone's
+   Wi-Fi IP, connects, and saves the IP to `%USERPROFILE%\.travle-phone`.
+2. `adb reverse tcp:5126 tcp:5126` (or `5121` with `-Docker`).
+3. Starts a background **watchdog** that re-connects the device and re-asserts
+   `adb reverse` every few seconds. A wireless adb link drops when the phone sleeps
+   or Wi-Fi hiccups, which silently wipes the reverse tunnel — the watchdog restores
+   it automatically so you never have to run `adb reverse` by hand mid-session. It is
+   stopped when `flutter run` exits.
+4. `flutter run -d <phone> --dart-define-from-file=env.json` (or `env.docker.json`).
+
+It does **not** start the backend — run `dotnet run` (or `docker compose up`)
+yourself as usual; the script warns if nothing is listening on the API port yet.
+
+> Why Option 1 (`adb tcpip`) and not Android 11 "Wireless debugging"? Wireless
+> debugging hands out a random port on every toggle and needs a fresh pair/connect,
+> which is worse to script. `adb tcpip` uses a fixed port (5555) and reconnects
+> cleanly from the saved IP.
 
 ### Android emulator (AVD)
 

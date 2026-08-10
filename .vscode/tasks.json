@@ -14,6 +14,20 @@
       "type": "shell",
       "command": "adb reverse tcp:5121 tcp:5121",
       "problemMatcher": []
+    },
+    {
+      "label": "run mobile over Wi-Fi (dev 5126)",
+      "detail": "Connect the phone over Wi-Fi (adb tcpip), adb reverse, then flutter run. Cable needed only the first time / after a phone reboot.",
+      "type": "shell",
+      "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}/UI/run-mobile-wifi.ps1\"",
+      "problemMatcher": []
+    },
+    {
+      "label": "run mobile over Wi-Fi (docker 5121)",
+      "detail": "Same as above but against the docker-compose API on 5121 (env.docker.json).",
+      "type": "shell",
+      "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}/UI/run-mobile-wifi.ps1\" -Docker",
+      "problemMatcher": []
     }
   ]
 }
