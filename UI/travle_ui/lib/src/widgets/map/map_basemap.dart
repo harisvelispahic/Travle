@@ -3,15 +3,23 @@ import 'package:flutter_map/flutter_map.dart';
 
 import '../../theme/tokens.dart';
 
-/// The interactive gestures Travle maps enable. Everything except rotation and —
-/// deliberately — **double-tap zoom**: rapid double-tap zooming triggers a known
-/// flutter_map crash (`Infinity or NaN toInt` in DiscreteTileRange.fromPixelBounds,
-/// an unhandled exception in its internal tile-update stream that we can't catch).
-/// Pinch-to-zoom and scroll-wheel zoom remain, so nothing real is lost.
+/// The interactive gestures Travle maps enable. We drop three of flutter_map's
+/// gestures to avoid a known upstream crash (`Infinity or NaN toInt` in
+/// `DiscreteTileRange.fromPixelBounds`, thrown when a fast gesture drives the
+/// camera through a transient invalid zoom — `camera.size / (scale*2)` blows up to
+/// Infinity, or a huge-but-finite tile grid → OOM):
+///   * `doubleTapZoom` / `doubleTapDragZoom` — the animated double-tap zoom is a
+///     frequent trigger;
+///   * `flingAnimation` — post-release momentum overshoots into extreme zoom (the
+///     OOM path).
+/// Rotation is off too (we never rotate). Pinch-to-zoom, drag, and scroll-wheel
+/// zoom remain — the gestures people actually use. A last-resort safety net in
+/// [runTravleApp] swallows any residual occurrence so it can never crash the app.
 const int kTravleMapInteractiveFlags = InteractiveFlag.all &
     ~InteractiveFlag.rotate &
     ~InteractiveFlag.doubleTapZoom &
-    ~InteractiveFlag.doubleTapDragZoom;
+    ~InteractiveFlag.doubleTapDragZoom &
+    ~InteractiveFlag.flingAnimation;
 
 /// Identifies the app to public tile servers (OSM fair-use policy asks for a
 /// non-generic user agent). No key or account is involved.

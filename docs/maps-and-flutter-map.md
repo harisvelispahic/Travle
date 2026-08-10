@@ -151,15 +151,31 @@ Past a certain depth the tile servers (Esri especially, in rural areas) return p
 tiles. Fixed with `maxZoom: kMaxMapZoom` (**18**) + `minZoom: 3` on `MapOptions`, so the camera stops
 before it reaches missing-tile territory.
 
-### 6.5 Rapid double-tap zoom **crashes the app** → **double-tap zoom disabled** (done)
+### 6.5 Fast zoom **crashes the app** (NaN / OOM) → **swallow at the zone + tame gestures** (done)
 
-Fast double-tap zooming crashed with `Unsupported operation: Infinity or NaN toInt` in flutter_map's
-`DiscreteTileRange.fromPixelBounds` (`_onTileUpdateEvent`). This is a **known upstream bug**: overlapping
-double-tap zoom animations momentarily produce a NaN camera zoom, and the tile-range calc does `.floor()`
-on it. It is thrown inside flutter_map's own async stream, so it is **uncatchable** from our code, and
-`flutter_map` is already at its latest version (no patch to bump to). Fix: don't enable the triggering
-gesture. `kTravleMapInteractiveFlags` = `InteractiveFlag.all` minus `rotate`, `doubleTapZoom`, and
-`doubleTapDragZoom`. **Pinch-to-zoom and scroll-wheel zoom remain** — the gestures people actually use.
+Fast zooming — double-tap first, but later **plain pinch-zoom and even a basemap toggle** — crashed with
+`Unsupported operation: Infinity or NaN toInt` in flutter_map's `DiscreteTileRange.fromPixelBounds`
+(`_onTileUpdateEvent`), and sometimes an **Out-of-Memory** red screen. It is **intermittent / cold-start**:
+it tends to hit in the first interactions and then not reproduce.
+
+**Root cause** (in `tile_range_calculator.dart`): the visible pixel bounds are
+`halfSize = camera.size / (scale * 2)`, where `scale = camera.getZoomScale(viewingZoom, tileZoom)`. When a
+fast gesture drives the camera through a **transient invalid/near-zero zoom**, `scale` collapses and
+`camera.size / (scale*2)` blows up to **Infinity** → `Infinity.floor().toInt()` throws. When it comes out
+**huge-but-finite** instead, flutter_map allocates a giant tile grid → OOM. Same underlying glitch, two
+faces. It's thrown inside flutter_map's **internal async tile-update stream**, so no widget `try/catch` can
+reach it, and `flutter_map` is already at its latest version.
+
+**Fix — two parts:**
+1. **Zone-level safety net (decisive).** The crash propagates through the custom `Zone` we already wrap
+   `main` in (§6.6), so `runTravleApp`'s `handleUncaughtError` **swallows this one specific error** — an
+   `UnsupportedError` whose stack is inside `flutter_map`/`tile_range` — logs it once, and delegates every
+   other error to the parent zone untouched. The glitch is transient (the next frame recomputes tiles from
+   a valid camera), so swallowing it costs at most one skipped frame and **makes the crash impossible**.
+2. **Tame the gestures (reduce frequency + kill the OOM path).** `kTravleMapInteractiveFlags` =
+   `InteractiveFlag.all` minus `rotate`, `doubleTapZoom`, `doubleTapDragZoom`, and **`flingAnimation`**
+   (post-release momentum is what overshoots into the extreme zoom behind the OOM). **Pinch-to-zoom, drag,
+   and scroll-wheel zoom remain** — the gestures people actually use.
 
 ### 6.6 Noisy OSM tile-usage notice in the console → **print-filtering zone** (done)
 
