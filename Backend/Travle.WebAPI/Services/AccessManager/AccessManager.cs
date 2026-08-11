@@ -65,7 +65,9 @@ namespace Travle.WebAPI.Services.AccessManager
             return BuildResponse(pair);
         }
 
-        public Task LogoutAsync(int userId) => _refreshTokenService.DeleteAllForUserAsync(userId);
+        // Server-side invalidation (course §5): bump the security stamp so the access token dies now
+        // instead of surviving until it expires, and drop the refresh tokens — both in one save.
+        public Task LogoutAsync(int userId) => _userService.InvalidateAllSessionsAsync(userId);
 
         private static void EnsureNotSuspended(bool isSuspended)
         {

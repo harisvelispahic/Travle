@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Travle.Model.Responses
 {
     /// <summary>
@@ -9,6 +11,12 @@ namespace Travle.Model.Responses
     public class UserResponse
     {
         public int Id { get; set; }
+
+        /// <summary>The account's current security stamp. Server-side only — the token issuer reads it to
+        /// mint the <c>security_stamp</c> claim; it is never serialized to clients.</summary>
+        [JsonIgnore]
+        public string SecurityStamp { get; set; } = string.Empty;
+
         public string FirstName { get; set; } = string.Empty;
         public string LastName { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;

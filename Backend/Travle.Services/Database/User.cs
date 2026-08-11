@@ -16,6 +16,16 @@ namespace Travle.Services.Database
         public string PasswordHash { get; set; } = string.Empty;
         public string PasswordSalt { get; set; } = string.Empty;
 
+        /// <summary>
+        /// A version marker for this account's identity/permissions. Every issued access token embeds
+        /// the value it was minted with (a <c>security_stamp</c> claim); the JwtBearer gate rejects any
+        /// token whose stamp no longer matches this one. Bumping it (a fresh GUID) on any auth change
+        /// — suspend, role grant/revoke, password change, logout — instantly invalidates every
+        /// outstanding token for the user without storing the tokens anywhere. New accounts get a unique
+        /// stamp for free via the initializer. See docs/auth-token-invalidation.md.
+        /// </summary>
+        public string SecurityStamp { get; set; } = Guid.NewGuid().ToString("N");
+
         public string? PhoneNumber { get; set; }
 
         /// <summary>Full-size profile image bytes. Never sent to clients on read paths — only the small

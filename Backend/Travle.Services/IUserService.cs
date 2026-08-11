@@ -37,6 +37,11 @@ namespace Travle.Services
         /// <summary>Admin action: lift a suspension.</summary>
         Task<UserResponse> UnsuspendAsync(int id);
 
+        /// <summary>Ends every session for the user server-side: rolls the security stamp (so existing
+        /// access tokens are rejected on their next request) and drops all refresh tokens, in one save.
+        /// Used by logout. See docs/auth-token-invalidation.md.</summary>
+        Task InvalidateAllSessionsAsync(int userId);
+
         /// <summary>
         /// Records the current traveler's onboarding interest picks as OnboardingInterest interactions
         /// and marks them onboarded. Idempotent: the display-prompt cap may have already set the flag

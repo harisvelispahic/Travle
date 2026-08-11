@@ -72,26 +72,33 @@ namespace Travle.Services.Database
             modelBuilder.Entity<User>().HasData(
                 new { Id = 1, FirstName = "Amela", LastName = "Admin", Email = "admin@travle.com", Username = "desktop",
                       PasswordHash = "1EVueVHdk4so5MFyamTbvYtJIOZQBqVz17bdKL68+fE=", PasswordSalt = "QBCWe5Y16por+IPYrz4PCg==",
+                      SecurityStamp = "00000000000000000000000000000001",
                       IsSuspended = false, IsOnboarded = false, OnboardingPromptCount = 0, CreatedAt = SeedDate },
                 new { Id = 2, FirstName = "Omar", LastName = "Organizer", Email = "organizer@travle.com", Username = "organizer",
                       PasswordHash = "2FRMSidG5N9i/hqW9AXpRDLhOJq5DBQlRdE7MGBsaLU=", PasswordSalt = "d38hQJKnSdlVdlDAUMRJAA==",
+                      SecurityStamp = "00000000000000000000000000000002",
                       IsSuspended = false, IsOnboarded = false, OnboardingPromptCount = 0, CreatedAt = SeedDate },
                 new { Id = 3, FirstName = "Kenan", LastName = "Curator", Email = "curator@travle.com", Username = "curator",
                       PasswordHash = "VigKcI3V2KhAjucf6Np5oT1QTlltgk78SvFWGSn4IVY=", PasswordSalt = "/Y0ggC+zJv76k/v7hlrJ4A==",
+                      SecurityStamp = "00000000000000000000000000000003",
                       IsSuspended = false, IsOnboarded = false, OnboardingPromptCount = 0, CreatedAt = SeedDate },
                 new { Id = 4, FirstName = "Mirza", LastName = "Traveler", Email = "mobile@travle.com", Username = "mobile",
                       PasswordHash = "mqX31t67ZRUhpDRZkVinVjNOykscpP9AvCMqJsmEKpo=", PasswordSalt = "Uec/2alRNtONG/bGAHzssQ==",
+                      SecurityStamp = "00000000000000000000000000000004",
                       IsSuspended = false, IsOnboarded = true, OnboardingPromptCount = 0, CreatedAt = SeedDate },
                 new { Id = 5, FirstName = "Lejla", LastName = "Traveler", Email = "traveler2@travle.com", Username = "traveler2",
                       PasswordHash = "OpluSY5uW8/O3RJjS37BjZaNnNBrwUb79gkix1bctqE=", PasswordSalt = "YuNDqqKGZWVIVJGM3s+jjQ==",
+                      SecurityStamp = "00000000000000000000000000000005",
                       IsSuspended = false, IsOnboarded = false, OnboardingPromptCount = 0, CreatedAt = SeedDate },
                 // Two more organizers so tours span 3+ organizers (03 §7). Password "test" — they reuse the
                 // organizer demo account's PBKDF2 hash+salt (same format), so they log in for the demo too.
                 new { Id = 6, FirstName = "Amir", LastName = "Hodžić", Email = "amir@travle.com", Username = "amir_tours",
                       PasswordHash = "2FRMSidG5N9i/hqW9AXpRDLhOJq5DBQlRdE7MGBsaLU=", PasswordSalt = "d38hQJKnSdlVdlDAUMRJAA==",
+                      SecurityStamp = "00000000000000000000000000000006",
                       IsSuspended = false, IsOnboarded = false, OnboardingPromptCount = 0, CreatedAt = SeedDate },
                 new { Id = 7, FirstName = "Selma", LastName = "Begić", Email = "selma@travle.com", Username = "selma_travel",
                       PasswordHash = "2FRMSidG5N9i/hqW9AXpRDLhOJq5DBQlRdE7MGBsaLU=", PasswordSalt = "d38hQJKnSdlVdlDAUMRJAA==",
+                      SecurityStamp = "00000000000000000000000000000007",
                       IsSuspended = false, IsOnboarded = false, OnboardingPromptCount = 0, CreatedAt = SeedDate }
             );
         }

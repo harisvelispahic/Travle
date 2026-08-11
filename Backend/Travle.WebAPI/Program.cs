@@ -205,6 +205,9 @@ builder.Services.AddScoped<IRefreshTokenService, RefreshTokenService>();
 builder.Services.AddScoped<IAccessManager, AccessManager>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<ICryptoService, CryptoService>();
+// Backs the JwtBearer OnTokenValidated gate: a cached read of each user's security stamp + suspension
+// flag, so every request can reject revoked/suspended tokens. See docs/auth-token-invalidation.md.
+builder.Services.AddScoped<IUserSecurityStore, UserSecurityStore>();
 
 // Messaging: one long-lived RabbitMQ connection (singleton) + the email publisher the API uses to
 // enqueue mail for the worker. RabbitMq settings come from the RabbitMq section (env in compose).
@@ -293,6 +296,37 @@ builder.Services.AddAuthentication(options =>
                 context.Token = accessToken;
             }
             return Task.CompletedTask;
+        },
+
+        // Revocability gate. A stateless JWT is otherwise valid until it expires, so on every
+        // authenticated request we reject a token whose account is suspended or whose security stamp no
+        // longer matches the user's current one (any auth change bumps it — suspend, role change,
+        // password change, logout). The two values are read through a short-lived cache, never the
+        // tokens themselves. See docs/auth-token-invalidation.md.
+        OnTokenValidated = async context =>
+        {
+            var principal = context.Principal;
+            if (principal is null
+                || !int.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+            {
+                context.Fail("Invalid token subject.");
+                return;
+            }
+
+            var store = context.HttpContext.RequestServices.GetRequiredService<IUserSecurityStore>();
+            var state = await store.GetAsync(userId, context.HttpContext.RequestAborted);
+
+            if (state is null || state.IsSuspended)
+            {
+                context.Fail("This account is not active.");
+                return;
+            }
+
+            var tokenStamp = principal.FindFirstValue(TravleClaimTypes.SecurityStamp);
+            if (!string.Equals(tokenStamp, state.SecurityStamp, StringComparison.Ordinal))
+            {
+                context.Fail("This session is no longer valid.");
+            }
         }
     };
 });

@@ -23,6 +23,7 @@ namespace Travle.Services
         private readonly TravleDbContext _dbContext;
         private readonly ICryptoService _cryptoService;
         private readonly IEmailPublisher _emailPublisher;
+        private readonly IUserSecurityStore _securityStore;
         private readonly IValidator<ForgotPasswordRequest> _forgotValidator;
         private readonly IValidator<ResetPasswordRequest> _resetValidator;
         private readonly ILogger<PasswordResetService> _logger;
@@ -31,6 +32,7 @@ namespace Travle.Services
             TravleDbContext dbContext,
             ICryptoService cryptoService,
             IEmailPublisher emailPublisher,
+            IUserSecurityStore securityStore,
             IValidator<ForgotPasswordRequest> forgotValidator,
             IValidator<ResetPasswordRequest> resetValidator,
             ILogger<PasswordResetService> logger)
@@ -38,6 +40,7 @@ namespace Travle.Services
             _dbContext = dbContext;
             _cryptoService = cryptoService;
             _emailPublisher = emailPublisher;
+            _securityStore = securityStore;
             _forgotValidator = forgotValidator;
             _resetValidator = resetValidator;
             _logger = logger;
@@ -118,10 +121,13 @@ namespace Travle.Services
             user.PasswordHash = _cryptoService.GenerateHash(request.NewPassword, user.PasswordSalt);
             resetCode.UsedAt = now;
 
-            // A password reset ends every existing session.
+            // A password reset ends every existing session: bump the security stamp (rejects existing
+            // access tokens on their next request) and drop all refresh tokens.
+            user.SecurityStamp = Guid.NewGuid().ToString("N");
             _dbContext.RefreshTokens.RemoveRange(_dbContext.RefreshTokens.Where(rt => rt.UserId == user.Id));
 
             await _dbContext.SaveChangesAsync();
+            _securityStore.Invalidate(user.Id);
         }
 
         private bool CodeMatches(string storedHash, string submittedCode)

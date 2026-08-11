@@ -1,3 +1,4 @@
+using Travle.Model.Constants;
 using Travle.Model.Responses;
 using Travle.WebAPI.Options;
 using Microsoft.Extensions.Options;
@@ -31,7 +32,11 @@ namespace Travle.WebAPI.Services.AccessManager
                 new(ClaimTypes.Email, user.Email),
                 new(ClaimTypes.Name, user.Username),
                 new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N")),
-                new(JwtRegisteredClaimNames.Iat, new DateTimeOffset(now).ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
+                new(JwtRegisteredClaimNames.Iat, new DateTimeOffset(now).ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
+                // The account's security stamp at mint time — the gate rejects the token once this
+                // diverges from the user's current stamp (any auth change bumps it). See
+                // docs/auth-token-invalidation.md.
+                new(TravleClaimTypes.SecurityStamp, user.SecurityStamp)
             };
 
             // One role claim per role — this is what makes multi-role accounts (Traveler + Curator)

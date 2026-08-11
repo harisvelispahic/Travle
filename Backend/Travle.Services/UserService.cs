@@ -23,6 +23,7 @@ namespace Travle.Services
         private readonly RecommenderOptions _recommenderOptions;
         private readonly IRecommendationCache _recommendationCache;
         private readonly INotificationDispatcher _notifications;
+        private readonly IUserSecurityStore _securityStore;
         private readonly IValidator<UserRegisterRequest> _registerValidator;
         private readonly IValidator<AdminCreateUserRequest> _createValidator;
         private readonly IValidator<UserUpdateRequest> _updateValidator;
@@ -40,6 +41,7 @@ namespace Travle.Services
             IOptions<RecommenderOptions> recommenderOptions,
             IRecommendationCache recommendationCache,
             INotificationDispatcher notifications,
+            IUserSecurityStore securityStore,
             IValidator<UserRegisterRequest> registerValidator,
             IValidator<AdminCreateUserRequest> createValidator,
             IValidator<UserUpdateRequest> updateValidator,
@@ -55,6 +57,7 @@ namespace Travle.Services
             _recommenderOptions = recommenderOptions.Value;
             _recommendationCache = recommendationCache;
             _notifications = notifications;
+            _securityStore = securityStore;
             _registerValidator = registerValidator;
             _createValidator = createValidator;
             _updateValidator = updateValidator;
@@ -141,6 +144,7 @@ namespace Travle.Services
             => query.Select(u => new UserResponse
             {
                 Id = u.Id,
+                SecurityStamp = u.SecurityStamp,
                 FirstName = u.FirstName,
                 LastName = u.LastName,
                 Email = u.Email,
@@ -258,6 +262,7 @@ namespace Travle.Services
         public async Task<UserResponse> GrantRoleAsync(int id, UserRoleGrantRequest request)
         {
             _authorization.EnsureInRole(RoleNames.Admin);
+            var actorId = _authorization.RequireUserId();
 
             await _roleGrantValidator.ValidateAndThrowAsync(request);
 
@@ -276,17 +281,24 @@ namespace Travle.Services
 
             _dbContext.UserRoles.Add(new UserRole { UserId = id, RoleId = role.Id });
 
-            // Force re-auth so the next token carries the new role (mirrors the application-approve path):
-            // revoke the user's refresh tokens. Their current access token stays valid until it expires.
-            _dbContext.RefreshTokens.RemoveRange(_dbContext.RefreshTokens.Where(rt => rt.UserId == id));
+            // Bump the stamp so the current access token is rejected on its next request and picks up the
+            // new role. Other users are also fully re-logged-in (drop refresh tokens); an admin granting
+            // themselves a non-admin role keeps their refresh tokens so their client silently refreshes
+            // to the new claims without a visible logout.
+            user.SecurityStamp = NewSecurityStamp();
+            if (!(id == actorId && role.Name != RoleNames.Admin))
+            {
+                _dbContext.RefreshTokens.RemoveRange(_dbContext.RefreshTokens.Where(rt => rt.UserId == id));
+            }
 
             _notifications.Enqueue(id, NotificationType.RoleGranted,
                 "Role granted",
                 $"You have been granted the {role.Name} role.",
                 relatedEntityId: null, alsoEmail: true);
 
-            // Role grant + token revoke + notification in one SaveChanges = one implicit transaction.
+            // Role grant + stamp bump + token revoke + notification in one SaveChanges = one implicit transaction.
             await _dbContext.SaveChangesAsync();
+            _securityStore.Invalidate(id);
 
             return await RequireWithRolesAsync(id);
         }
@@ -321,9 +333,15 @@ namespace Travle.Services
 
             _dbContext.UserRoles.Remove(userRole);
 
-            // Same re-auth rationale as granting: drop the user's refresh tokens so the removed role can no
-            // longer be carried by a freshly refreshed token.
-            _dbContext.RefreshTokens.RemoveRange(_dbContext.RefreshTokens.Where(rt => rt.UserId == id));
+            // Same rationale as granting: bump the stamp so the current access token is rejected and re-minted
+            // without the role. Other users are fully re-logged-in (drop refresh tokens); an admin removing a
+            // non-admin role from their own account keeps their refresh tokens so their client silently
+            // refreshes to the reduced claims without a visible logout.
+            user.SecurityStamp = NewSecurityStamp();
+            if (!(id == adminId && roleName != RoleNames.Admin))
+            {
+                _dbContext.RefreshTokens.RemoveRange(_dbContext.RefreshTokens.Where(rt => rt.UserId == id));
+            }
 
             _notifications.Enqueue(id, NotificationType.RoleRevoked,
                 "Role removed",
@@ -331,6 +349,7 @@ namespace Travle.Services
                 relatedEntityId: null, alsoEmail: true);
 
             await _dbContext.SaveChangesAsync();
+            _securityStore.Invalidate(id);
 
             return await RequireWithRolesAsync(id);
         }
@@ -395,7 +414,13 @@ namespace Travle.Services
             user.PasswordSalt = _cryptoService.GenerateSalt();
             user.PasswordHash = _cryptoService.GenerateHash(request.NewPassword, user.PasswordSalt);
 
+            // A password change ends every session: bump the stamp (rejects existing access tokens) and
+            // drop the refresh tokens, so the user signs in again with the new password.
+            user.SecurityStamp = NewSecurityStamp();
+            _dbContext.RefreshTokens.RemoveRange(_dbContext.RefreshTokens.Where(rt => rt.UserId == userId));
+
             await _dbContext.SaveChangesAsync();
+            _securityStore.Invalidate(userId);
         }
 
         public async Task<UserResponse> SuspendAsync(int id, UserSuspendRequest request)
@@ -426,7 +451,10 @@ namespace Travle.Services
             user.SuspendedByUserId = adminId;
             user.SuspensionReason = request.Reason;
 
-            // Suspending revokes access immediately: drop all of the user's refresh tokens.
+            // Suspending revokes access immediately: bump the security stamp (so the current access token
+            // is rejected on its next request — the gate also rejects on the IsSuspended flag) and drop
+            // all of the user's refresh tokens so they cannot mint a new one.
+            user.SecurityStamp = NewSecurityStamp();
             _dbContext.RefreshTokens.RemoveRange(_dbContext.RefreshTokens.Where(rt => rt.UserId == id));
 
             // The suspended user learns why by email (their session is being revoked, so email is the channel
@@ -438,6 +466,7 @@ namespace Travle.Services
                 relatedEntityId: null, alsoEmail: true);
 
             await _dbContext.SaveChangesAsync();
+            _securityStore.Invalidate(id);
 
             return await RequireWithRolesAsync(id);
         }
@@ -459,7 +488,12 @@ namespace Travle.Services
             user.SuspendedByUserId = null;
             user.SuspensionReason = null;
 
+            // Roll the stamp for consistency (the account had no live sessions while suspended, so there
+            // is nothing to invalidate) and refresh the cached state.
+            user.SecurityStamp = NewSecurityStamp();
+
             await _dbContext.SaveChangesAsync();
+            _securityStore.Invalidate(id);
 
             return await RequireWithRolesAsync(id);
         }
@@ -578,6 +612,25 @@ namespace Travle.Services
 
             return await RequireWithRolesAsync(userId);
         }
+
+        /// <summary>
+        /// Ends every session server-side (logout): rolls the security stamp — so all outstanding access
+        /// tokens are rejected on their next request — and drops the refresh tokens, in a single save.
+        /// The in-service auth-change methods (suspend, role change, password change) roll the stamp inline
+        /// as part of their own SaveChanges instead of calling this.
+        /// </summary>
+        public async Task InvalidateAllSessionsAsync(int userId)
+        {
+            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId)
+                ?? throw new NotFoundException("User", userId);
+
+            user.SecurityStamp = NewSecurityStamp();
+            _dbContext.RefreshTokens.RemoveRange(_dbContext.RefreshTokens.Where(rt => rt.UserId == userId));
+            await _dbContext.SaveChangesAsync();
+            _securityStore.Invalidate(userId);
+        }
+
+        private static string NewSecurityStamp() => Guid.NewGuid().ToString("N");
 
         // Re-reads the just-mutated user with roles + city so the response DTO is fully populated.
         // This is data loading, not authorization — it stays in the user service.
