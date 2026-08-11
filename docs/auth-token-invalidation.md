@@ -105,13 +105,31 @@ stamps via the migration). Any token minted **before** this change carries no `s
 the gate rejects it once → those users re-login a single time after deploy. That's expected for a security
 rollout, not a bug.
 
-## 7. Not built yet (planned): client force-logout UX
+## 7. Client force-logout UX (built)
 
-The boundary above already yields correct behaviour on the client's next action (a suspended/demoted user
-is blocked/bounced when they next do anything). The **planned** UX layer is a SignalR "you've been signed
-out / your access changed" push so the affected session reacts **immediately** and shows a friendly reason,
-on both apps — *except* the admin's own non-admin role change, which stays a seamless silent refresh. It is
-UX/immediacy on top of a boundary that already holds.
+The boundary alone already blocks/bounces a suspended or demoted user on their next request. On top of it,
+the client now reacts **immediately and gracefully** to a session change. It's owned by the **`AuthGate`**
+(the stable root of each app — it never unmounts), which handles both directions:
+
+- **Proactive (live push).** `AuthGate` subscribes to the notification feed. On a *session-affecting* type
+  (`sessionAffectingNotificationTypes` = `AccountSuspended`, `RoleGranted`, `RoleRevoked`,
+  `RoleApplicationApproved`) it attempts a **silent `tryRefresh()`**:
+  - **succeeds** → the refresh token was kept (an admin changing their **own non-admin** role) → the new
+    claims apply seamlessly, **no dialog**;
+  - **fails** → the session was hard-invalidated → it routes to login and shows `showSessionEndedDialog`
+    with a reason drawn from the notification (e.g. *"…the Curator role has been approved. You need to sign
+    in again to continue."*).
+- **Reactive (a 401 with a failed refresh).** `BaseProvider` hands off to `AuthProvider.onSessionEnded`,
+  which the `AuthGate` points at the same handler — so instead of the caller being stuck on a per-screen
+  "session expired" error with a dead *Retry*, the app **pops to the login screen** and shows the same
+  dialog. (This is the fix for the old stuck-Retry screen.)
+
+`tryRefresh()` is **single-flight**, so the proactive refresh and a concurrent 401 can't both spend the
+rotating refresh token and log the user out spuriously.
+
+The **admin self-service** case is now unblocked in the desktop user dialog: an admin can grant/revoke their
+own non-admin roles (own **Admin** stays non-removable), and the dialog calls `tryRefresh()` right after so
+the sidebar reflects the new permissions immediately — the seamless path in action.
 
 ## 8. File map
 
@@ -135,5 +153,13 @@ Backend/Travle.Services/Migrations/20260811144440_AddUserSecurityStamp.cs
 - **2026-08-11** — Server-side boundary shipped (compiles clean, 0/0). `SecurityStamp` column + migration;
   `security_stamp` claim; cached `IUserSecurityStore`; `OnTokenValidated` gate (suspended + stale-stamp →
   401); stamp bumps on suspend/unsuspend, role grant/revoke (self non-admin keeps refresh), password
-  change, password reset, and logout. Client force-logout UX intentionally deferred (§7). **Not yet
-  device-tested** — handed to Haris to verify the two original repro cases.
+  change, password reset, and logout. Client force-logout UX intentionally deferred (§7). Verified by Haris
+  against the two original repro cases (and others).
+- **2026-08-11** — Client force-logout UX shipped (§7). `AuthGate` (both apps) made stateful and now owns
+  session-ended handling: session-affecting push → silent `tryRefresh` (seamless) or `showSessionEndedDialog`
+  + route to login; reactive `AuthProvider.onSessionEnded` from `BaseProvider` does the same (fixes the
+  stuck "session expired / Retry" screen). `tryRefresh` made single-flight. `RoleApplicationService.Approve`
+  now bumps the stamp too (consistency). Desktop user dialog: **admin self role grant/revoke unblocked**
+  (own Admin non-removable) with a post-change `tryRefresh` so permissions apply seamlessly. Mobile shell's
+  old role-reauth logic removed (moved to the gate); desktop toast skips session-affecting types. **Not yet
+  device-tested.**

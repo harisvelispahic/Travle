@@ -31,6 +31,12 @@ class AuthProvider extends ChangeNotifier {
 
   static AuthProvider? instance;
 
+  /// Set by the app once at startup: invoked when the session ends **involuntarily**
+  /// — a failed token refresh (a 401 the gate rejected) or a server-pushed auth
+  /// change — so the app can route to login and explain why with the given message.
+  /// Not called on an explicit user logout. See docs/auth-token-invalidation.md.
+  static Future<void> Function(String message)? onSessionEnded;
+
   static const FlutterSecureStorage _storage = FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
   );
@@ -208,10 +214,20 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool>? _refreshInFlight;
+
   /// Exchanges the refresh token for a fresh access token. On failure the
   /// session is cleared. Returns whether a new access token was obtained. Does
   /// not re-resolve the profile — that's [login]/[_restore]'s job.
-  Future<bool> tryRefresh() async {
+  ///
+  /// **Single-flight:** concurrent callers (several requests 401-ing at once, or a
+  /// proactive refresh racing the 401 path) share one in-flight refresh, so the
+  /// rotating refresh token is never spent twice — which would revoke it and log the
+  /// user out spuriously.
+  Future<bool> tryRefresh() =>
+      _refreshInFlight ??= _performRefresh().whenComplete(() => _refreshInFlight = null);
+
+  Future<bool> _performRefresh() async {
     final refreshToken = _refreshToken;
     if (refreshToken == null) return false;
     try {

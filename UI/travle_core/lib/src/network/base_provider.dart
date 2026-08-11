@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -157,14 +158,19 @@ abstract class BaseProvider<T> with ChangeNotifier {
   }
 
   /// Runs [request]; on a 401, silently refreshes the token once and retries.
-  /// A failed refresh clears the session and the retry's 401 falls through to
-  /// [validateResponse], which surfaces the session-expired message.
+  /// A failed refresh clears the session and hands off to [AuthProvider.onSessionEnded]
+  /// so the app routes to login (instead of the caller being stuck on a per-screen
+  /// "session expired" error). The retried 401 still falls through to
+  /// [validateResponse] for the immediate caller.
   Future<http.Response> _send(Future<http.Response> Function() request) async {
     var response = await request();
     if (response.statusCode == 401 && AuthProvider.instance != null) {
       final refreshed = await AuthProvider.instance!.tryRefresh();
       if (refreshed) {
         response = await request();
+      } else {
+        unawaited(AuthProvider.onSessionEnded
+            ?.call('Your session has ended. Please sign in again.'));
       }
     }
     return response;

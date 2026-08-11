@@ -17,6 +17,7 @@ export 'src/widgets/map/travle_map_view.dart';
 export 'src/widgets/profile_avatar.dart';
 export 'src/widgets/rating_input.dart';
 export 'src/widgets/rating_stars.dart';
+export 'src/widgets/session_ended_dialog.dart';
 export 'src/widgets/stat_tile.dart';
 export 'src/widgets/status_pill.dart';
 export 'src/widgets/thumbnail_image.dart';

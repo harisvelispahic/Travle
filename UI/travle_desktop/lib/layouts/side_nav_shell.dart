@@ -95,6 +95,9 @@ class _SideNavShellState extends State<SideNavShell> {
 
   void _onPush(NotificationResponse notification) {
     if (!mounted) return;
+    // Auth-change pushes about our own account (suspension, role grant/revoke) are handled by the
+    // AuthGate (silent refresh or a re-login dialog) — don't also surface them as a toast.
+    if (sessionAffectingNotificationTypes.contains(notification.type)) return;
     final toast = _Toast(notification);
     setState(() {
       _toasts.insert(0, toast);

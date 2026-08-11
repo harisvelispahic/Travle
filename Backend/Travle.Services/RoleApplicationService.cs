@@ -18,6 +18,7 @@ namespace Travle.Services
     {
         private readonly IAppAuthorizationService _authorization;
         private readonly INotificationDispatcher _notifications;
+        private readonly IUserSecurityStore _securityStore;
         private readonly IValidator<RoleApplicationSubmitRequest> _submitValidator;
         private readonly IValidator<RoleApplicationRejectRequest> _rejectValidator;
 
@@ -26,12 +27,14 @@ namespace Travle.Services
             MapsterMapper.IMapper mapper,
             IAppAuthorizationService authorization,
             INotificationDispatcher notifications,
+            IUserSecurityStore securityStore,
             IValidator<RoleApplicationSubmitRequest> submitValidator,
             IValidator<RoleApplicationRejectRequest> rejectValidator)
             : base(mapper, dbContext)
         {
             _authorization = authorization;
             _notifications = notifications;
+            _securityStore = securityStore;
             _submitValidator = submitValidator;
             _rejectValidator = rejectValidator;
         }
@@ -213,9 +216,11 @@ namespace Travle.Services
                 _dbContext.UserRoles.Add(new UserRole { UserId = application.UserId, RoleId = application.RoleId });
             }
 
-            // Force the applicant to re-authenticate so their next token carries the new role: revoke
-            // their refresh tokens. Their current (stateless) access token stays valid until it expires,
-            // at which point the failed refresh logs them out and re-login issues a JWT with the role.
+            // Force the applicant to re-authenticate so their next token carries the new role: bump the
+            // security stamp (rejects their current access token on its next request) and revoke their
+            // refresh tokens, so the failed refresh logs them out and re-login issues a JWT with the role.
+            var applicant = await _dbContext.Users.FirstAsync(u => u.Id == application.UserId);
+            applicant.SecurityStamp = Guid.NewGuid().ToString("N");
             _dbContext.RefreshTokens.RemoveRange(
                 _dbContext.RefreshTokens.Where(rt => rt.UserId == application.UserId));
 
@@ -231,8 +236,9 @@ namespace Travle.Services
                 $"Your application for the {roleName} role has been approved.",
                 application.Id);
 
-            // Decision + role grant + notification in one SaveChanges = one implicit transaction.
+            // Decision + role grant + stamp bump + notification in one SaveChanges = one implicit transaction.
             await _dbContext.SaveChangesAsync();
+            _securityStore.Invalidate(application.UserId);
 
             return await RequireResponseAsync(application.Id);
         }

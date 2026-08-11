@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
@@ -59,6 +61,8 @@ class _UserDetailDialogState extends State<_UserDetailDialog> {
       _allRoles.where((r) => !_user.roles.contains(r.name)).toList();
 
   Future<void> _run(Future<UserResponse> Function() action, String success) async {
+    final auth = context.read<AuthProvider>();
+    final wasSelf = _isSelf;
     setState(() => _busy = true);
     try {
       final updated = await action();
@@ -68,6 +72,12 @@ class _UserDetailDialogState extends State<_UserDetailDialog> {
         _changed = true;
         _roleToAdd = null;
       });
+      // Changing your own roles rolled your security stamp, so the current access token is now stale.
+      // Silently refresh (a self non-admin role change keeps the refresh token) so the new permissions
+      // apply immediately — the sidebar picks them up — without a visible logout.
+      if (wasSelf) {
+        unawaited(auth.tryRefresh());
+      }
       AppSnackbars.success(context, success);
     } on ApiClientException catch (e) {
       if (!mounted) return;
@@ -112,12 +122,14 @@ class _UserDetailDialogState extends State<_UserDetailDialog> {
     }
     final role = matches.first;
     final provider = context.read<UserProvider>();
+    final isSelf = _isSelf;
+    final who = _user.fullName.trim().isNotEmpty ? _user.fullName : _user.username;
     final confirmed = await showConfirmDialog(
       context,
       title: 'Remove role',
-      message: 'Remove the $roleName role from '
-          '${_user.fullName.trim().isNotEmpty ? _user.fullName : _user.username}? '
-          'They will be signed out and must sign in again.',
+      message: isSelf
+          ? 'Remove the $roleName role from your own account? Your access updates immediately.'
+          : 'Remove the $roleName role from $who? They will be signed out and must sign in again.',
       confirmLabel: 'Remove',
       destructive: true,
     );
@@ -248,15 +260,15 @@ class _UserDetailDialogState extends State<_UserDetailDialog> {
   }
 
   Widget _buildRoleManagement(ThemeData theme) {
-    // Role changes revoke the target's refresh tokens (they re-auth to pick up the
-    // new set). For your own account that would sign you out mid-action, so — like
-    // suspending yourself — managing your own roles here is disabled; the roles are
-    // shown read-only.
+    // Managing your own roles is allowed now that a self non-admin role change keeps your refresh token
+    // — the app silently refreshes to the new permissions instead of signing you out. Removing your own
+    // Admin role (and the last Admin) stays blocked (guarded on the server; the Admin chip below isn't
+    // removable for yourself).
     final isSelf = _isSelf;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(isSelf ? 'Roles' : 'Manage roles', style: theme.textTheme.titleSmall),
+        Text('Manage roles', style: theme.textTheme.titleSmall),
         const SizedBox(height: TravleTokens.space8),
         if (_user.roles.isEmpty)
           Text(
@@ -272,28 +284,20 @@ class _UserDetailDialogState extends State<_UserDetailDialog> {
               for (final role in _user.roles) _roleChip(theme, role, isSelf),
             ],
           ),
-        if (isSelf)
-          Padding(
-            padding: const EdgeInsets.only(top: TravleTokens.space8),
-            child: Text(
-              "You can't change your own roles.",
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
-          )
-        else ...[
-          const SizedBox(height: TravleTokens.space16),
-          _buildAddRole(theme),
-        ],
+        const SizedBox(height: TravleTokens.space16),
+        _buildAddRole(theme),
       ],
     );
   }
 
   Widget _roleChip(ThemeData theme, String role, bool isSelf) {
-    // Own roles are read-only (see _buildRoleManagement); others' are removable.
-    if (isSelf) {
+    // You can't remove your own Admin role (self-lockout guard, also enforced on the server) — that chip
+    // stays fixed. Every other role, on any account, is removable.
+    final locked = isSelf && role == AppRole.admin;
+    if (locked) {
       return Chip(
         label: Text(role),
+        avatar: const Icon(Icons.lock_outline, size: 16),
         visualDensity: VisualDensity.compact,
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       );
