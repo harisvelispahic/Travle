@@ -424,6 +424,18 @@ no per-record pages). Everything else — the core, the bell, the centre, the de
   proxy-provider pattern. Deep-link differs by design (see §8.4): desktop "view related" switches the
   side-nav **section** (via an `onNavigateToSection` callback threaded bell→centre→detail) instead of
   pushing a per-record page. **Phase 9 Flutter is complete on both apps.**
+- **2026-08-11** — **Stretch S1: desktop live toasts (analyzer clean).** The only piece 00 §3.2 called for
+  that wasn't already present. Everything else — the SignalR connection (shared `NotificationProvider`
+  wired in desktop `main.dart`), the bell + live badge, the centre, and the detail — shipped back in Phase 9
+  (9h); the desktop just never surfaced a *transient* toast on a live push (its `_onPush` equivalent didn't
+  exist). Added `travle_desktop/widgets/notification_toast.dart` (a top-right card mirroring the centre
+  row's icon/colour/title/body, slide+fade in) and wired `SideNavShell` to subscribe to
+  `NotificationProvider.pushes`: it keeps a small queue (max 4), auto-dismisses each after 6 s, stacks them
+  top-right over the content, and a tap opens that notification's detail (with the same `onNavigateToSection`
+  deep-link). No backend change; the DB row + bell badge stay the durable record, the toast is purely the
+  live nudge. (Mobile deliberately keeps no toast — its live nudge is the badge; only the management app
+  asked for toasts.) Desktop force-reauth on a live *desktop* role grant is still not wired (mobile-only for
+  now) — noted for later, not part of S1.
 
 ---
 

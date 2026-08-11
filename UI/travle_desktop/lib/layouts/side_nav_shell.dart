@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
@@ -15,10 +17,12 @@ import '../screens/organizer_destinations_screen.dart';
 import '../screens/organizer_reviews_screen.dart';
 import '../screens/organizer_tours_screen.dart';
 import '../screens/reference/reference_registry.dart';
+import '../screens/notification_detail_screen.dart';
 import '../screens/reviews_moderation_screen.dart';
 import '../screens/role_applications_review_screen.dart';
 import '../screens/users_screen.dart';
 import '../widgets/notification_bell.dart';
+import '../widgets/notification_toast.dart';
 
 /// Persistent chrome for the management app: a left sidebar (brand + navigation
 /// + account/logout) beside a content area. "Reference Data" (admin-only) is an
@@ -64,6 +68,69 @@ class _SideNavShellState extends State<SideNavShell> {
   bool _defaultApplied = false;
 
   late final _modules = buildReferenceModules();
+
+  // Live notification toasts (SignalR): a stack of transient top-right cards, each
+  // auto-dismissed after a few seconds. The DB row + bell badge remain the durable
+  // record; the toast is only the real-time nudge.
+  StreamSubscription<NotificationResponse>? _pushSub;
+  final List<_Toast> _toasts = <_Toast>[];
+  final Map<Key, Timer> _toastTimers = <Key, Timer>{};
+  static const int _maxToasts = 4;
+  static const Duration _toastDuration = Duration(seconds: 6);
+
+  @override
+  void initState() {
+    super.initState();
+    _pushSub = context.read<NotificationProvider>().pushes.listen(_onPush);
+  }
+
+  @override
+  void dispose() {
+    _pushSub?.cancel();
+    for (final timer in _toastTimers.values) {
+      timer.cancel();
+    }
+    super.dispose();
+  }
+
+  void _onPush(NotificationResponse notification) {
+    if (!mounted) return;
+    final toast = _Toast(notification);
+    setState(() {
+      _toasts.insert(0, toast);
+      if (_toasts.length > _maxToasts) {
+        final removed = _toasts.removeLast();
+        _toastTimers.remove(removed.key)?.cancel();
+      }
+    });
+    _toastTimers[toast.key] = Timer(
+      _toastDuration,
+      () => _dismissToast(toast.key),
+    );
+  }
+
+  void _dismissToast(Key key) {
+    _toastTimers.remove(key)?.cancel();
+    final index = _toasts.indexWhere((t) => t.key == key);
+    if (index == -1) return;
+    if (mounted) {
+      setState(() => _toasts.removeAt(index));
+    } else {
+      _toasts.removeAt(index);
+    }
+  }
+
+  void _openToast(_Toast toast) {
+    _dismissToast(toast.key);
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => NotificationDetailScreen(
+          notification: toast.notification,
+          onNavigateToSection: (key) => setState(() => _selectedKey = key),
+        ),
+      ),
+    );
+  }
 
   // Leaves shown above/below the Reference Data group, in order.
   static final _topLeaves = <_Leaf>[
@@ -162,6 +229,24 @@ class _SideNavShellState extends State<SideNavShell> {
     ),
   ];
 
+  Widget _buildToasts() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        for (final toast in _toasts)
+          Padding(
+            key: toast.key,
+            padding: const EdgeInsets.only(bottom: TravleTokens.space8),
+            child: NotificationToast(
+              notification: toast.notification,
+              onTap: () => _openToast(toast),
+              onDismiss: () => _dismissToast(toast.key),
+            ),
+          ),
+      ],
+    );
+  }
+
   Future<void> _logout() async {
     final auth = context.read<AuthProvider>();
     final confirmed = await showConfirmDialog(
@@ -199,103 +284,136 @@ class _SideNavShellState extends State<SideNavShell> {
     final (title, content) = _resolveContent(context, roles);
 
     return Scaffold(
-      body: Row(
+      body: Stack(
         children: [
-          Material(
-            // A Material (not a plain coloured Container) so the nav ListTiles paint
-            // their selection highlight and ink on this forest surface directly.
-            color: theme.colorScheme.primary,
-            child: SizedBox(
-              width: 248,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(TravleTokens.space24),
-                    child: Row(
-                      children: [
-                        Icon(Icons.travel_explore, color: onPrimary),
-                        const SizedBox(width: TravleTokens.space12),
-                        Text(
-                          'Travle',
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            color: onPrimary,
+          Row(
+            children: [
+              Material(
+                // A Material (not a plain coloured Container) so the nav ListTiles paint
+                // their selection highlight and ink on this forest surface directly.
+                color: theme.colorScheme.primary,
+                child: SizedBox(
+                  width: 248,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(TravleTokens.space24),
+                        child: Row(
+                          children: [
+                            Icon(Icons.travel_explore, color: onPrimary),
+                            const SizedBox(width: TravleTokens.space12),
+                            Text(
+                              'Travle',
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                color: onPrimary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: ListView(
+                          padding: EdgeInsets.zero,
+                          children: [
+                            for (final leaf in _visible(_topLeaves, roles))
+                              _navTile(
+                                leaf.key,
+                                leaf.icon,
+                                leaf.label,
+                                onPrimary,
+                              ),
+                            if (isAdmin) ..._referenceGroup(onPrimary),
+                            for (final leaf in _visible(_bottomLeaves, roles))
+                              _navTile(
+                                leaf.key,
+                                leaf.icon,
+                                leaf.label,
+                                onPrimary,
+                              ),
+                          ],
+                        ),
+                      ),
+                      Divider(
+                        color: onPrimary.withValues(alpha: 0.2),
+                        height: 1,
+                      ),
+                      ListTile(
+                        leading: Icon(
+                          Icons.account_circle_outlined,
+                          color: onPrimary,
+                        ),
+                        title: Text(
+                          auth.username ?? 'Signed in',
+                          style: TextStyle(color: onPrimary),
+                        ),
+                        subtitle: Text(
+                          auth.roles.isEmpty
+                              ? 'No roles'
+                              : auth.roles.join(' · '),
+                          style: TextStyle(
+                            color: onPrimary.withValues(alpha: 0.7),
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: ListView(
-                      padding: EdgeInsets.zero,
-                      children: [
-                        for (final leaf in _visible(_topLeaves, roles))
-                          _navTile(leaf.key, leaf.icon, leaf.label, onPrimary),
-                        if (isAdmin) ..._referenceGroup(onPrimary),
-                        for (final leaf in _visible(_bottomLeaves, roles))
-                          _navTile(leaf.key, leaf.icon, leaf.label, onPrimary),
-                      ],
-                    ),
-                  ),
-                  Divider(color: onPrimary.withValues(alpha: 0.2), height: 1),
-                  ListTile(
-                    leading: Icon(
-                      Icons.account_circle_outlined,
-                      color: onPrimary,
-                    ),
-                    title: Text(
-                      auth.username ?? 'Signed in',
-                      style: TextStyle(color: onPrimary),
-                    ),
-                    subtitle: Text(
-                      auth.roles.isEmpty ? 'No roles' : auth.roles.join(' · '),
-                      style: TextStyle(color: onPrimary.withValues(alpha: 0.7)),
-                    ),
-                    trailing: Icon(
-                      Icons.chevron_right,
-                      color: onPrimary.withValues(alpha: 0.7),
-                    ),
-                    selected: _selectedKey == 'account',
-                    selectedTileColor: onPrimary.withValues(alpha: 0.16),
-                    onTap: () => setState(() => _selectedKey = 'account'),
-                  ),
-                  ListTile(
-                    leading: Icon(Icons.logout, color: onPrimary),
-                    title: Text('Log out', style: TextStyle(color: onPrimary)),
-                    onTap: _logout,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Expanded(
-            child: Column(
-              children: [
-                Material(
-                  color: theme.colorScheme.surface,
-                  elevation: 1,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: TravleTokens.space16,
-                      vertical: TravleTokens.space8,
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(title, style: theme.textTheme.titleLarge),
+                        trailing: Icon(
+                          Icons.chevron_right,
+                          color: onPrimary.withValues(alpha: 0.7),
                         ),
-                        NotificationBell(
-                          onNavigateToSection: (key) =>
-                              setState(() => _selectedKey = key),
+                        selected: _selectedKey == 'account',
+                        selectedTileColor: onPrimary.withValues(alpha: 0.16),
+                        onTap: () => setState(() => _selectedKey = 'account'),
+                      ),
+                      ListTile(
+                        leading: Icon(Icons.logout, color: onPrimary),
+                        title: Text(
+                          'Log out',
+                          style: TextStyle(color: onPrimary),
                         ),
-                      ],
-                    ),
+                        onTap: _logout,
+                      ),
+                    ],
                   ),
                 ),
-                Expanded(child: content),
-              ],
-            ),
+              ),
+              Expanded(
+                child: Column(
+                  children: [
+                    Material(
+                      color: theme.colorScheme.surface,
+                      elevation: 1,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: TravleTokens.space16,
+                          vertical: TravleTokens.space8,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                title,
+                                style: theme.textTheme.titleLarge,
+                              ),
+                            ),
+                            NotificationBell(
+                              onNavigateToSection: (key) =>
+                                  setState(() => _selectedKey = key),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Expanded(child: content),
+                  ],
+                ),
+              ),
+            ],
           ),
+          if (_toasts.isNotEmpty)
+            Positioned(
+              top: 72,
+              right: TravleTokens.space16,
+              child: _buildToasts(),
+            ),
         ],
       ),
     );
@@ -375,6 +493,15 @@ class _SideNavShellState extends State<SideNavShell> {
     // Selection no longer available (e.g. role changed) — fall back to Dashboard.
     return ('Dashboard', const _Placeholder(title: 'Dashboard'));
   }
+}
+
+/// One live notification toast in the shell's queue; [key] gives it a stable
+/// identity for the list + its auto-dismiss timer.
+class _Toast {
+  _Toast(this.notification) : key = UniqueKey();
+
+  final NotificationResponse notification;
+  final Key key;
 }
 
 class _Placeholder extends StatelessWidget {

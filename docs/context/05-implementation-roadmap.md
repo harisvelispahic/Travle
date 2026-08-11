@@ -58,4 +58,25 @@ Sweep `01-course-constraints.md` section by section: endpoint authorization matr
 README (run steps + credentials table); `.env-tajne.zip` swap; `flutter clean` + release builds (APK @10.0.2.2 verified via fresh AVD install; Windows exe @localhost); `fit-build-20gg-mm-dd.zip`; enable release immutability → draft → verify → publish; DL: exact tag + password. Cold-machine test: clone → compose up → run builds → exercise every core flow.
 **DoD:** a stranger runs everything from the README alone; nothing touched after the deadline.
 
-## Stretch (only after Phase 12): dedicated mobile map screen (see 00 §3.1), desktop SignalR client, curator statistics, autocomplete.
+## Stretch phases (chosen 2026-08-11 — built after Phase 11, before the Phase 12 hardening pass; order fixed)
+
+The map *picker* + inline destination/tour maps already shipped in core scope (see `maps-and-flutter-map.md`); only the browse-map **screen** remains of the map stretch.
+
+### Phase S1 — Desktop real-time (SignalR client) — ✅ DONE 2026-08-11
+Desktop connects to the existing notification hub (JWT, `user-{id}` group) reusing `signalr_netcore` + the shared `NotificationProvider`. Desktop notification affordance in `SideNavShell` (bell + unread badge, read/mark-as-read) and **live toasts** for the events a desktop user cares about: organizer booking placed/cancelled; admin role-application submitted + destination submitted (moderation queue). No backend change — hub + Notification rows already exist.
+**DoD:** an event raised elsewhere pops a desktop toast within a second and lands in the desktop centre; sign-out tears the connection down; a dropped connection reconnects and loses nothing (rows are the source of truth).
+**As-built:** the SignalR connection + bell + badge + centre + detail already existed from Phase 9 (9h); S1 added only the missing **live toasts** — `notification_toast.dart` + a `pushes` subscription in `SideNavShell` (queue max 4, auto-dismiss 6 s, top-right, tap→detail). Analyzer clean; see `notifications-and-signalr.md` build log 2026-08-11. Not device-verified yet.
+
+### Phase S2 — Mobile map browse screen
+New **light bbox endpoint** returning only `{id, name, lat, lng, category, rating, thumbnail}` for Approved destinations within the visible bounds (bbox = the mandatory search parameter; capped count; writes a Search interaction). Mobile map tab/screen reusing `TravleMapView`/`MapPin`: markers → tap → mini card → destination details.
+**DoD:** the map shows approved destinations as markers; panning refetches by bbox; a marker's mini card opens details; result count is capped.
+
+### Phase S3 — Curator statistics (mobile)
+Curator-scoped aggregate endpoint (their destinations' view counts, favorites, average rating, counts by moderation status) — single-GroupBy aggregates over curator-owned rows only. Mobile statistics screen mirroring the desktop organizer statistics (fl_chart).
+**DoD:** a curator sees real aggregates over their own destinations; numbers hand-verified once; no cross-curator leakage.
+
+### Phase S4 — Search autocomplete
+Debounced typeahead on destination search (reuses the search endpoint; min-chars + debounce; DB-level filtering; capped suggestions).
+**DoD:** typing shows live suggestions without a manual submit; selecting one opens details/search.
+
+## Later / optional (only if time, see 00 §3): "near you" (needs a runtime geolocation permission); geocoding search in the map picker; onboarding category-card polish (needs `Category.Description`/`Image` + a migration); Stripe CLI compose profile (dev convenience).
