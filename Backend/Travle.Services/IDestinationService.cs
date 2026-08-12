@@ -18,6 +18,14 @@ namespace Travle.Services
         /// <summary>Public, approved-only search; a text term writes a Search interaction for the JWT user.</summary>
         Task<PageResult<DestinationResponse>> SearchAsync(DestinationSearch? search);
 
+        /// <summary>
+        /// Light, approved-only markers within a visible bounding box for the mobile map screen: only the
+        /// fields needed to drop a pin and render its mini card, capped server-side and best-rated first.
+        /// Optional multi-category + minimum-rating filters mirror the search screen. Records no interaction
+        /// (a pan-heavy browse surface would flood the recommender diary).
+        /// </summary>
+        Task<List<DestinationMapPinResponse>> GetMapPinsAsync(DestinationMapSearch search);
+
         /// <summary>The current curator/organizer's own destinations (any status), paginated.</summary>
         Task<PageResult<DestinationResponse>> GetMineAsync(DestinationSearch? search);
 

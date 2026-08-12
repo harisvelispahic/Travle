@@ -41,6 +41,12 @@ public class DestinationsController
     public async Task<ActionResult<List<RecommendationItem>>> Similar(int id)
         => Ok(await _recommendations.GetSimilarAsync(id));
 
+    // Light, approved-only markers within the visible map bounds for the mobile map screen (bbox is the
+    // mandatory search parameter; result count is capped server-side). Returns a plain list, not a page.
+    [HttpGet("map")]
+    public async Task<ActionResult<List<DestinationMapPinResponse>>> Map([FromQuery] DestinationMapSearch search)
+        => Ok(await _service.GetMapPinsAsync(search));
+
     // The current curator/organizer's own submissions, any status.
     [HttpGet("mine")]
     public async Task<ActionResult<PageResult<DestinationResponse>>> GetMine([FromQuery] DestinationSearch? search)

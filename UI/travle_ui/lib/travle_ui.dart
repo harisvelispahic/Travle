@@ -13,6 +13,7 @@ export 'src/widgets/document_picker_field.dart';
 export 'src/widgets/empty_state.dart';
 export 'src/widgets/map/map_coordinate_picker.dart';
 export 'src/widgets/map/map_types.dart';
+export 'src/widgets/map/travle_map_browser.dart';
 export 'src/widgets/map/travle_map_view.dart';
 export 'src/widgets/profile_avatar.dart';
 export 'src/widgets/rating_input.dart';

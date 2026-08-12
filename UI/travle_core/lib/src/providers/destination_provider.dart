@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../models/destination_insert_request.dart';
+import '../models/destination_map_pin.dart';
 import '../models/destination_response.dart';
 import '../models/destination_update_request.dart';
 import '../models/recommendation_item.dart';
@@ -86,6 +87,32 @@ class DestinationProvider extends BaseProvider<DestinationResponse> {
     final json = await getAction('$id/similar') as List;
     return json
         .map((e) => RecommendationItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Light, approved-only markers within the visible map bounds
+  /// (`GET /Destinations/map`). The bounding box is the mandatory filter; the
+  /// optional [categoryIds] (any-of) and [minRating] mirror the search filters. The
+  /// result is a server-capped plain list (not a page); each pin carries only what
+  /// the marker and its mini card need.
+  Future<List<DestinationMapPin>> mapPins({
+    required double south,
+    required double west,
+    required double north,
+    required double east,
+    List<int>? categoryIds,
+    double? minRating,
+  }) async {
+    final json = await getAction('map', filter: {
+      'south': south,
+      'west': west,
+      'north': north,
+      'east': east,
+      if (categoryIds != null && categoryIds.isNotEmpty) 'categoryIds': categoryIds,
+      'minRating': ?minRating,
+    }) as List;
+    return json
+        .map((e) => DestinationMapPin.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 }

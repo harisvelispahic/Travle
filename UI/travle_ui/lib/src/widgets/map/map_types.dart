@@ -42,3 +42,37 @@ class MapPoint {
 
   LatLng toLatLng() => LatLng(latitude, longitude);
 }
+
+/// A tappable marker on the interactive browse map (`DestinationMapBrowser`).
+/// [id] identifies the marker so the screen can look up its full data when tapped
+/// — the widget stays model-agnostic (it never sees the destination itself).
+class MapMarkerData {
+  const MapMarkerData({
+    required this.id,
+    required this.latitude,
+    required this.longitude,
+  });
+
+  final int id;
+  final double latitude;
+  final double longitude;
+
+  LatLng toLatLng() => LatLng(latitude, longitude);
+}
+
+/// The edges of a map's visible area, in plain WGS84 degrees — the browse map's
+/// way of telling a screen which bounding box to fetch, without the screen ever
+/// importing flutter_map / latlong2 (doc 08 §5).
+class MapBounds {
+  const MapBounds({
+    required this.south,
+    required this.west,
+    required this.north,
+    required this.east,
+  });
+
+  final double south;
+  final double west;
+  final double north;
+  final double east;
+}

@@ -15,6 +15,17 @@ namespace Travle.Services.Projections
         /// <summary>Server thumbnails are always JPEG (the generator guarantees it).</summary>
         public const string ThumbnailContentType = "image/jpeg";
 
+        /// <summary>
+        /// Filters to destinations whose <em>computed</em> average rating is at least
+        /// <paramref name="minRating"/> — the same suspended-author-excluded value the projection puts on
+        /// screen, not the denormalized <c>AverageRating</c> column (which keeps suspended reviewers for the
+        /// recommender). Using it for the rating filter guarantees the filter agrees with what's shown.
+        /// </summary>
+        public static IQueryable<Destination> WhereMinRating(IQueryable<Destination> query, double minRating)
+            => query.Where(d =>
+                (d.Reviews.Where(r => !r.IsRemoved && !r.User.IsSuspended).Select(r => (double?)r.Rating).Average() ?? 0d)
+                >= minRating);
+
         public static IQueryable<DestinationResponse> ProjectToResponse(IQueryable<Destination> query)
             => query.Select(d => new DestinationResponse
             {
@@ -74,5 +85,35 @@ namespace Travle.Services.Projections
 
         public static void FinalizeThumbnail(DestinationResponse item)
             => item.PrimaryThumbnailContentType = item.PrimaryThumbnail is { Length: > 0 } ? ThumbnailContentType : null;
+
+        /// <summary>
+        /// The light Destination → <see cref="DestinationMapPinResponse"/> projection for the map-browse
+        /// endpoint: only the marker + mini-card fields, and still just the primary thumbnail (never full
+        /// <c>ImageData</c>). Rating is computed on read with the same suspended-author exclusion as the
+        /// full projection, so the map agrees with the catalogue.
+        /// </summary>
+        public static IQueryable<DestinationMapPinResponse> ProjectToMapPin(IQueryable<Destination> query)
+            => query.Select(d => new DestinationMapPinResponse
+            {
+                Id = d.Id,
+                Name = d.Name,
+                Latitude = d.Latitude,
+                Longitude = d.Longitude,
+                CategoryName = d.Category.Name,
+                AverageRating = d.Reviews.Where(r => !r.IsRemoved && !r.User.IsSuspended).Select(r => (double?)r.Rating).Average() ?? 0d,
+                PrimaryThumbnail = d.Images
+                    .OrderBy(i => i.SortOrder)
+                    .Select(i => i.ThumbnailData)
+                    .FirstOrDefault()
+            });
+
+        /// <summary>Sets the (constant JPEG) thumbnail content type for materialized map pins.</summary>
+        public static void FinalizeMapPinThumbnails(IEnumerable<DestinationMapPinResponse> items)
+        {
+            foreach (var item in items)
+            {
+                item.PrimaryThumbnailContentType = item.PrimaryThumbnail is { Length: > 0 } ? ThumbnailContentType : null;
+            }
+        }
     }
 }

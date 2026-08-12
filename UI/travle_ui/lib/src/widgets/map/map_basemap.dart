@@ -65,16 +65,27 @@ enum TravleBasemap {
 }
 
 /// A compact two-segment pill that switches a map between street and satellite
-/// tiles. Sits over the top-right corner of the map.
+/// tiles. Sits over a corner of the map. Horizontal + labelled by default; set
+/// [direction] to `Axis.vertical` and [showLabels] to false for a slim icon-only
+/// strip (used on the full-screen browse map, where a labelled pill crowds the
+/// other overlays).
 class BasemapToggle extends StatelessWidget {
   const BasemapToggle({
     super.key,
     required this.value,
     required this.onChanged,
+    this.direction = Axis.horizontal,
+    this.showLabels = true,
   });
 
   final TravleBasemap value;
   final ValueChanged<TravleBasemap> onChanged;
+
+  /// Lay the two segments out side by side (default) or stacked.
+  final Axis direction;
+
+  /// Show each segment's text label beside its icon; false = icon-only.
+  final bool showLabels;
 
   @override
   Widget build(BuildContext context) {
@@ -85,7 +96,8 @@ class BasemapToggle extends StatelessWidget {
       borderRadius: BorderRadius.circular(TravleTokens.radiusPill),
       child: Padding(
         padding: const EdgeInsets.all(3),
-        child: Row(
+        child: Flex(
+          direction: direction,
           mainAxisSize: MainAxisSize.min,
           children: [
             for (final basemap in TravleBasemap.values) _segment(theme, basemap),
@@ -97,12 +109,18 @@ class BasemapToggle extends StatelessWidget {
 
   Widget _segment(ThemeData theme, TravleBasemap basemap) {
     final selected = basemap == value;
-    return InkWell(
+    final foreground = selected
+        ? theme.colorScheme.onPrimary
+        : theme.colorScheme.onSurfaceVariant;
+
+    Widget segment = InkWell(
       borderRadius: BorderRadius.circular(TravleTokens.radiusPill),
       onTap: selected ? null : () => onChanged(basemap),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: showLabels
+            ? const EdgeInsets.symmetric(horizontal: 10, vertical: 6)
+            : const EdgeInsets.all(8),
         decoration: BoxDecoration(
           color: selected ? theme.colorScheme.primary : Colors.transparent,
           borderRadius: BorderRadius.circular(TravleTokens.radiusPill),
@@ -110,27 +128,27 @@ class BasemapToggle extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              basemap.icon,
-              size: 16,
-              color: selected
-                  ? theme.colorScheme.onPrimary
-                  : theme.colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: TravleTokens.space4),
-            Text(
-              basemap.label,
-              style: theme.textTheme.labelMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: selected
-                    ? theme.colorScheme.onPrimary
-                    : theme.colorScheme.onSurfaceVariant,
+            Icon(basemap.icon, size: 16, color: foreground),
+            if (showLabels) ...[
+              const SizedBox(width: TravleTokens.space4),
+              Text(
+                basemap.label,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: foreground,
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),
     );
+
+    // Icon-only segments lose their text, so name them for long-press/hover.
+    if (!showLabels) {
+      segment = Tooltip(message: basemap.label, child: segment);
+    }
+    return segment;
   }
 }
 

@@ -15,6 +15,7 @@ export 'src/models/destination_category_response.dart';
 export 'src/models/destination_image_request.dart';
 export 'src/models/destination_image_response.dart';
 export 'src/models/destination_insert_request.dart';
+export 'src/models/destination_map_pin.dart';
 export 'src/models/destination_response.dart';
 export 'src/models/destination_review_insert_request.dart';
 export 'src/models/destination_review_response.dart';

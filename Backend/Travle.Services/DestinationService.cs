@@ -34,6 +34,11 @@ namespace Travle.Services
         private readonly RecommenderOptions _recommenderOptions;
         private readonly INotificationDispatcher _notifications;
         private readonly IValidator<DestinationRejectRequest> _rejectValidator;
+        private readonly IValidator<DestinationMapSearch> _mapSearchValidator;
+
+        /// <summary>Upper bound on markers returned by the map endpoint — keeps the payload light and the map
+        /// readable; when a wide view holds more, the best-rated survive the cap (see the ordering).</summary>
+        private const int MaxMapPins = 100;
 
         public DestinationService(
             TravleDbContext dbContext,
@@ -45,7 +50,8 @@ namespace Travle.Services
             INotificationDispatcher notifications,
             IValidator<DestinationInsertRequest> insertValidator,
             IValidator<DestinationUpdateRequest> updateValidator,
-            IValidator<DestinationRejectRequest> rejectValidator)
+            IValidator<DestinationRejectRequest> rejectValidator,
+            IValidator<DestinationMapSearch> mapSearchValidator)
             : base(dbContext, mapper, insertValidator, updateValidator)
         {
             _authorization = authorization;
@@ -54,6 +60,7 @@ namespace Travle.Services
             _recommenderOptions = recommenderOptions.Value;
             _notifications = notifications;
             _rejectValidator = rejectValidator;
+            _mapSearchValidator = mapSearchValidator;
         }
 
         protected override IQueryable<Destination> ApplyFilters(IQueryable<Destination> query, DestinationSearch? search)
@@ -84,7 +91,9 @@ namespace Travle.Services
 
             if (search.MinRating.HasValue)
             {
-                query = query.Where(d => d.AverageRating >= search.MinRating.Value);
+                // Match on the computed rating shown to users (suspended authors excluded), not the
+                // denormalized column, so the filter agrees with the rating on the card.
+                query = DestinationProjections.WhereMinRating(query, search.MinRating.Value);
             }
 
             if (search.Status.HasValue)
@@ -145,6 +154,45 @@ namespace Travle.Services
             }
 
             return await GetAllAsync(search);
+        }
+
+        public async Task<List<DestinationMapPinResponse>> GetMapPinsAsync(DestinationMapSearch search)
+        {
+            await _mapSearchValidator.ValidateAndThrowAsync(search);
+
+            // Only the published catalogue appears on the map, and only within the visible box — the bbox
+            // filter runs in SQL (never client-side). Validation guarantees the four edges are present.
+            var query = _dbContext.Destinations
+                .AsNoTracking()
+                .Where(d => d.Status == DestinationStatus.Approved)
+                .Where(d => d.Latitude >= search.South!.Value && d.Latitude <= search.North!.Value)
+                .Where(d => d.Longitude >= search.West!.Value && d.Longitude <= search.East!.Value);
+
+            if (search.CategoryIds is { Count: > 0 })
+            {
+                query = query.Where(d => search.CategoryIds.Contains(d.CategoryId));
+            }
+
+            // Filter on the computed rating (the value the marker shows), not the denormalized column, so a
+            // "3+ stars" filter never hides a card that displays 4.0 (see WhereMinRating).
+            if (search.MinRating.HasValue)
+            {
+                query = DestinationProjections.WhereMinRating(query, search.MinRating.Value);
+            }
+
+            // The map is a pan-heavy browse surface: recording a Search interaction on each bbox fetch would
+            // flood the recommender diary (every pan while a category is selected), so it records nothing —
+            // category interest is captured by the text/category Search screen instead.
+
+            // Cap the payload; when the box holds more than the cap, the best-rated markers survive it.
+            query = query
+                .OrderByDescending(d => d.AverageRating)
+                .ThenBy(d => d.Id)
+                .Take(MaxMapPins);
+
+            var items = await DestinationProjections.ProjectToMapPin(query).ToListAsync();
+            DestinationProjections.FinalizeMapPinThumbnails(items);
+            return items;
         }
 
         public async Task<PageResult<DestinationResponse>> GetMineAsync(DestinationSearch? search)
