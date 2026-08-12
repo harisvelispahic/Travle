@@ -1,10 +1,13 @@
 import 'dart:typed_data';
 
+import '../models/curator_destination_stat_row.dart';
+import '../models/curator_stats_response.dart';
 import '../models/dashboard_response.dart';
 import '../models/organizer_stats_response.dart';
 import '../models/popular_destinations_report.dart';
 import '../models/revenue_report.dart';
 import '../network/base_provider.dart';
+import '../network/search_result.dart';
 
 /// Reporting module (`/Reports`): the admin dashboard, the two report previews and
 /// their PDF downloads, and the organizer statistics screen. All read-only; the base
@@ -40,6 +43,24 @@ class ReportProvider extends BaseProvider<DashboardResponse> {
   Future<OrganizerStatsResponse> getOrganizerStats() async {
     final json = await getAction('organizer-stats') as Map<String, dynamic>;
     return OrganizerStatsResponse.fromJson(json);
+  }
+
+  /// The curator's own-destinations headline statistics (`GET /Reports/curator-stats`).
+  Future<CuratorStatsResponse> getCuratorStats() async {
+    final json = await getAction('curator-stats') as Map<String, dynamic>;
+    return CuratorStatsResponse.fromJson(json);
+  }
+
+  /// One page of the curator's per-destination breakdown, ordered by impact
+  /// (`GET /Reports/curator-stats/destinations`) — feeds the mobile infinite scroll.
+  Future<SearchResult<CuratorDestinationStatRow>> getCuratorDestinations({dynamic filter}) async {
+    final json =
+        await getAction('curator-stats/destinations', filter: filter) as Map<String, dynamic>;
+    return SearchResult<CuratorDestinationStatRow>()
+      ..totalCount = json['totalCount'] as int?
+      ..items = (json['items'] as List)
+          .map((e) => CuratorDestinationStatRow.fromJson(e as Map<String, dynamic>))
+          .toList();
   }
 
   /// The popular-destinations report PDF bytes (`GET /Reports/popular-destinations/pdf`).

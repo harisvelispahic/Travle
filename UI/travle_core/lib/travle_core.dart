@@ -9,6 +9,8 @@ export 'src/models/booking_response.dart';
 export 'src/models/booking_status_response.dart';
 export 'src/models/city_response.dart';
 export 'src/models/country_response.dart';
+export 'src/models/curator_destination_stat_row.dart';
+export 'src/models/curator_stats_response.dart';
 export 'src/models/dashboard_activity_item.dart';
 export 'src/models/dashboard_response.dart';
 export 'src/models/destination_category_response.dart';

@@ -7,6 +7,7 @@ import 'bookings/my_bookings_screen.dart';
 import 'profile/become_curator_screen.dart';
 import 'profile/become_organizer_screen.dart';
 import 'profile/change_password_screen.dart';
+import 'profile/curator_stats_screen.dart';
 import 'profile/edit_profile_screen.dart';
 import 'profile/my_destinations_screen.dart';
 
@@ -153,6 +154,18 @@ class ProfileScreen extends StatelessWidget {
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => const MyDestinationsScreen(),
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.insights_outlined),
+                  title: const Text('My statistics'),
+                  subtitle: const Text('Views, favorites & reach'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const CuratorStatsScreen(),
                     ),
                   ),
                 ),

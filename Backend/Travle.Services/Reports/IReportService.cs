@@ -32,5 +32,12 @@ namespace Travle.Services.Reports
 
         /// <summary>Statistics across the calling organizer's own tours (bookings, revenue, average rating).</summary>
         Task<OrganizerStatsResponse> GetOrganizerStatsAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>Headline impact statistics across the calling curator's own destinations (portfolio, engagement, reach).</summary>
+        Task<CuratorStatsResponse> GetCuratorStatsAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>The calling curator's per-destination breakdown, paginated and ordered by impact (for infinite scroll).</summary>
+        Task<PageResult<CuratorDestinationStatRow>> GetCuratorDestinationsAsync(
+            CuratorDestinationsSearch search, CancellationToken cancellationToken = default);
     }
 }

@@ -38,6 +38,11 @@ namespace Travle.Services.Reports
         private const int DefaultTopDestinations = 10;
         private const int MaxTopDestinations = 50;
 
+        // Paging bounds for the curator destinations breakdown, matching the read base's clamp so the
+        // list endpoint can never return an unbounded set.
+        private const int DefaultPageSize = 10;
+        private const int MaxPageSize = 100;
+
         private readonly TravleDbContext _dbContext;
         private readonly IAppAuthorizationService _authorization;
         private readonly PaymentOptions _paymentOptions;
@@ -344,6 +349,132 @@ namespace Travle.Services.Reports
                 Currency = _paymentOptions.Currency,
                 BookingsPerMonth = bookingsPerMonth,
                 Tours = tours
+            };
+        }
+
+        public async Task<CuratorStatsResponse> GetCuratorStatsAsync(CancellationToken cancellationToken = default)
+        {
+            _authorization.EnsureInRole(RoleNames.Curator);
+            var curatorId = _authorization.RequireUserId();
+
+            // The curator's own submissions (a small, bounded set): one projection feeds the portfolio
+            // counts and the total view count. Every other headline figure is a single DB aggregate scoped
+            // to this curator through a navigation, so nothing unbounded is ever folded in memory.
+            var portfolio = await _dbContext.Destinations.AsNoTracking()
+                .Where(d => d.SubmittedByUserId == curatorId)
+                .Select(d => new { d.Status, d.ViewCount })
+                .ToListAsync(cancellationToken);
+            int StatusCount(DestinationStatus status) => portfolio.Count(d => d.Status == status);
+
+            var totalFavorites = await _dbContext.Favorites.AsNoTracking()
+                .CountAsync(f => f.Destination!.SubmittedByUserId == curatorId, cancellationToken);
+
+            var reviews = _dbContext.DestinationReviews.AsNoTracking()
+                .Where(r => !r.IsRemoved && r.Destination.SubmittedByUserId == curatorId);
+            var reviewCount = await reviews.CountAsync(cancellationToken);
+            var averageRating = reviewCount == 0
+                ? 0d
+                : await reviews.AverageAsync(r => (double)r.Rating, cancellationToken);
+
+            // Distinct bookings whose tour visits at least one of the curator's destinations — a booking
+            // touching two of them still counts once — plus the travelers on those bookings.
+            var reachBookings = _dbContext.Bookings.AsNoTracking()
+                .Where(b => BookedStatusIds.Contains(b.StatusId)
+                            && b.TourSchedule.Tour.TourDestinations
+                                .Any(td => td.Destination.SubmittedByUserId == curatorId));
+            var totalBookings = await reachBookings.CountAsync(cancellationToken);
+            var totalTravelers = await reachBookings.SumAsync(b => (int?)b.NumberOfPeople, cancellationToken) ?? 0;
+
+            return new CuratorStatsResponse
+            {
+                TotalDestinations = portfolio.Count,
+                ApprovedDestinations = StatusCount(DestinationStatus.Approved),
+                PendingDestinations = StatusCount(DestinationStatus.Pending),
+                RejectedDestinations = StatusCount(DestinationStatus.Rejected),
+                TotalViews = portfolio.Sum(d => d.ViewCount),
+                TotalFavorites = totalFavorites,
+                AverageRating = averageRating,
+                ReviewCount = reviewCount,
+                TotalBookings = totalBookings,
+                TotalTravelers = totalTravelers
+            };
+        }
+
+        public async Task<PageResult<CuratorDestinationStatRow>> GetCuratorDestinationsAsync(
+            CuratorDestinationsSearch search, CancellationToken cancellationToken = default)
+        {
+            _authorization.EnsureInRole(RoleNames.Curator);
+            var curatorId = _authorization.RequireUserId();
+
+            var query = _dbContext.Destinations.AsNoTracking()
+                .Where(d => d.SubmittedByUserId == curatorId);
+
+            int? totalCount = null;
+            if (search.IncludeTotalCount ?? false)
+            {
+                totalCount = await query.CountAsync(cancellationToken);
+            }
+
+            var pageNumber = search.Page ?? 1;
+            if (pageNumber < 1)
+            {
+                pageNumber = 1;
+            }
+            var pageSize = search.PageSize ?? DefaultPageSize;
+            if (pageSize < 1)
+            {
+                pageSize = DefaultPageSize;
+            }
+            if (pageSize > MaxPageSize)
+            {
+                pageSize = MaxPageSize;
+            }
+
+            // Project each destination with its engagement and per-stop reach computed at the DB (correlated
+            // aggregates), ordered by impact so infinite scroll walks the most valuable submissions first.
+            // A per-destination booking count attributes a booking to every curator stop its tour visits, so
+            // these rows can sum above the headline's distinct-booking total — expected, and labelled so.
+            var pageRows = await query
+                .Select(d => new
+                {
+                    d.Name,
+                    d.Status,
+                    d.ViewCount,
+                    Favorites = _dbContext.Favorites.Count(f => f.DestinationId == d.Id),
+                    ReviewCount = d.Reviews.Count(r => !r.IsRemoved),
+                    RatingSum = d.Reviews.Where(r => !r.IsRemoved).Sum(r => (double?)r.Rating) ?? 0d,
+                    Bookings = _dbContext.Bookings.Count(b => BookedStatusIds.Contains(b.StatusId)
+                        && b.TourSchedule.Tour.TourDestinations.Any(td => td.DestinationId == d.Id)),
+                    Travelers = _dbContext.Bookings
+                        .Where(b => BookedStatusIds.Contains(b.StatusId)
+                            && b.TourSchedule.Tour.TourDestinations.Any(td => td.DestinationId == d.Id))
+                        .Sum(b => (int?)b.NumberOfPeople) ?? 0
+                })
+                .OrderByDescending(x => x.Bookings)
+                .ThenByDescending(x => x.ViewCount)
+                .ThenBy(x => x.Name)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync(cancellationToken);
+
+            var rows = pageRows
+                .Select(x => new CuratorDestinationStatRow
+                {
+                    DestinationName = x.Name,
+                    Status = x.Status.ToString(),
+                    Views = x.ViewCount,
+                    Favorites = x.Favorites,
+                    AverageRating = x.ReviewCount == 0 ? 0d : x.RatingSum / x.ReviewCount,
+                    ReviewCount = x.ReviewCount,
+                    Bookings = x.Bookings,
+                    Travelers = x.Travelers
+                })
+                .ToList();
+
+            return new PageResult<CuratorDestinationStatRow>
+            {
+                Items = rows,
+                TotalCount = totalCount
             };
         }
 

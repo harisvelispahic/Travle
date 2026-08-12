@@ -73,4 +73,18 @@ public class ReportsController : ControllerBase
     [HttpGet("organizer-stats")]
     public async Task<ActionResult<OrganizerStatsResponse>> OrganizerStats(CancellationToken cancellationToken)
         => Ok(await _service.GetOrganizerStatsAsync(cancellationToken));
+
+    /// <summary>Curator: headline impact statistics across the caller's own destinations (scoped server-side to the JWT user).</summary>
+    [Authorize(Policy = AuthPolicies.CuratorOnly)]
+    [HttpGet("curator-stats")]
+    public async Task<ActionResult<CuratorStatsResponse>> CuratorStats(CancellationToken cancellationToken)
+        => Ok(await _service.GetCuratorStatsAsync(cancellationToken));
+
+    /// <summary>Curator: the caller's per-destination breakdown, paginated and ordered by impact (feeds the mobile infinite scroll).</summary>
+    [Authorize(Policy = AuthPolicies.CuratorOnly)]
+    [HttpGet("curator-stats/destinations")]
+    public async Task<ActionResult<PageResult<CuratorDestinationStatRow>>> CuratorDestinations(
+        [FromQuery] CuratorDestinationsSearch? search, CancellationToken cancellationToken)
+        => Ok(await _service.GetCuratorDestinationsAsync(
+            search ?? new CuratorDestinationsSearch(), cancellationToken));
 }
