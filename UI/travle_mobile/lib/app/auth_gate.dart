@@ -32,6 +32,12 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> {
   StreamSubscription<NotificationResponse>? _pushSub;
   bool _sessionEndedShowing = false;
+  bool _handlingPush = false;
+
+  /// Bumped to ask the shell to return to the Home tab — used after a role loss
+  /// so no now-forbidden context (and the stale profile menu it belonged to) is
+  /// left showing.
+  final ValueNotifier<int> _homeReset = ValueNotifier<int>(0);
 
   @override
   void initState() {
@@ -48,17 +54,53 @@ class _AuthGateState extends State<AuthGate> {
       AuthProvider.onSessionEnded = null;
     }
     _pushSub?.cancel();
+    _homeReset.dispose();
     super.dispose();
   }
 
   Future<void> _onPush(NotificationResponse notification) async {
-    if (!sessionAffectingNotificationTypes.contains(notification.type)) return;
-    // Our access token's stamp was just rolled. A silent refresh succeeds only if the
-    // refresh token was kept (seamless — new permissions apply); otherwise end the session.
-    final refreshed = await context.read<AuthProvider>().tryRefresh();
-    if (refreshed || !mounted) return;
-    await _handleSessionEnded(
-        sessionEndedReason(notification.type, notification.text));
+    if (_handlingPush ||
+        !sessionAffectingNotificationTypes.contains(notification.type)) {
+      return;
+    }
+    _handlingPush = true;
+    try {
+      final auth = context.read<AuthProvider>();
+      final before = auth.roles.toSet();
+      // Our access token's stamp was just rolled. A silent refresh succeeds unless the
+      // account was suspended / its refresh dropped, in which case we end the session.
+      final refreshed = await auth.tryRefresh();
+      if (!mounted) return;
+      if (!refreshed) {
+        await _handleSessionEnded(
+            sessionEndedReason(notification.type, notification.text));
+        return;
+      }
+      // Seamless: the token's claims changed. Re-fetch the cached profile so its roles
+      // (which gate the profile menu — e.g. the "My destinations" item) match the new
+      // token; otherwise a revoked role's entry would linger on the profile tab.
+      await auth.refreshCurrentUser();
+      if (!mounted) return;
+      // Inform the user only about a role change that actually means something on this
+      // (mobile) device — a desktop-only grant stays silent.
+      final after = auth.roles.toSet();
+      final gained =
+          after.difference(before).where(AppRole.mobile.contains).toList();
+      final lost =
+          before.difference(after).where(AppRole.mobile.contains).toList();
+      if (gained.isNotEmpty) {
+        await showRoleChangeDialog(context, role: gained.first, gained: true);
+      } else if (lost.isNotEmpty) {
+        // Pop any screen the lost role gated, then return to the Home tab so the user
+        // isn't left in a now-forbidden context (and the stale profile menu is off-screen).
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        _homeReset.value++;
+        if (!mounted) return;
+        await showRoleChangeDialog(context, role: lost.first, gained: false);
+      }
+    } finally {
+      _handlingPush = false;
+    }
   }
 
   Future<void> _handleSessionEnded(String message) async {
@@ -81,6 +123,6 @@ class _AuthGateState extends State<AuthGate> {
     // traveler to onboarding before the shell.
     if (!auth.sessionResolved) return const AppSplash();
     if (auth.onboardingActive) return const OnboardingScreen();
-    return const BottomNavShell();
+    return BottomNavShell(homeReset: _homeReset);
   }
 }

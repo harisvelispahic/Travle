@@ -265,6 +265,32 @@ class AuthProvider extends ChangeNotifier {
     _clearSession();
   }
 
+  /// Re-fetches the signed-in user's profile after a silent token refresh (e.g. a
+  /// role grant/revoke that kept the session) so cached data — notably
+  /// [UserResponse.roles], which gates the profile menu — matches the new token.
+  /// Best-effort: on a fetch failure the current profile is left in place. Does not
+  /// touch the onboarding latch or the session-resolved flag, so a mid-session
+  /// refresh can't re-trigger onboarding routing.
+  Future<void> refreshCurrentUser() async {
+    final me = await _fetchMe();
+    if (me != null) {
+      _currentUser = me;
+      notifyListeners();
+    }
+  }
+
+  /// Ends the session immediately after the signed-in user changes their **own**
+  /// password. The server has already invalidated every token (rolled the security
+  /// stamp and dropped all refresh tokens), so rather than letting the client linger
+  /// with a dead token until its next request 401s, we drop the local session now and
+  /// surface the standard "please sign in again" prompt via [onSessionEnded]. The
+  /// assertive client-side counterpart to the server-side session wipe.
+  Future<void> endSessionAfterPasswordChange() async {
+    final handler = onSessionEnded;
+    _clearSession();
+    await handler?.call('Your password has been changed. Please sign in again.');
+  }
+
   /// Called when the user completes onboarding (picked interests). Updates the
   /// profile and clears the latch so the gate advances to the shell.
   void finishOnboarding(UserResponse user) {

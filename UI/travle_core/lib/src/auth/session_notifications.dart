@@ -9,6 +9,7 @@ const Set<String> sessionAffectingNotificationTypes = {
   'RoleGranted',
   'RoleRevoked',
   'RoleApplicationApproved',
+  'PasswordChanged',
 };
 
 /// A human "you need to sign in again" reason for a session-affecting notification,
@@ -17,6 +18,12 @@ String sessionEndedReason(String type, String text) {
   final trimmed = text.trim();
   if (type == 'AccountSuspended') {
     return trimmed.isNotEmpty ? trimmed : 'Your account has been suspended.';
+  }
+  if (type == 'PasswordChanged') {
+    // Password change/reset dropped every session — the text explains, so surface it as-is.
+    return trimmed.isNotEmpty
+        ? '$trimmed Please sign in again.'
+        : 'Your password was changed. Please sign in again.';
   }
   // A role was granted / removed / an application approved — the text is specific;
   // append the call to action.

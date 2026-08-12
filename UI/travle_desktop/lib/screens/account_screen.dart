@@ -547,8 +547,8 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
     setState(() => _error = null);
     if (!_formKey.currentState!.validate()) return;
 
+    final auth = context.read<AuthProvider>();
     final userProvider = context.read<UserProvider>();
-    final navigator = Navigator.of(context);
     setState(() => _busy = true);
     try {
       await userProvider.changePassword(
@@ -559,8 +559,9 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
         ),
       );
       if (!mounted) return;
-      AppSnackbars.success(context, 'Your password has been changed.');
-      navigator.pop();
+      // The change invalidated every session server-side; drop this device's now-dead
+      // session immediately (the AuthGate pops this dialog and shows "sign in again").
+      await auth.endSessionAfterPasswordChange();
     } on ApiClientException catch (e) {
       if (!mounted) return;
       setState(() => _error = e.message);

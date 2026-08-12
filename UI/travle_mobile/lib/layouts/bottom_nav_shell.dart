@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:travle_ui/travle_ui.dart';
 
@@ -17,9 +18,15 @@ import '../widgets/notification_bell.dart';
 /// [_searchFocusRequests].
 ///
 /// Session-affecting live pushes (a role grant/revoke, suspension) are handled one
-/// level up by the AuthGate, which owns the silent-refresh / re-login flow.
+/// level up by the AuthGate, which owns the silent-refresh / re-login flow. After a
+/// role loss it bumps [homeReset] so this shell returns to the Home tab, keeping the
+/// user out of a now-forbidden context.
 class BottomNavShell extends StatefulWidget {
-  const BottomNavShell({super.key});
+  const BottomNavShell({super.key, this.homeReset});
+
+  /// Bumped by the AuthGate to force the shell back to the Home tab (e.g. after a
+  /// role revoke). Null in contexts that never need to command a reset.
+  final ValueListenable<int>? homeReset;
 
   @override
   State<BottomNavShell> createState() => _BottomNavShellState();
@@ -54,6 +61,17 @@ class _BottomNavShellState extends State<BottomNavShell> {
     const ProfileScreen(),
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    widget.homeReset?.addListener(_resetToHome);
+  }
+
+  /// Returns to the Home tab when the AuthGate signals a role loss.
+  void _resetToHome() {
+    if (mounted && _index != 0) setState(() => _index = 0);
+  }
+
   void _openSearch() {
     setState(() => _index = 1);
     _searchFocusRequests.value++;
@@ -68,6 +86,7 @@ class _BottomNavShellState extends State<BottomNavShell> {
 
   @override
   void dispose() {
+    widget.homeReset?.removeListener(_resetToHome);
     _searchFocusRequests.dispose();
     _favoritesReloadRequests.dispose();
     super.dispose();

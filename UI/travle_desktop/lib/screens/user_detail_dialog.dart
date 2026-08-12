@@ -129,7 +129,7 @@ class _UserDetailDialogState extends State<_UserDetailDialog> {
       title: 'Remove role',
       message: isSelf
           ? 'Remove the $roleName role from your own account? Your access updates immediately.'
-          : 'Remove the $roleName role from $who? They will be signed out and must sign in again.',
+          : 'Remove the $roleName role from $who? They lose access to its features immediately.',
       confirmLabel: 'Remove',
       destructive: true,
     );

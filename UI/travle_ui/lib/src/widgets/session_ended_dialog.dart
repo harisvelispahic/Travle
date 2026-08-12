@@ -27,3 +27,30 @@ Future<void> showSessionEndedDialog(
     ),
   );
 }
+
+/// Informational dialog for a role the user can use on **this device** being
+/// granted or removed. The change has already applied (a silent token refresh —
+/// no logout); this only tells them, so its single action just dismisses it. A
+/// role change that does nothing on this device shows no dialog at all.
+Future<void> showRoleChangeDialog(
+  BuildContext context, {
+  required String role,
+  required bool gained,
+}) {
+  return showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      icon: Icon(gained ? Icons.verified_user_outlined : Icons.info_outline),
+      title: Text(gained ? "You're now a $role" : "You're no longer a $role"),
+      content: Text(gained
+          ? 'Your $role features are ready to use.'
+          : 'Your $role features are no longer available.'),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('OK'),
+        ),
+      ],
+    ),
+  );
+}

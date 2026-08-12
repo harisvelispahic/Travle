@@ -3,6 +3,7 @@ using Travle.Model.Exceptions;
 using Travle.Model.Messaging;
 using Travle.Services.Database;
 using Travle.Services.Messaging;
+using Travle.Services.Notifications;
 using Travle.Services.Security;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
@@ -24,6 +25,7 @@ namespace Travle.Services
         private readonly ICryptoService _cryptoService;
         private readonly IEmailPublisher _emailPublisher;
         private readonly IUserSecurityStore _securityStore;
+        private readonly INotificationDispatcher _notifications;
         private readonly IValidator<ForgotPasswordRequest> _forgotValidator;
         private readonly IValidator<ResetPasswordRequest> _resetValidator;
         private readonly ILogger<PasswordResetService> _logger;
@@ -33,6 +35,7 @@ namespace Travle.Services
             ICryptoService cryptoService,
             IEmailPublisher emailPublisher,
             IUserSecurityStore securityStore,
+            INotificationDispatcher notifications,
             IValidator<ForgotPasswordRequest> forgotValidator,
             IValidator<ResetPasswordRequest> resetValidator,
             ILogger<PasswordResetService> logger)
@@ -41,6 +44,7 @@ namespace Travle.Services
             _cryptoService = cryptoService;
             _emailPublisher = emailPublisher;
             _securityStore = securityStore;
+            _notifications = notifications;
             _forgotValidator = forgotValidator;
             _resetValidator = resetValidator;
             _logger = logger;
@@ -125,6 +129,14 @@ namespace Travle.Services
             // access tokens on their next request) and drop all refresh tokens.
             user.SecurityStamp = Guid.NewGuid().ToString("N");
             _dbContext.RefreshTokens.RemoveRange(_dbContext.RefreshTokens.Where(rt => rt.UserId == user.Id));
+
+            // Session-affecting push: any device still logged in on the old password is force-logged-out
+            // immediately (its silent refresh fails — refresh tokens are gone — and it routes to login),
+            // the same mechanism as a suspension. Flushed by the global filter once this action commits.
+            _notifications.Enqueue(user.Id, NotificationType.PasswordChanged,
+                "Password changed",
+                "Your password was reset. For your security, you've been signed out on all devices.",
+                relatedEntityId: null, alsoEmail: true);
 
             await _dbContext.SaveChangesAsync();
             _securityStore.Invalidate(user.Id);

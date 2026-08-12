@@ -60,6 +60,8 @@ IconData notificationIcon(String type) {
       return Icons.event_busy_outlined;
     case 'AccountSuspended':
       return Icons.gpp_bad_outlined;
+    case 'PasswordChanged':
+      return Icons.lock_reset;
     default:
       return Icons.notifications_outlined;
   }

@@ -216,13 +216,11 @@ namespace Travle.Services
                 _dbContext.UserRoles.Add(new UserRole { UserId = application.UserId, RoleId = application.RoleId });
             }
 
-            // Force the applicant to re-authenticate so their next token carries the new role: bump the
-            // security stamp (rejects their current access token on its next request) and revoke their
-            // refresh tokens, so the failed refresh logs them out and re-login issues a JWT with the role.
+            // Bump the applicant's security stamp so their current access token is rejected on its next
+            // request; the client then silently refreshes to a token carrying the new role (refresh tokens
+            // are kept — the grant applies seamlessly, no forced logout). See docs/auth-token-invalidation.md.
             var applicant = await _dbContext.Users.FirstAsync(u => u.Id == application.UserId);
             applicant.SecurityStamp = Guid.NewGuid().ToString("N");
-            _dbContext.RefreshTokens.RemoveRange(
-                _dbContext.RefreshTokens.Where(rt => rt.UserId == application.UserId));
 
             var roleName = await _dbContext.Roles
                 .Where(r => r.Id == application.RoleId)

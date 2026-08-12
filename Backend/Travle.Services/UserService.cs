@@ -262,7 +262,6 @@ namespace Travle.Services
         public async Task<UserResponse> GrantRoleAsync(int id, UserRoleGrantRequest request)
         {
             _authorization.EnsureInRole(RoleNames.Admin);
-            var actorId = _authorization.RequireUserId();
 
             await _roleGrantValidator.ValidateAndThrowAsync(request);
 
@@ -281,22 +280,18 @@ namespace Travle.Services
 
             _dbContext.UserRoles.Add(new UserRole { UserId = id, RoleId = role.Id });
 
-            // Bump the stamp so the current access token is rejected on its next request and picks up the
-            // new role. Other users are also fully re-logged-in (drop refresh tokens); an admin granting
-            // themselves a non-admin role keeps their refresh tokens so their client silently refreshes
-            // to the new claims without a visible logout.
+            // Bump the stamp so the current access token is rejected on its next request; the client then
+            // silently refreshes to a token carrying the new role. Refresh tokens are KEPT — a grant never
+            // forces a logout, so the new access appears seamlessly where it's usable and does nothing where
+            // it isn't (e.g. an Organizer role on a phone). See docs/auth-token-invalidation.md.
             user.SecurityStamp = NewSecurityStamp();
-            if (!(id == actorId && role.Name != RoleNames.Admin))
-            {
-                _dbContext.RefreshTokens.RemoveRange(_dbContext.RefreshTokens.Where(rt => rt.UserId == id));
-            }
 
             _notifications.Enqueue(id, NotificationType.RoleGranted,
                 "Role granted",
                 $"You have been granted the {role.Name} role.",
                 relatedEntityId: null, alsoEmail: true);
 
-            // Role grant + stamp bump + token revoke + notification in one SaveChanges = one implicit transaction.
+            // Role grant + stamp bump + notification in one SaveChanges = one implicit transaction.
             await _dbContext.SaveChangesAsync();
             _securityStore.Invalidate(id);
 
@@ -333,15 +328,10 @@ namespace Travle.Services
 
             _dbContext.UserRoles.Remove(userRole);
 
-            // Same rationale as granting: bump the stamp so the current access token is rejected and re-minted
-            // without the role. Other users are fully re-logged-in (drop refresh tokens); an admin removing a
-            // non-admin role from their own account keeps their refresh tokens so their client silently
-            // refreshes to the reduced claims without a visible logout.
+            // Bump the stamp so the current access token is rejected and re-minted without the role. Refresh
+            // tokens are KEPT — a revoke downgrades the session seamlessly (the client silently refreshes to
+            // the reduced claims) rather than forcing a logout. Suspension, not revoke, is the hard kick.
             user.SecurityStamp = NewSecurityStamp();
-            if (!(id == adminId && roleName != RoleNames.Admin))
-            {
-                _dbContext.RefreshTokens.RemoveRange(_dbContext.RefreshTokens.Where(rt => rt.UserId == id));
-            }
 
             _notifications.Enqueue(id, NotificationType.RoleRevoked,
                 "Role removed",
@@ -418,6 +408,14 @@ namespace Travle.Services
             // drop the refresh tokens, so the user signs in again with the new password.
             user.SecurityStamp = NewSecurityStamp();
             _dbContext.RefreshTokens.RemoveRange(_dbContext.RefreshTokens.Where(rt => rt.UserId == userId));
+
+            // Session-affecting push: like a suspension, this force-logs-out every connected device
+            // immediately (the client silent-refresh fails — refresh tokens are gone — and routes to login)
+            // rather than waiting for each device's next request. The row + stamp bump commit together.
+            _notifications.Enqueue(userId, NotificationType.PasswordChanged,
+                "Password changed",
+                "Your password was changed. For your security, you've been signed out on all devices.",
+                relatedEntityId: null, alsoEmail: true);
 
             await _dbContext.SaveChangesAsync();
             _securityStore.Invalidate(userId);

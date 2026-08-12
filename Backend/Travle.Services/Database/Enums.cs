@@ -105,7 +105,14 @@ namespace Travle.Services.Database
         RoleGranted = 21,
 
         /// <summary>A user who had a role removed by an admin.</summary>
-        RoleRevoked = 22
+        RoleRevoked = 22,
+
+        /// <summary>
+        /// The user's password was changed or reset. Session-affecting: every session is invalidated
+        /// server-side (stamp rolled + refresh tokens dropped), and this notification drives the client's
+        /// immediate force-logout on all connected devices (same mechanism as <see cref="AccountSuspended"/>).
+        /// </summary>
+        PasswordChanged = 23
     }
 
     /// <summary>
