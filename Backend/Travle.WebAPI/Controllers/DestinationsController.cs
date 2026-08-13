@@ -47,6 +47,13 @@ public class DestinationsController
     public async Task<ActionResult<List<DestinationMapPinResponse>>> Map([FromQuery] DestinationMapSearch search)
         => Ok(await _service.GetMapPinsAsync(search));
 
+    // Search-autocomplete typeahead over the approved catalogue: a capped, best-rated-first list of name
+    // matches for the partial term (accent-aware; a too-short term returns an empty list). Records no
+    // interaction — the real Search signal fires when the full search is submitted from a suggestion.
+    [HttpGet("suggest")]
+    public async Task<ActionResult<List<DestinationSuggestionResponse>>> Suggest([FromQuery] string? text)
+        => Ok(await _service.GetSuggestionsAsync(text));
+
     // The current curator/organizer's own submissions, any status.
     [HttpGet("mine")]
     public async Task<ActionResult<PageResult<DestinationResponse>>> GetMine([FromQuery] DestinationSearch? search)

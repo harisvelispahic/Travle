@@ -115,5 +115,20 @@ namespace Travle.Services.Projections
                 item.PrimaryThumbnailContentType = item.PrimaryThumbnail is { Length: > 0 } ? ThumbnailContentType : null;
             }
         }
+
+        /// <summary>
+        /// The minimal Destination → <see cref="DestinationSuggestionResponse"/> projection for the
+        /// search-autocomplete endpoint: only the id, name, and the city/category shown as secondary context.
+        /// No thumbnail bytes travel here — the typeahead fires on every debounced keystroke, so it stays as
+        /// light as a text row can be.
+        /// </summary>
+        public static IQueryable<DestinationSuggestionResponse> ProjectToSuggestion(IQueryable<Destination> query)
+            => query.Select(d => new DestinationSuggestionResponse
+            {
+                Id = d.Id,
+                Name = d.Name,
+                CityName = d.City.Name,
+                CategoryName = d.Category.Name
+            });
     }
 }

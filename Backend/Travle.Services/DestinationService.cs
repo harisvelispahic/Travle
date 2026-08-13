@@ -40,6 +40,15 @@ namespace Travle.Services
         /// readable; when a wide view holds more, the best-rated survive the cap (see the ordering).</summary>
         private const int MaxMapPins = 100;
 
+        /// <summary>Shortest term the autocomplete acts on — a 1-char probe matches nearly everything, so a
+        /// shorter term returns nothing (the mobile client debounces to the same floor).</summary>
+        private const int MinSuggestionChars = 2;
+
+        /// <summary>Upper bound on autocomplete rows — a short, scannable typeahead list, best-rated first.
+        /// It stays capped (the spec calls for "capped suggestions"); the full match set is one submit away
+        /// on the paginated results list.</summary>
+        private const int MaxSuggestions = 12;
+
         public DestinationService(
             TravleDbContext dbContext,
             MapsterMapper.IMapper mapper,
@@ -193,6 +202,31 @@ namespace Travle.Services
             var items = await DestinationProjections.ProjectToMapPin(query).ToListAsync();
             DestinationProjections.FinalizeMapPinThumbnails(items);
             return items;
+        }
+
+        public async Task<List<DestinationSuggestionResponse>> GetSuggestionsAsync(string? text)
+        {
+            var term = text?.Trim();
+            // A typeahead probes on every keystroke; a term below the floor isn't a client error, it's just
+            // too broad to suggest on, so hand back an empty list (never a validation exception).
+            if (string.IsNullOrEmpty(term) || term.Length < MinSuggestionChars)
+            {
+                return new List<DestinationSuggestionResponse>();
+            }
+
+            // Approved-only, accent-aware name match (WhereContains: "Poc" matches "Počitelj"), best-rated
+            // first, capped. Records no interaction — the genuine Search signal is written when the user
+            // submits the full search from a picked suggestion.
+            var query = _dbContext.Destinations
+                .AsNoTracking()
+                .Where(d => d.Status == DestinationStatus.Approved)
+                .WhereContains(term, d => d.Name)
+                .OrderByDescending(d => d.AverageRating)
+                .ThenBy(d => d.Name)
+                .ThenBy(d => d.Id)
+                .Take(MaxSuggestions);
+
+            return await DestinationProjections.ProjectToSuggestion(query).ToListAsync();
         }
 
         public async Task<PageResult<DestinationResponse>> GetMineAsync(DestinationSearch? search)

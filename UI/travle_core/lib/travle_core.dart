@@ -21,6 +21,7 @@ export 'src/models/destination_map_pin.dart';
 export 'src/models/destination_response.dart';
 export 'src/models/destination_review_insert_request.dart';
 export 'src/models/destination_review_response.dart';
+export 'src/models/destination_suggestion.dart';
 export 'src/models/destination_update_request.dart';
 export 'src/models/favorite_toggle_response.dart';
 export 'src/models/forgot_password_request.dart';

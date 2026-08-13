@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import '../models/destination_insert_request.dart';
 import '../models/destination_map_pin.dart';
 import '../models/destination_response.dart';
+import '../models/destination_suggestion.dart';
 import '../models/destination_update_request.dart';
 import '../models/recommendation_item.dart';
 import '../network/base_provider.dart';
@@ -113,6 +114,18 @@ class DestinationProvider extends BaseProvider<DestinationResponse> {
     }) as List;
     return json
         .map((e) => DestinationMapPin.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Search-autocomplete typeahead (`GET /Destinations/suggest`): a capped,
+  /// best-rated-first list of approved-catalogue name matches for the partial
+  /// [text] (accent-aware server-side, so "Poc" surfaces "Počitelj"). A too-short
+  /// term returns an empty list. Records no interaction — the real Search signal is
+  /// written when the user submits the full search from a picked suggestion.
+  Future<List<DestinationSuggestion>> suggest(String text) async {
+    final json = await getAction('suggest', filter: {'text': text}) as List;
+    return json
+        .map((e) => DestinationSuggestion.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 }

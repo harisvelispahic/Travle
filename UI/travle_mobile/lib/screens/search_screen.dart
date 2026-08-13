@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
@@ -24,9 +26,23 @@ class SearchScreen extends StatefulWidget {
 class _SearchScreenState extends State<SearchScreen> {
   static const int _pageSize = 10;
 
+  /// Autocomplete: fire only once the term is worth suggesting on (a 1-char probe
+  /// matches nearly everything; the server enforces the same floor), and wait for a
+  /// pause in typing before hitting the network.
+  static const int _minSuggestChars = 2;
+  static const int _suggestDebounceMs = 300;
+
   final TextEditingController _textController = TextEditingController();
   final FocusNode _textFocus = FocusNode();
   final ScrollController _scrollController = ScrollController();
+
+  // Autocomplete state.
+  Timer? _suggestDebounce;
+  List<DestinationSuggestion> _suggestions = const [];
+  bool _suggestLoading = false;
+  // Bumped on every keystroke / submit so a slow, out-of-order suggestion response
+  // is discarded (the same request-id guard the map browse screen uses).
+  int _suggestSeq = 0;
 
   // Active filters.
   String _query = '';
@@ -53,6 +69,9 @@ class _SearchScreenState extends State<SearchScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    // Rebuild when focus changes so the suggestions overlay shows/hides as the field
+    // gains or loses focus.
+    _textFocus.addListener(_onFocusChanged);
     widget.focusRequests?.addListener(_onFocusRequested);
     // Show something immediately: the top-rated catalogue with no filters.
     _runSearch();
@@ -60,12 +79,19 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   void dispose() {
+    _suggestDebounce?.cancel();
     widget.focusRequests?.removeListener(_onFocusRequested);
+    _textFocus.removeListener(_onFocusChanged);
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _textController.dispose();
     _textFocus.dispose();
     super.dispose();
+  }
+
+  void _onFocusChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   void _onFocusRequested() {
@@ -147,8 +173,78 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   void _submitQuery(String value) {
-    setState(() => _query = value.trim());
+    _suggestDebounce?.cancel();
+    _suggestSeq++; // discard any in-flight suggestion response
+    setState(() {
+      _query = value.trim();
+      _suggestions = const [];
+      _suggestLoading = false;
+    });
     _textFocus.unfocus();
+    _runSearch();
+  }
+
+  /// Whether the live-suggestions panel takes over the results area: the field is
+  /// focused and the term has reached the minimum length. Below that we keep the
+  /// last result list in place.
+  bool get _showSuggestions =>
+      _textFocus.hasFocus && _textController.text.trim().length >= _minSuggestChars;
+
+  /// Debounced typeahead: every keystroke invalidates older fetches; a term below the
+  /// floor clears the panel; a qualifying term shows the spinner immediately and hits
+  /// the network after a pause in typing.
+  void _onQueryChanged(String value) {
+    _suggestDebounce?.cancel();
+    final term = value.trim();
+    final seq = ++_suggestSeq;
+    if (term.length < _minSuggestChars) {
+      setState(() {
+        _suggestions = const [];
+        _suggestLoading = false;
+      });
+      return;
+    }
+    setState(() => _suggestLoading = true); // spinner during the debounce + fetch
+    _suggestDebounce = Timer(
+      const Duration(milliseconds: _suggestDebounceMs),
+      () => _fetchSuggestions(term, seq),
+    );
+  }
+
+  Future<void> _fetchSuggestions(String term, int seq) async {
+    final provider = context.read<DestinationProvider>();
+    try {
+      final items = await provider.suggest(term);
+      if (!mounted || seq != _suggestSeq) return; // a newer keystroke superseded this
+      setState(() {
+        _suggestions = items;
+        _suggestLoading = false;
+      });
+    } on ApiClientException {
+      if (!mounted || seq != _suggestSeq) return;
+      // A typeahead shouldn't shout: on error drop the suggestions quietly and let the
+      // user submit the term to see the full (error-reporting) search.
+      setState(() {
+        _suggestions = const [];
+        _suggestLoading = false;
+      });
+    }
+  }
+
+  void _onSuggestionTap(DestinationSuggestion suggestion) {
+    _suggestDebounce?.cancel();
+    _suggestSeq++;
+    _textController.text = suggestion.name;
+    _textController.selection =
+        TextSelection.collapsed(offset: suggestion.name.length);
+    setState(() {
+      _query = suggestion.name;
+      _suggestions = const [];
+      _suggestLoading = false;
+    });
+    _textFocus.unfocus();
+    // Runs the full search (applying any active filters) — this is where the real
+    // Search interaction is recorded server-side.
     _runSearch();
   }
 
@@ -296,7 +392,9 @@ class _SearchScreenState extends State<SearchScreen> {
         _buildSearchField(),
         _buildFilterRow(),
         _buildResultCount(),
-        Expanded(child: _buildResults()),
+        Expanded(
+          child: _showSuggestions ? _buildSuggestions() : _buildResults(),
+        ),
       ],
     );
   }
@@ -324,7 +422,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   },
                 ),
         ),
-        onChanged: (_) => setState(() {}), // toggles the clear button
+        onChanged: _onQueryChanged, // toggles the clear button + drives suggestions
       ),
     );
   }
@@ -360,7 +458,8 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildResultCount() {
-    if (!_hasSearched || _loading || _error != null) {
+    // The count describes the result list; hide it while the suggestions panel is up.
+    if (_showSuggestions || !_hasSearched || _loading || _error != null) {
       return const SizedBox(height: TravleTokens.space8);
     }
     final theme = Theme.of(context);
@@ -378,6 +477,63 @@ class _SearchScreenState extends State<SearchScreen> {
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
       ),
+    );
+  }
+
+  Widget _buildSuggestions() {
+    final theme = Theme.of(context);
+
+    if (_suggestLoading && _suggestions.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(TravleTokens.space24),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (_suggestions.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(TravleTokens.space24),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: Text(
+            'No matching destinations',
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ),
+      );
+    }
+
+    // Keep the keyboard up (and thus the field focused) while the list is scrolled —
+    // dismissing it on drag would drop focus and swap this panel out for the results
+    // list mid-gesture, so the list would appear to snap back instead of scrolling.
+    return ListView.separated(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.manual,
+      padding: const EdgeInsets.symmetric(vertical: TravleTokens.space8),
+      itemCount: _suggestions.length,
+      separatorBuilder: (_, _) => const Divider(height: 1),
+      itemBuilder: (_, i) {
+        final suggestion = _suggestions[i];
+        final subtitle = [suggestion.cityName, suggestion.categoryName]
+            .whereType<String>()
+            .where((e) => e.isNotEmpty)
+            .join(' · ');
+        return ListTile(
+          leading: const Icon(Icons.search),
+          title: Text(
+            suggestion.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: subtitle.isEmpty
+              ? null
+              : Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+          onTap: () => _onSuggestionTap(suggestion),
+        );
+      },
     );
   }
 
