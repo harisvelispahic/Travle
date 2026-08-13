@@ -50,8 +50,6 @@ namespace Travle.Services.Database
             // Per-entity IEntityTypeConfiguration<T> classes in Database/Configurations (auth entities
             // included — User/Role/UserRole/RefreshToken now have their own configuration classes).
             modelBuilder.ApplyConfigurationsFromAssembly(typeof(TravleDbContext).Assembly);
-
-            CreateSeed(modelBuilder);
         }
 
         public override int SaveChanges(bool acceptAllChangesOnSuccess)

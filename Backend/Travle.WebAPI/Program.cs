@@ -6,6 +6,7 @@ using Travle.Services;
 using Travle.Services.Authorization;
 using Travle.Services.BookingStateMachine;
 using Travle.Services.Database;
+using Travle.Services.Database.Seeding;
 using Travle.Services.Imaging;
 using Travle.Services.Messaging;
 using Travle.Services.Notifications;
@@ -348,13 +349,16 @@ var app = builder.Build();
 // starts, so retry transient connection failures with a short backoff before giving up.
 await ApplyMigrationsAsync(app);
 
+// Comprehensive runtime seed: normalises the reference regions into the final taxonomy, expands the full
+// geographic + classification reference set, and generates the bulk demo content (extra users, the
+// city-by-city destination catalogue, tours + schedules, bookings/payments/refunds, reviews, favourites,
+// recommender interactions, notifications, role applications). Idempotent; runs before image seeding so
+// every new destination is picked up for a placeholder image below.
+await SeedBulkDataAsync(app);
+
 // Runtime seed for heavy data the migration seed can't carry as HasData: give every seeded destination
 // a generated placeholder image + thumbnail so lists/details have images on first run (course §E).
 await SeedDestinationImagesAsync(app);
-
-// Runtime seed of historical bookings/payments spread across the trailing year, so the Phase 11 reports
-// and the bookings-per-month chart have real, non-trivial data. Idempotent (runs once).
-await SeedHistoricalActivityAsync(app);
 
 // Must be the first middleware so it wraps the entire pipeline: any exception thrown downstream
 // is routed through the registered IExceptionHandler chain.
@@ -411,6 +415,17 @@ static async Task ApplyMigrationsAsync(WebApplication app)
     }
 }
 
+// Comprehensive runtime seed (see BulkSeeder): reference-data expansion + bulk demo content. Runs once on
+// a fresh database in its own scope, inside a transaction, computing all dates relative to "now"; guarded
+// so subsequent boots are a no-op.
+static async Task SeedBulkDataAsync(WebApplication app)
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<TravleDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    await BulkSeeder.SeedAsync(dbContext, logger);
+}
+
 // Idempotent runtime seed: every destination that has no image gets a generated placeholder image plus
 // its thumbnail. Binary blobs can't ride along in HasData, so this runs once on startup after migration;
 // subsequent runs find images already present and do nothing.
@@ -448,15 +463,4 @@ static async Task SeedDestinationImagesAsync(WebApplication app)
 
     await dbContext.SaveChangesAsync();
     logger.LogInformation("Seeded placeholder images for {Count} destination(s).", destinationsWithoutImages.Count);
-}
-
-// Idempotent runtime seed of historical bookings/payments across the trailing year (see
-// HistoricalActivitySeeder). Runs after migration in its own scope; a sentinel intent id makes reruns
-// a no-op, so it never duplicates on subsequent boots.
-static async Task SeedHistoricalActivityAsync(WebApplication app)
-{
-    await using var scope = app.Services.CreateAsyncScope();
-    var dbContext = scope.ServiceProvider.GetRequiredService<TravleDbContext>();
-    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    await HistoricalActivitySeeder.SeedAsync(dbContext, logger);
 }
