@@ -661,14 +661,30 @@ namespace Travle.Services.Database.Seeding
 
             foreach (var dest in approved)
             {
+                // A genocide memorial and cemetery is a place of remembrance, not a tourist
+                // attraction — it gets only respectful, reflective reviews, all highly rated and
+                // never moderated off-topic (see SeedText.SrebrenicaMemorialReflections).
+                var isMemorial = dest.Name.Contains(SeedText.SrebrenicaMemorialMatch, StringComparison.Ordinal);
                 var reviewerCount = Math.Min(travelers.Count, 3 + rng.Next(0, 10));
                 foreach (var userId in TakeRandom(rng, travelers, reviewerCount))
                 {
-                    var rating = WeightedRating(rng);
-                    var removed = rng.Next(100) < 4;
-                    var comment = rating >= 4 ? Pick(rng, SeedText.DestinationPraise)
+                    int rating;
+                    bool removed;
+                    string comment;
+                    if (isMemorial)
+                    {
+                        rating = rng.Next(100) < 70 ? 5 : 4;
+                        removed = false;
+                        comment = Pick(rng, SeedText.SrebrenicaMemorialReflections);
+                    }
+                    else
+                    {
+                        rating = WeightedRating(rng);
+                        removed = rng.Next(100) < 4;
+                        comment = rating >= 4 ? Pick(rng, SeedText.DestinationPraise)
                                 : rating == 3 ? Pick(rng, SeedText.DestinationNeutral)
                                 : Pick(rng, SeedText.DestinationCritical);
+                    }
 
                     var review = new DestinationReview
                     {

@@ -124,6 +124,31 @@ namespace Travle.Services.Database.Seeding
             "The facilities were closed when we arrived.",
         };
 
+        /// <summary>
+        /// The Srebrenica–Potočari Memorial is a genocide memorial and cemetery, not a tourist
+        /// attraction — the generic praise/neutral/critical pools ("perfect for photos", "family day
+        /// out", "would skip it") are inappropriate there. It gets its own pool of respectful,
+        /// reflective reviews, all highly rated and never moderated off-topic. Matched by name
+        /// (contains <see cref="SrebrenicaMemorialMatch"/>) in BulkSeeder.SeedReviewsAsync.
+        /// </summary>
+        public const string SrebrenicaMemorialMatch = "Potočari";
+
+        public static readonly string[] SrebrenicaMemorialReflections =
+        {
+            "A deeply moving place. We came to pay our respects and left in silence. We must never forget.",
+            "Every visitor to Bosnia should come here to understand what happened in July 1995. Harrowing and essential.",
+            "The endless rows of white headstones are overwhelming. A place for reflection and remembrance.",
+            "Heartbreaking and important — the memorial keeps alive the memory of the more than 8,000 victims of the genocide.",
+            "We spent the morning here in quiet reflection. The exhibition treats the history with real dignity.",
+            "A solemn, powerful reminder. Please come with respect and give yourself plenty of time.",
+            "The Potočari cemetery is hard to put into words: grief, and the resolve that this must never happen again.",
+            "An essential site of memory. The old battery-factory exhibition across the road is just as important to see.",
+            "I will carry this visit with me for a long time. A dignified tribute to those who were killed.",
+            "Come to listen and to learn, and to honour the Mothers of Srebrenica who fought for this memorial.",
+            "Sombre and deeply affecting — a vital place of remembrance so that history is not repeated.",
+            "We paid our respects to the victims. The silence here says more than any words could.",
+        };
+
         // ---- Tour review comments, by rating band ----
         public static readonly string[] TourPraise =
         {
