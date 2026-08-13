@@ -300,7 +300,22 @@ Backend/Travle.WebAPI/Controllers/DestinationsController.cs         GET /Destina
   **vertical** strip (shared `BasemapToggle` gained `direction` + `showLabels`), so it clears the centred
   status pill. Backend compiles; all three packages analyzer-clean; not yet device-tested.
 
+- **2026-08-13 — S5 destination search on the browse map.** The parked "geocoding search in the picker"
+  idea was reinterpreted (user) into an in-app **destination search on the S2 browse map** — more useful,
+  and with **no external geocoder**. A read-only "Search destinations" bar pinned below the map opens a
+  full-screen `DestinationSearchPickerScreen` that reuses the exact S4 typeahead (`GET /Destinations/suggest`,
+  min 2 chars / 300 ms debounce / seq-guard / city·category rows) but returns the pick via `Navigator.pop`.
+  On pick, `MapBrowseScreen._goToDestination` fetches `getDetail` (for coordinates + card fields), injects
+  the pin so its mini card shows before the bounds fetch lands, **clears the active category/rating filters**
+  (explicit "take me here" → the recentre's bounds fetch re-includes it with its neighbours), then recentres
+  via a new design-system handle **`DestinationMapController`** (speaks `MapCoordinate`, keeps flutter_map
+  hidden per doc 08 §5) wired into `DestinationMapBrowser` (attach/detach + `_moveTo` → `MapController.move`,
+  whose `onPositionChanged` drives the refetch). No backend change, no migration. Side effect: `getDetail`
+  logs a `View` (approved, not-own) — a defensible signal for a deliberate jump. travle_ui + travle_mobile
+  analyzer-clean; **not yet device-tested.**
+
 ## 9. Not built (stretch, post-Phase-12)
 
-- **Geocoding / address search** in the picker (type a place → jump the pin), via Nominatim/Photon. The
-  constraint is satisfied by the map picker alone.
+- **Geocoding / address search** in the **coordinate picker** (type a place → jump the pin, via
+  Nominatim/Photon) stays unbuilt and is now **superseded** by S5's in-app destination search on the browse
+  map (above). The picker's tap-to-place is sufficient for the constraint.

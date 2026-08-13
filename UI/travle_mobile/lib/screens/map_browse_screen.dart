@@ -4,6 +4,7 @@ import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
 import 'destination_details_screen.dart';
+import 'destination_search_picker_screen.dart';
 
 /// Browse the approved destination catalogue on an interactive map (stretch S2).
 /// Panning/zooming refetches the markers within the visible bounding box from the
@@ -20,6 +21,9 @@ class MapBrowseScreen extends StatefulWidget {
 class _MapBrowseScreenState extends State<MapBrowseScreen> {
   /// Mirrors the backend `MaxMapPins` cap — a full page hints "zoom in for more".
   static const int _pinCap = 100;
+
+  /// Recentres the map when the user picks a destination from search.
+  final DestinationMapController _mapController = DestinationMapController();
 
   // Active filters. Categories are multi-select (any of the chosen ones).
   final Set<int> _categoryIds = {};
@@ -269,6 +273,66 @@ class _MapBrowseScreenState extends State<MapBrowseScreen> {
     );
   }
 
+  /// Opens the destination search picker (same typeahead as the Search tab); a
+  /// pick flies the map to that destination and selects it.
+  Future<void> _openSearch() async {
+    final picked = await Navigator.of(context).push<DestinationSuggestion>(
+      MaterialPageRoute(builder: (_) => const DestinationSearchPickerScreen()),
+    );
+    if (picked == null || !mounted) return;
+    await _goToDestination(picked);
+  }
+
+  /// Fetches the picked destination's detail (for its coordinates + card data),
+  /// drops and selects its pin, and recentres the map on it. A search is an explicit
+  /// "take me here", so it clears the active filters — the follow-up bounds fetch
+  /// (triggered by the recentre) then re-includes it alongside its neighbours.
+  Future<void> _goToDestination(DestinationSuggestion suggestion) async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    final DestinationResponse detail;
+    try {
+      detail = await context.read<DestinationProvider>().getDetail(suggestion.id);
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      AppSnackbars.error(context, e.message);
+      return;
+    }
+    if (!mounted) return;
+
+    // Build a marker from the detail so its card shows instantly, before the
+    // bounds fetch that the recentre kicks off has a chance to land.
+    final pin = DestinationMapPin(
+      id: detail.id,
+      name: detail.name,
+      latitude: detail.latitude,
+      longitude: detail.longitude,
+      averageRating: detail.averageRating,
+      categoryName: detail.categoryName,
+      primaryThumbnail: detail.primaryThumbnail,
+      primaryThumbnailContentType: detail.primaryThumbnailContentType,
+    );
+    setState(() {
+      _categoryIds.clear();
+      _minRating = null;
+      _byId = {..._byId, pin.id: pin};
+      _pins = [
+        for (final p in _pins)
+          if (p.id != pin.id) p,
+        pin,
+      ];
+      _selectedId = pin.id;
+      _loading = false;
+    });
+    _mapController.move(
+      MapCoordinate(detail.latitude, detail.longitude),
+      zoom: 14,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -278,6 +342,7 @@ class _MapBrowseScreenState extends State<MapBrowseScreen> {
           child: Stack(
             children: [
               DestinationMapBrowser(
+                controller: _mapController,
                 markers: [
                   for (final p in _pins)
                     MapMarkerData(
@@ -298,7 +363,47 @@ class _MapBrowseScreenState extends State<MapBrowseScreen> {
             ],
           ),
         ),
+        _buildSearchBar(),
       ],
+    );
+  }
+
+  // A read-only search field pinned below the map; tapping it opens the full-screen
+  // destination picker (the same typeahead as the Search tab).
+  Widget _buildSearchBar() {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surface,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(TravleTokens.space16,
+            TravleTokens.space8, TravleTokens.space16, TravleTokens.space12),
+        child: Material(
+          color: theme.colorScheme.surfaceContainerHighest,
+          shape: StadiumBorder(
+            side: BorderSide(color: theme.colorScheme.outlineVariant),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: _openSearch,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: TravleTokens.space16,
+                  vertical: TravleTokens.space12),
+              child: Row(
+                children: [
+                  Icon(Icons.search, color: theme.colorScheme.onSurfaceVariant),
+                  const SizedBox(width: TravleTokens.space12),
+                  Text(
+                    'Search destinations',
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

@@ -8,6 +8,25 @@ import 'map_basemap.dart';
 import 'map_pin.dart';
 import 'map_types.dart';
 
+/// Imperative handle for a [DestinationMapBrowser]: lets a screen recentre the map
+/// on a coordinate (e.g. after the user picks a destination from search) without
+/// importing flutter_map — the map library stays an implementation detail of the
+/// design system (doc 08 §5). Create one, pass it to the browser, and call [move];
+/// it is a no-op until the browser is mounted and again after it is disposed.
+class DestinationMapController {
+  _DestinationMapBrowserState? _state;
+
+  void _bind(_DestinationMapBrowserState state) => _state = state;
+
+  void _unbind(_DestinationMapBrowserState state) {
+    if (identical(_state, state)) _state = null;
+  }
+
+  /// Recentres the map on [target] at [zoom]. No-op while detached.
+  void move(MapCoordinate target, {double zoom = 14}) =>
+      _state?._moveTo(target, zoom);
+}
+
 /// A full-bleed, interactive browse map: it renders tappable [markers], reports
 /// the visible [MapBounds] whenever the camera settles (debounced), and reports
 /// per-marker taps by id — the caller fetches markers for the reported box and
@@ -23,11 +42,15 @@ class DestinationMapBrowser extends StatefulWidget {
     required this.onMarkerTap,
     this.onBackgroundTap,
     this.selectedId,
+    this.controller,
     this.initialCenter = const MapCoordinate(43.8563, 18.4131), // Sarajevo
     this.initialZoom = 7.5,
   });
 
   final List<MapMarkerData> markers;
+
+  /// Optional imperative handle to recentre the map programmatically.
+  final DestinationMapController? controller;
 
   /// Fired once the camera has settled (after the first layout, and ~400 ms after
   /// the last gesture) with the currently visible bounds — the box to fetch.
@@ -59,11 +82,32 @@ class _DestinationMapBrowserState extends State<DestinationMapBrowser> {
   static const Duration _idleDelay = Duration(milliseconds: 400);
 
   @override
+  void initState() {
+    super.initState();
+    widget.controller?._bind(this);
+  }
+
+  @override
+  void didUpdateWidget(covariant DestinationMapBrowser oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller?._unbind(this);
+      widget.controller?._bind(this);
+    }
+  }
+
+  @override
   void dispose() {
+    widget.controller?._unbind(this);
     _idleTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
+
+  /// Recentres the map; called through [DestinationMapController.move]. The move
+  /// fires `onPositionChanged`, so the browse screen refetches the new bounds.
+  void _moveTo(MapCoordinate target, double zoom) =>
+      _controller.move(target.toLatLng(), zoom);
 
   void _onPositionChanged(MapCamera camera, bool hasGesture) {
     _idleTimer?.cancel();
