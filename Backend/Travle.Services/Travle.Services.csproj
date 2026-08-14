@@ -12,6 +12,12 @@
 
 
   <ItemGroup>
+    <!-- Hand-picked category illustrations (rasterized from SVG to square PNG), embedded so the onboarding
+         card grid is populated at runtime by CategoryContentSeeder without committing blobs to the DB seed. -->
+    <EmbeddedResource Include="Database\Seeding\CategoryImages\*.png" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="FluentValidation" Version="12.1.1" />
     <PackageReference Include="Mapster" Version="10.0.10" />
     <PackageReference Include="Mapster.DependencyInjection" Version="10.0.10" />

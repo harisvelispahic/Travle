@@ -7,5 +7,7 @@ namespace Travle.Services
     public interface IDestinationCategoryService
         : IBaseCRUDService<DestinationCategoryResponse, DestinationCategorySearch, DestinationCategoryInsertRequest, DestinationCategoryUpdateRequest>
     {
+        /// <summary>Full illustration bytes + content type for the dedicated image endpoint; 404 when unset.</summary>
+        Task<(byte[] Content, string ContentType)> GetImageAsync(int id);
     }
 }

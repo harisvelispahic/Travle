@@ -14,4 +14,13 @@ public class DestinationCategoriesController
     public DestinationCategoriesController(IDestinationCategoryService service) : base(service)
     {
     }
+
+    // Full illustration bytes. Category reference data is readable by any authenticated user (the base
+    // policy); a category without an image 404s from the service. Lists carry only the thumbnail (§12).
+    [HttpGet("{id}/image")]
+    public async Task<IActionResult> GetImage(int id)
+    {
+        var image = await _service.GetImageAsync(id);
+        return File(image.Content, image.ContentType);
+    }
 }

@@ -11,6 +11,8 @@ DestinationCategoryResponse _$DestinationCategoryResponseFromJson(
 ) => DestinationCategoryResponse(
   id: (json['id'] as num).toInt(),
   name: json['name'] as String,
+  description: json['description'] as String?,
+  imageThumbnail: json['imageThumbnail'] as String?,
   createdAt: DateTime.parse(json['createdAt'] as String),
   modifiedAt: json['modifiedAt'] == null
       ? null
@@ -22,6 +24,8 @@ Map<String, dynamic> _$DestinationCategoryResponseToJson(
 ) => <String, dynamic>{
   'id': instance.id,
   'name': instance.name,
+  'description': instance.description,
+  'imageThumbnail': instance.imageThumbnail,
   'createdAt': instance.createdAt.toIso8601String(),
   'modifiedAt': instance.modifiedAt?.toIso8601String(),
 };

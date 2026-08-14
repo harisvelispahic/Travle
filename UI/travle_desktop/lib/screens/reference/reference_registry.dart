@@ -200,13 +200,60 @@ ReferenceEntityConfig<CityResponse> _city() => ReferenceEntityConfig<CityRespons
     );
 
 ReferenceEntityConfig<DestinationCategoryResponse> _category() =>
-    _simpleNamed<DestinationCategoryResponse>(
+    ReferenceEntityConfig<DestinationCategoryResponse>(
       title: 'Category',
       providerFactory: DestinationCategoryProvider.new,
       idOf: (c) => c.id,
-      name: (c) => c.name,
-      createdAt: (c) => c.createdAt,
+      rowTitle: (c) => c.name,
       emptyMessage: 'No categories yet.',
+      columns: [
+        TableColumnSpec(label: 'Name', sortKey: 'Name', flex: 3, cell: (c) => c.name),
+        TableColumnSpec(
+            label: 'Description',
+            sortKey: 'Description',
+            flex: 5,
+            cell: (c) => c.description ?? '—'),
+        TableColumnSpec(
+            label: 'Image', flex: 1, cell: (c) => c.imageThumbnail == null ? '—' : 'Set'),
+        TableColumnSpec(
+            label: 'Added', sortKey: 'CreatedAt', flex: 2, cell: (c) => _date(c.createdAt)),
+      ],
+      formFields: const [
+        CrudField(id: 'name', label: 'Name', kind: CrudFieldKind.text, maxLength: 100),
+        CrudField(
+          id: 'description',
+          label: 'Description',
+          kind: CrudFieldKind.multiline,
+          required: false,
+          maxLength: 150,
+          maxLines: 3,
+          helperText: 'Shown on the onboarding category card.',
+        ),
+        CrudField(
+          id: 'image',
+          label: 'Image',
+          kind: CrudFieldKind.image,
+          required: false,
+          helperText: 'JPEG or PNG, up to 5 MB. A square illustration looks best.',
+        ),
+      ],
+      formValues: (c) => {
+        'name': c.name,
+        'description': c.description,
+        'image': c.imageThumbnail,
+      },
+      toBody: (v) {
+        final body = <String, dynamic>{
+          'name': v['name'],
+          'description': v['description'],
+        };
+        final image = v['image'];
+        if (image is CrudImageValue) {
+          body['image'] = image.base64;
+          body['imageContentType'] = image.contentType;
+        }
+        return body;
+      },
     );
 
 ReferenceEntityConfig<TourTypeResponse> _tourType() =>

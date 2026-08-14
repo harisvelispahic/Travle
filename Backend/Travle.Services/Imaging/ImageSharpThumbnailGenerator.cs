@@ -1,8 +1,10 @@
 using Travle.Model.Exceptions;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp.Processing.Processors.Quantization;
 
 namespace Travle.Services.Imaging
 {
@@ -14,6 +16,7 @@ namespace Travle.Services.Imaging
     public sealed class ImageSharpThumbnailGenerator : IThumbnailGenerator
     {
         private const string JpegContentType = "image/jpeg";
+        private const string PngContentType = "image/png";
 
         /// <summary>Longest-edge bound for a list thumbnail (px). Keeps thumbnails in the ~15–30 KB range.</summary>
         private const int ThumbnailMaxEdge = 400;
@@ -22,7 +25,16 @@ namespace Travle.Services.Imaging
         private const int PlaceholderHeight = 600;
         private const int JpegQuality = 80;
 
-        public async Task<(byte[] Thumbnail, string ContentType)> GenerateThumbnailAsync(byte[] original, CancellationToken cancellationToken = default)
+        public Task<(byte[] Thumbnail, string ContentType)> GenerateThumbnailAsync(byte[] original, CancellationToken cancellationToken = default)
+            => ResizeAndEncodeAsync(original, asPng: false, cancellationToken);
+
+        public Task<(byte[] Thumbnail, string ContentType)> GeneratePngThumbnailAsync(byte[] original, CancellationToken cancellationToken = default)
+            => ResizeAndEncodeAsync(original, asPng: true, cancellationToken);
+
+        // Shared downscale: decode, fit inside the thumbnail box (aspect preserved, never upscaled), then
+        // re-encode as PNG (alpha preserved) or JPEG (smaller, opaque). PNG is used for category
+        // illustrations so a transparent background is not flattened to black.
+        private static async Task<(byte[] Thumbnail, string ContentType)> ResizeAndEncodeAsync(byte[] original, bool asPng, CancellationToken cancellationToken)
         {
             Image image;
             try
@@ -49,6 +61,21 @@ namespace Travle.Services.Imaging
                 }));
 
                 using var output = new MemoryStream();
+                if (asPng)
+                {
+                    // Palette-quantize: the category illustrations are flat-colour, so a 128-colour indexed
+                    // PNG is a fraction of the truecolour size (~16 KB vs ~95 KB at 400px) with no visible
+                    // loss — and the alpha channel survives (unlike JPEG), so transparent corners stay clear.
+                    var encoder = new PngEncoder
+                    {
+                        ColorType = PngColorType.Palette,
+                        BitDepth = PngBitDepth.Bit8,
+                        Quantizer = new WuQuantizer(new QuantizerOptions { MaxColors = 128 })
+                    };
+                    await image.SaveAsPngAsync(output, encoder, cancellationToken);
+                    return (output.ToArray(), PngContentType);
+                }
+
                 await image.SaveAsJpegAsync(output, new JpegEncoder { Quality = JpegQuality }, cancellationToken);
                 return (output.ToArray(), JpegContentType);
             }

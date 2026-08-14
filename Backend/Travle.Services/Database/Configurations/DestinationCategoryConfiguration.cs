@@ -13,6 +13,12 @@ namespace Travle.Services.Database.Configurations
                 .IsRequired()
                 .HasMaxLength(100);
 
+            builder.Property(c => c.Description)
+                .HasMaxLength(500);
+
+            builder.Property(c => c.ImageContentType)
+                .HasMaxLength(100);
+
             builder.HasIndex(c => c.Name).IsUnique();
         }
     }

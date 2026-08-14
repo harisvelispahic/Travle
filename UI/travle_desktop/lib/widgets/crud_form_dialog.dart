@@ -1,9 +1,11 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
 /// The kind of control rendered for a [CrudField].
-enum CrudFieldKind { text, integer, dropdown }
+enum CrudFieldKind { text, multiline, integer, dropdown, image }
 
 /// One selectable option in a [CrudFieldKind.dropdown] field: a [value] (the id
 /// sent to the API — never shown) paired with a human [label].
@@ -11,6 +13,15 @@ class CrudOption {
   const CrudOption(this.value, this.label);
   final Object value;
   final String label;
+}
+
+/// A newly picked image for a [CrudFieldKind.image] field: the base64 bytes plus
+/// the sniffed MIME type. A field's collected value is one of these when the user
+/// picked a file, or null to leave the existing image untouched.
+class CrudImageValue {
+  const CrudImageValue({required this.base64, required this.contentType});
+  final String base64;
+  final String contentType;
 }
 
 /// Declares one editable field in a [CrudFormDialog].
@@ -25,6 +36,7 @@ class CrudField {
     this.min,
     this.max,
     this.maxLength,
+    this.maxLines,
     this.optionsLoader,
     this.dependsOn,
   });
@@ -43,6 +55,9 @@ class CrudField {
   final int? min;
   final int? max;
   final int? maxLength;
+
+  /// Visible line count for a [CrudFieldKind.multiline] field (defaults to 4).
+  final int? maxLines;
 
   /// For [CrudFieldKind.dropdown]: loads the options, given the form's current
   /// values (so a dependent dropdown can filter by a parent selection).
@@ -116,6 +131,14 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
   final Map<String, List<CrudOption>?> _options = {};
   final Map<String, bool> _optionsLoading = {};
 
+  /// Image fields: the new pick to send (null = keep existing), the bytes shown
+  /// in the preview, the original existing preview (to revert a cleared pick),
+  /// and any pick error (wrong type / too large).
+  final Map<String, CrudImageValue?> _imagePicks = {};
+  final Map<String, Uint8List?> _imagePreviews = {};
+  final Map<String, Uint8List?> _imageOriginals = {};
+  final Map<String, String?> _imageErrors = {};
+
   bool _submitting = false;
   String? _submitError;
 
@@ -126,6 +149,7 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
       final initial = widget.initialValues[field.id];
       switch (field.kind) {
         case CrudFieldKind.text:
+        case CrudFieldKind.multiline:
         case CrudFieldKind.integer:
           _controllers[field.id] =
               TextEditingController(text: initial?.toString() ?? '');
@@ -135,6 +159,14 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
           // then kick off the async load which setStates its result.
           _optionsLoading[field.id] = true;
           _loadOptions(field);
+        case CrudFieldKind.image:
+          // The initial value is the existing thumbnail base64 — decoded once for
+          // the preview, but never resent unless the user picks a replacement.
+          final existing = initial is String ? ImageCodec.decode(initial) : null;
+          _imagePicks[field.id] = null;
+          _imagePreviews[field.id] = existing;
+          _imageOriginals[field.id] = existing;
+          _imageErrors[field.id] = null;
       }
     }
   }
@@ -180,11 +212,14 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
     for (final field in widget.fields) {
       switch (field.kind) {
         case CrudFieldKind.text:
+        case CrudFieldKind.multiline:
           values[field.id] = _controllers[field.id]!.text.trim();
         case CrudFieldKind.integer:
           values[field.id] = _parseInt(_controllers[field.id]!.text);
         case CrudFieldKind.dropdown:
           values[field.id] = _dropdownValues[field.id];
+        case CrudFieldKind.image:
+          values[field.id] = _imagePicks[field.id];
       }
     }
     return values;
@@ -320,11 +355,15 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
   Widget _buildControl(CrudField field) {
     switch (field.kind) {
       case CrudFieldKind.text:
+      case CrudFieldKind.multiline:
         return TravleTextField(
           controller: _controllers[field.id],
           hint: field.hint,
           helperText: field.helperText,
           maxLength: field.maxLength,
+          maxLines: field.kind == CrudFieldKind.multiline
+              ? (field.maxLines ?? 4)
+              : 1,
           validator: (value) {
             if (field.required && (value == null || value.trim().isEmpty)) {
               return '${field.label} is required';
@@ -343,7 +382,123 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
         );
       case CrudFieldKind.dropdown:
         return _buildDropdown(field);
+      case CrudFieldKind.image:
+        return _buildImageControl(field);
     }
+  }
+
+  Widget _buildImageControl(CrudField field) {
+    final theme = Theme.of(context);
+    final preview = _imagePreviews[field.id];
+    final error = _imageErrors[field.id];
+    final hasPick = _imagePicks[field.id] != null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 88,
+              height: 88,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(TravleTokens.radius),
+                border: Border.all(color: theme.colorScheme.outlineVariant),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: preview != null
+                  ? Image.memory(preview, fit: BoxFit.cover)
+                  : Icon(Icons.image_outlined,
+                      color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(width: TravleTokens.space12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: TravleTokens.space8,
+                    runSpacing: TravleTokens.space8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed:
+                            _submitting ? null : () => _pickImage(field),
+                        icon: const Icon(Icons.upload_outlined, size: 18),
+                        label: Text(preview == null
+                            ? 'Choose image…'
+                            : 'Replace image…'),
+                      ),
+                      if (hasPick)
+                        TextButton(
+                          onPressed: _submitting
+                              ? null
+                              : () => _clearImagePick(field),
+                          child: const Text('Undo'),
+                        ),
+                    ],
+                  ),
+                  if (field.helperText != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: TravleTokens.space4),
+                      child: Text(field.helperText!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant)),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: TravleTokens.space8),
+            child: Text(error,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.error)),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _pickImage(CrudField field) async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    final bytes = result.files.first.bytes;
+    if (bytes == null) return;
+
+    final contentType = ImageCodec.sniffContentType(bytes);
+    if (contentType == null) {
+      setState(() =>
+          _imageErrors[field.id] = 'Only JPEG or PNG images are allowed.');
+      return;
+    }
+    if (bytes.length > ImageCodec.maxImageBytes) {
+      setState(() =>
+          _imageErrors[field.id] = 'Images must be 5 MB or smaller.');
+      return;
+    }
+
+    setState(() {
+      _imagePicks[field.id] =
+          CrudImageValue(base64: ImageCodec.encode(bytes), contentType: contentType);
+      _imagePreviews[field.id] = bytes;
+      _imageErrors[field.id] = null;
+    });
+  }
+
+  /// Drops the new pick and reverts the preview to the original existing image.
+  void _clearImagePick(CrudField field) {
+    setState(() {
+      _imagePicks[field.id] = null;
+      _imagePreviews[field.id] = _imageOriginals[field.id];
+      _imageErrors[field.id] = null;
+    });
   }
 
   String? _validateInteger(CrudField field, String? value) {
