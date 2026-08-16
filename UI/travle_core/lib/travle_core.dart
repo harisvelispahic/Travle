@@ -27,6 +27,7 @@ export 'src/models/favorite_toggle_response.dart';
 export 'src/models/forgot_password_request.dart';
 export 'src/models/monthly_booking_point.dart';
 export 'src/models/notification_response.dart';
+export 'src/models/organizer_profile_response.dart';
 export 'src/models/organizer_stats_response.dart';
 export 'src/models/organizer_tour_stat_row.dart';
 export 'src/models/payment_intent_response.dart';

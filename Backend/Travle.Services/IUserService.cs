@@ -65,5 +65,14 @@ namespace Travle.Services
 
         /// <summary>Loads a user with their roles for the refresh/current-user flow.</summary>
         Task<UserResponse?> GetWithRolesByIdAsync(int id);
+
+        /// <summary>
+        /// Traveler-facing public profile of a tour organizer (name, home city, member-since, avatar
+        /// thumbnail, a computed average rating across their tour reviews, and a few of their best-rated
+        /// active tours). Contact details are never exposed. Throws <c>NotFoundException</c> if the user
+        /// does not exist, is suspended, or does not hold the Organizer role — a traveler can never reach
+        /// a profile for a tour no one could book.
+        /// </summary>
+        Task<OrganizerProfileResponse> GetOrganizerProfileAsync(int id);
     }
 }

@@ -9,6 +9,7 @@ import 'package:travle_ui/travle_ui.dart';
 import '../../util/booking_display.dart';
 import '../../util/formatting.dart';
 import '../../widgets/entrance_fee_note.dart';
+import '../../widgets/organizer_row.dart';
 import '../../widgets/review_card.dart';
 import '../../widgets/review_form_sheet.dart';
 import '../tour_details_screen.dart';
@@ -358,7 +359,12 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
       padding: const EdgeInsets.all(TravleTokens.space16),
       children: [
         _Header(booking: booking, onOpenTour: _openTour),
-        const SizedBox(height: TravleTokens.space24),
+        const SizedBox(height: TravleTokens.space16),
+        OrganizerRow(
+          organizerId: booking.organizerId,
+          organizerName: booking.organizerName,
+        ),
+        const SizedBox(height: TravleTokens.space16),
         _DetailCard(booking: booking),
         if (booking.entranceFeesPerPerson > 0) ...[
           const SizedBox(height: TravleTokens.space16),

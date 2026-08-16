@@ -88,6 +88,11 @@ namespace Travle.Services
                 query = query.Where(d => d.CategoryId == search.CategoryId.Value);
             }
 
+            if (search.CountryId.HasValue)
+            {
+                query = query.Where(d => d.City.Region.CountryId == search.CountryId.Value);
+            }
+
             if (search.RegionId.HasValue)
             {
                 query = query.Where(d => d.City.RegionId == search.RegionId.Value);

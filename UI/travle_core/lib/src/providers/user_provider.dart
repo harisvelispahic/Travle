@@ -1,4 +1,5 @@
 import '../models/admin_create_user_request.dart';
+import '../models/organizer_profile_response.dart';
 import '../models/user_onboarding_request.dart';
 import '../models/user_password_change_request.dart';
 import '../models/user_response.dart';
@@ -19,6 +20,14 @@ class UserProvider extends BaseProvider<UserResponse> {
   /// Updates the profile (`PUT /Users/{id}`). Returns the updated user.
   Future<UserResponse> updateProfile(int id, UserUpdateRequest request) =>
       update(id, request.toJson());
+
+  /// A tour organizer's public profile (`GET /Users/{id}/organizer-profile`):
+  /// name, home city, member-since, avatar, a computed average rating, and their
+  /// top tours. Any authenticated user; the server 404s a non-organizer id.
+  Future<OrganizerProfileResponse> organizerProfile(int id) async {
+    final json = await getAction('$id/organizer-profile') as Map<String, dynamic>;
+    return OrganizerProfileResponse.fromJson(json);
+  }
 
   /// Admin: creates an account (`POST /Users`) with an admin-set password and any
   /// combination of roles. Returns the created user.

@@ -17,6 +17,8 @@ BookingResponse _$BookingResponseFromJson(Map<String, dynamic> json) =>
       scheduleEndsAt: DateTime.parse(json['scheduleEndsAt'] as String),
       tourId: (json['tourId'] as num).toInt(),
       tourName: json['tourName'] as String,
+      organizerId: (json['organizerId'] as num).toInt(),
+      organizerName: json['organizerName'] as String,
       numberOfPeople: (json['numberOfPeople'] as num).toInt(),
       totalAmount: (json['totalAmount'] as num).toDouble(),
       entranceFeesPerPerson:
@@ -62,6 +64,8 @@ Map<String, dynamic> _$BookingResponseToJson(BookingResponse instance) =>
       'scheduleEndsAt': instance.scheduleEndsAt.toIso8601String(),
       'tourId': instance.tourId,
       'tourName': instance.tourName,
+      'organizerId': instance.organizerId,
+      'organizerName': instance.organizerName,
       'numberOfPeople': instance.numberOfPeople,
       'totalAmount': instance.totalAmount,
       'entranceFeesPerPerson': instance.entranceFeesPerPerson,

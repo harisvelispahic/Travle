@@ -21,6 +21,7 @@ dependencies:
   travle_ui:
     path: ../travle_ui
   fl_chart: ^1.2.0
+  window_manager: ^0.5.2
 
 dev_dependencies:
   flutter_test:

@@ -27,6 +27,8 @@ namespace Travle.Services.BookingStateMachine
                 ScheduleEndsAt = b.TourSchedule.EndsAt,
                 TourId = b.TourSchedule.TourId,
                 TourName = b.TourSchedule.Tour.Name,
+                OrganizerId = b.TourSchedule.Tour.OrganizerId,
+                OrganizerName = b.TourSchedule.Tour.Organizer.FirstName + " " + b.TourSchedule.Tour.Organizer.LastName,
                 NumberOfPeople = b.NumberOfPeople,
                 TotalAmount = b.TotalAmount,
                 // Per-person on-site entrance fees for the booked tour (informative; not charged by Travle).

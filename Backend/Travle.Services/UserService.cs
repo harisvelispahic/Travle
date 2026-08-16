@@ -7,6 +7,7 @@ using Travle.Services.Authorization;
 using Travle.Services.Database;
 using Travle.Services.Imaging;
 using Travle.Services.Notifications;
+using Travle.Services.Projections;
 using Travle.Services.Recommender;
 using Travle.Services.Security;
 using FluentValidation;
@@ -17,6 +18,9 @@ namespace Travle.Services
 {
     public class UserService : BaseReadService<User, UserResponse, UserSearch>, IUserService
     {
+        /// <summary>How many of an organizer's best-rated tours the public profile previews.</summary>
+        private const int TopToursLimit = 5;
+
         private readonly ICryptoService _cryptoService;
         private readonly IAppAuthorizationService _authorization;
         private readonly IThumbnailGenerator _thumbnailGenerator;
@@ -518,6 +522,82 @@ namespace Travle.Services
         public async Task<UserResponse?> GetWithRolesByIdAsync(int id)
             => await ProjectToResponse(_dbContext.Users.AsNoTracking().Where(u => u.Id == id))
                    .FirstOrDefaultAsync();
+
+        public async Task<OrganizerProfileResponse> GetOrganizerProfileAsync(int id)
+        {
+            // Project (never materialize the whole User) so the heavy full ProfileImage is never loaded —
+            // only the small thumbnail travels (rule 12 / §8.2). Also pull just what the guard needs.
+            var organizer = await _dbContext.Users
+                .AsNoTracking()
+                .Where(u => u.Id == id)
+                .Select(u => new
+                {
+                    u.Id,
+                    u.FirstName,
+                    u.LastName,
+                    CityName = u.City != null ? u.City.Name : null,
+                    u.CreatedAt,
+                    u.IsSuspended,
+                    u.ProfileImageThumbnail,
+                    IsOrganizer = u.UserRoles.Any(ur => ur.Role.Name == RoleNames.Organizer)
+                })
+                .FirstOrDefaultAsync();
+
+            // A suspended or non-organizer account is reported as not found (no existence leak) — a traveler
+            // can never reach a profile for a tour no one could confirm, mirroring how suspended organizers'
+            // tours are already hidden from every list.
+            if (organizer is null || organizer.IsSuspended || !organizer.IsOrganizer)
+            {
+                throw new NotFoundException("Organizer", id);
+            }
+
+            // Aggregate rating across every one of the organizer's tour reviews, computed on read (03 §4):
+            // removed reviews and reviews by suspended users are excluded — the same rule the tour cards use.
+            // One grouped aggregate (Sum + Count), not a query per tour.
+            var ratingAgg = await _dbContext.TourReviews
+                .Where(r => r.Tour.OrganizerId == id && !r.IsRemoved && !r.User.IsSuspended)
+                .GroupBy(_ => 1)
+                .Select(g => new { Count = g.Count(), Sum = g.Sum(x => (double)x.Rating) })
+                .FirstOrDefaultAsync();
+
+            var reviewCount = ratingAgg?.Count ?? 0;
+            var averageRating = reviewCount > 0 ? ratingAgg!.Sum / reviewCount : 0d;
+
+            var tourCount = await _dbContext.Tours.CountAsync(t => t.OrganizerId == id && t.IsActive);
+
+            // A preview of the organizer's active tours through the shared list projection (thumbnails only,
+            // never full image bytes). The rating is computed inside the projection, so we rank on the
+            // materialized result in memory — an organizer has only a handful of tours, and this avoids
+            // ordering by a correlated-subquery aggregate in SQL. The per-user favorite flag is intentionally
+            // not set — this is a public preview, and the tour card here shows no heart.
+            var now = DateTime.UtcNow;
+            var activeTours = await TourProjections.ProjectToListResponse(
+                    _dbContext.Tours.AsNoTracking().Where(t => t.OrganizerId == id && t.IsActive),
+                    now)
+                .ToListAsync();
+
+            var topTours = activeTours
+                .OrderByDescending(t => t.AverageRating)
+                .ThenByDescending(t => t.ReviewCount)
+                .ThenByDescending(t => t.CreatedAt)
+                .Take(TopToursLimit)
+                .ToList();
+            TourProjections.FinalizeThumbnails(topTours);
+
+            return new OrganizerProfileResponse
+            {
+                Id = organizer.Id,
+                FirstName = organizer.FirstName,
+                LastName = organizer.LastName,
+                CityName = organizer.CityName,
+                MemberSince = organizer.CreatedAt,
+                ProfileImageThumbnail = organizer.ProfileImageThumbnail,
+                TourCount = tourCount,
+                AverageRating = averageRating,
+                ReviewCount = reviewCount,
+                TopTours = topTours
+            };
+        }
 
         public async Task<UserResponse> CompleteOnboardingAsync(UserOnboardingRequest request)
         {

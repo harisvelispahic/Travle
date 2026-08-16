@@ -6,6 +6,14 @@ import 'package:travle_ui/travle_ui.dart';
 import '../widgets/recommendation_card.dart';
 import 'destination_details_screen.dart';
 
+/// Vertical breathing room reserved above and below the cards in the home
+/// carousels. A horizontal [ListView] clips to its box, so its cards' elevation
+/// shadows (and the soft rounded corners they imply) get sheared flat at the top
+/// and bottom edge. Padding the list by this much — and growing the enclosing
+/// [SizedBox] by twice it — keeps the shadow inside the viewport so the cards read
+/// as lifted, not cut off.
+const double _carouselShadowGutter = TravleTokens.space8;
+
 /// Home landing screen. A gradient header with a tap-through search bar, then the
 /// recommender-driven "Recommended for you" carousel (with per-card reasons),
 /// followed by the Featured and "Popular right now" catalogue sections.
@@ -285,7 +293,10 @@ class _RecommendationSection extends StatelessWidget {
         ? 'We’ll tailor these as you explore, favorite, and book.'
         : null;
     final showReason = !isColdStart;
-    final cardHeight = showReason ? 272.0 : 224.0;
+    // The extra height beyond the card is deliberate headroom for the card's
+    // elevation shadow: a horizontal ListView clips to its box, so without it the
+    // shadow (and the rounded corners it softens) gets sheared flat top and bottom.
+    final cardHeight = (showReason ? 272.0 : 224.0) + _carouselShadowGutter * 2;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -316,9 +327,12 @@ class _RecommendationSection extends StatelessWidget {
           height: cardHeight,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: TravleTokens.space16),
+            padding: const EdgeInsets.symmetric(
+              horizontal: TravleTokens.space16,
+              vertical: _carouselShadowGutter,
+            ),
             itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(width: TravleTokens.space12),
+            separatorBuilder: (_, _) => const SizedBox(width: TravleTokens.space16),
             itemBuilder: (_, i) => RecommendationCard(
               item: items[i],
               showReason: showReason,
@@ -356,12 +370,17 @@ class _CarouselSection extends StatelessWidget {
         ),
         const SizedBox(height: TravleTokens.space12),
         SizedBox(
-          height: 216,
+          // +shadow gutter so the card's elevation shadow isn't clipped flat by
+          // the horizontal ListView's box (see _carouselShadowGutter).
+          height: 216 + _carouselShadowGutter * 2,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: TravleTokens.space16),
+            padding: const EdgeInsets.symmetric(
+              horizontal: TravleTokens.space16,
+              vertical: _carouselShadowGutter,
+            ),
             itemCount: destinations.length,
-            separatorBuilder: (_, _) => const SizedBox(width: TravleTokens.space12),
+            separatorBuilder: (_, _) => const SizedBox(width: TravleTokens.space16),
             itemBuilder: (_, i) => _MiniDestinationCard(
               destination: destinations[i],
               onTap: () => onTap(destinations[i]),

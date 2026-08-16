@@ -48,12 +48,18 @@ class _SearchScreenState extends State<SearchScreen> {
   String _query = '';
   int? _categoryId;
   String? _categoryName;
+  // Country → Region cascade: a region is chosen within a selected country, so the
+  // Region filter is disabled until a country is picked and resets when it changes.
+  int? _countryId;
+  String? _countryName;
   int? _regionId;
   String? _regionName;
   double? _minRating;
 
   // Reference lists, loaded lazily the first time a sheet opens.
   List<DestinationCategoryResponse>? _categories;
+  List<CountryResponse>? _countries;
+  // Regions for the currently-selected country (dropped when the country changes).
   List<RegionResponse>? _regions;
 
   // Results / paging.
@@ -107,7 +113,10 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   bool get _hasActiveFilters =>
-      _categoryId != null || _regionId != null || _minRating != null;
+      _categoryId != null ||
+      _countryId != null ||
+      _regionId != null ||
+      _minRating != null;
 
   Map<String, dynamic> _buildFilter(int page) => <String, dynamic>{
         'page': page,
@@ -116,6 +125,7 @@ class _SearchScreenState extends State<SearchScreen> {
         'sortBy': 'AverageRating desc',
         if (_query.isNotEmpty) 'text': _query,
         if (_categoryId != null) 'categoryId': _categoryId,
+        if (_countryId != null) 'countryId': _countryId,
         if (_regionId != null) 'regionId': _regionId,
         if (_minRating != null) 'minRating': _minRating,
       };
@@ -257,11 +267,34 @@ class _SearchScreenState extends State<SearchScreen> {
     return _categories!;
   }
 
+  /// Loads every country for the Country filter. The reference set is larger than
+  /// one page (max page size is 100), so we page through and accumulate — the
+  /// Country sheet is searchable, so the full list stays usable. Cached after the
+  /// first open.
+  Future<List<CountryResponse>> _ensureCountries() async {
+    if (_countries != null) return _countries!;
+    final provider = context.read<CountryProvider>();
+    final all = <CountryResponse>[];
+    var page = 1;
+    while (true) {
+      final result = await provider
+          .get(filter: {'page': page, 'pageSize': 100, 'sortBy': 'Name'});
+      all.addAll(result.items);
+      if (result.items.length < 100) break; // last page reached
+      page++;
+    }
+    _countries = all;
+    return _countries!;
+  }
+
+  /// Regions of the currently-selected country (the cascade's second step). A
+  /// country has at most a handful of regions, so a single page covers it. Cached
+  /// per country; the cache is dropped when the country changes.
   Future<List<RegionResponse>> _ensureRegions() async {
     if (_regions != null) return _regions!;
     final result = await context
         .read<RegionProvider>()
-        .get(filter: {'pageSize': 100, 'sortBy': 'Name'});
+        .get(filter: {'countryId': _countryId, 'pageSize': 100, 'sortBy': 'Name'});
     _regions = result.items;
     return _regions!;
   }
@@ -292,7 +325,42 @@ class _SearchScreenState extends State<SearchScreen> {
     _runSearch();
   }
 
+  Future<void> _openCountrySheet() async {
+    final List<CountryResponse> countries;
+    try {
+      countries = await _ensureCountries();
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      AppSnackbars.error(context, e.message);
+      return;
+    }
+    if (!mounted) return;
+    final choice = await _showSearchableChoiceSheet<int>(
+      title: 'Country',
+      selected: _countryId,
+      anyLabel: 'Any country',
+      searchHint: 'Search countries',
+      items: [for (final c in countries) _Choice<int>(c.id, c.name)],
+    );
+    if (choice == null) return;
+    setState(() {
+      _countryId = choice.value;
+      _countryName = choice.value == null ? null : choice.label;
+      // A region belongs to a country, so a country change invalidates the region
+      // pick and its cached list.
+      _regionId = null;
+      _regionName = null;
+      _regions = null;
+    });
+    _runSearch();
+  }
+
   Future<void> _openRegionSheet() async {
+    // The Region filter is the second step of the cascade — it needs a country.
+    if (_countryId == null) {
+      AppSnackbars.info(context, 'Pick a country first to choose a region.');
+      return;
+    }
     final List<RegionResponse> regions;
     try {
       regions = await _ensureRegions();
@@ -374,6 +442,30 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
+  /// A choice sheet with a client-side search box over an in-memory list — for a
+  /// long reference list (e.g. ~190 countries) that a plain sheet can't surface
+  /// usefully. The "Any" clear option sits at the top when the box is empty.
+  Future<_Choice<T>?> _showSearchableChoiceSheet<T>({
+    required String title,
+    required List<_Choice<T>> items,
+    required T? selected,
+    required String anyLabel,
+    required String searchHint,
+  }) {
+    return showModalBottomSheet<_Choice<T>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => _SearchableChoiceSheet<T>(
+        title: title,
+        items: items,
+        selected: selected,
+        anyLabel: anyLabel,
+        searchHint: searchHint,
+      ),
+    );
+  }
+
   void _openDetails(DestinationResponse destination) {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -440,8 +532,16 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
           const SizedBox(width: TravleTokens.space8),
           _FilterButton(
+            label: _countryName ?? 'Country',
+            active: _countryId != null,
+            onTap: _openCountrySheet,
+          ),
+          const SizedBox(width: TravleTokens.space8),
+          _FilterButton(
             label: _regionName ?? 'Region',
             active: _regionId != null,
+            // Disabled-looking until a country is chosen; tapping it then explains why.
+            enabled: _countryId != null,
             onTap: _openRegionSheet,
           ),
           const SizedBox(width: TravleTokens.space8),
@@ -605,41 +705,162 @@ class _Choice<T> {
 }
 
 /// A pill button that opens a filter sheet; highlighted while a value is selected.
+/// When [enabled] is false it reads as disabled (muted) but stays tappable, so the
+/// tap can explain why it isn't ready yet (e.g. "pick a country first").
 class _FilterButton extends StatelessWidget {
   const _FilterButton({
     required this.label,
     required this.active,
     required this.onTap,
+    this.enabled = true,
   });
 
   final String label;
   final bool active;
   final VoidCallback onTap;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final Color? foreground = !enabled
+        ? theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5)
+        : active
+            ? theme.colorScheme.onPrimaryContainer
+            : null;
     return ActionChip(
       onPressed: onTap,
       backgroundColor: active ? theme.colorScheme.primaryContainer : null,
-      side: active
-          ? BorderSide(color: theme.colorScheme.primary)
-          : null,
+      side: active ? BorderSide(color: theme.colorScheme.primary) : null,
       label: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            label,
-            style: active
-                ? TextStyle(color: theme.colorScheme.onPrimaryContainer)
-                : null,
-          ),
-          Icon(
-            Icons.arrow_drop_down,
-            size: 18,
-            color: active ? theme.colorScheme.onPrimaryContainer : null,
-          ),
+          Text(label, style: foreground == null ? null : TextStyle(color: foreground)),
+          Icon(Icons.arrow_drop_down, size: 18, color: foreground),
         ],
+      ),
+    );
+  }
+}
+
+/// A bottom sheet that filters a (possibly long) list of [_Choice]s with a search
+/// box, resolving to the picked choice via [Navigator.pop]. Used for the Country
+/// filter, whose reference list is far too long for a plain scrolling sheet.
+class _SearchableChoiceSheet<T> extends StatefulWidget {
+  const _SearchableChoiceSheet({
+    required this.title,
+    required this.items,
+    required this.selected,
+    required this.anyLabel,
+    required this.searchHint,
+  });
+
+  final String title;
+  final List<_Choice<T>> items;
+  final T? selected;
+  final String anyLabel;
+  final String searchHint;
+
+  @override
+  State<_SearchableChoiceSheet<T>> createState() =>
+      _SearchableChoiceSheetState<T>();
+}
+
+class _SearchableChoiceSheetState<T> extends State<_SearchableChoiceSheet<T>> {
+  final TextEditingController _controller = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final q = _query.trim().toLowerCase();
+    final filtered = q.isEmpty
+        ? widget.items
+        : widget.items
+            .where((i) => i.label.toLowerCase().contains(q))
+            .toList();
+
+    return Padding(
+      // Lift the sheet above the keyboard while the search box has focus.
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(TravleTokens.space16, 0,
+                    TravleTokens.space16, TravleTokens.space8),
+                child: Text(widget.title, style: theme.textTheme.titleMedium),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: TravleTokens.space16),
+                child: TextField(
+                  controller: _controller,
+                  autofocus: true,
+                  textInputAction: TextInputAction.search,
+                  onChanged: (v) => setState(() => _query = v),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    prefixIcon: const Icon(Icons.search),
+                    hintText: widget.searchHint,
+                  ),
+                ),
+              ),
+              const SizedBox(height: TravleTokens.space8),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  children: [
+                    // The "Any" clear option only makes sense when not searching.
+                    if (q.isEmpty)
+                      ListTile(
+                        title: Text(widget.anyLabel),
+                        trailing: widget.selected == null
+                            ? Icon(Icons.check, color: theme.colorScheme.primary)
+                            : null,
+                        onTap: () => Navigator.of(context)
+                            .pop(_Choice<T>(null, widget.anyLabel)),
+                      ),
+                    for (final item in filtered)
+                      ListTile(
+                        title: Text(item.label),
+                        trailing: item.value == widget.selected
+                            ? Icon(Icons.check, color: theme.colorScheme.primary)
+                            : null,
+                        onTap: () => Navigator.of(context).pop(item),
+                      ),
+                    if (filtered.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(TravleTokens.space24),
+                        child: Center(
+                          child: Text(
+                            'No matches',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

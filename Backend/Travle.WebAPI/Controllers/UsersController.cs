@@ -75,6 +75,14 @@ public class UsersController : BaseReadController<UserResponse, UserSearch, IUse
     public async Task<ActionResult<UserResponse>> OnboardingPrompt()
         => Ok(await _service.RegisterOnboardingPromptAsync());
 
+    // Public organizer profile a traveler sees while deciding whether to book one of the organizer's
+    // tours: name, home city, member-since, avatar, a computed average rating, and their top tours. Any
+    // authenticated user (the class-level policy) — contact details are never exposed. 404 if the id is
+    // not an active organizer.
+    [HttpGet("{id}/organizer-profile")]
+    public async Task<ActionResult<OrganizerProfileResponse>> OrganizerProfile(int id)
+        => Ok(await _service.GetOrganizerProfileAsync(id));
+
     [Authorize(Policy = AuthPolicies.AdminOnly)]
     [HttpPost("{id}/Suspend")]
     public async Task<ActionResult<UserResponse>> Suspend(int id, [FromBody] UserSuspendRequest request)

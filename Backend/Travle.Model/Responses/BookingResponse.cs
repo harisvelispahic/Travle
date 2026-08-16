@@ -23,6 +23,11 @@ namespace Travle.Model.Responses
         public int TourId { get; set; }
         public string TourName { get; set; } = string.Empty;
 
+        /// <summary>The tour's organizer — so the traveler can open the organizer's public profile from
+        /// their booking (name only; never the raw id on screen).</summary>
+        public int OrganizerId { get; set; }
+        public string OrganizerName { get; set; } = string.Empty;
+
         public int NumberOfPeople { get; set; }
 
         /// <summary>Server-computed total (price-per-person × people). Never trusted from the client.</summary>

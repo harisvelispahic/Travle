@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemNavigator;
 import 'package:travle_ui/travle_ui.dart';
 
 import '../screens/favorites_screen.dart';
@@ -35,8 +36,17 @@ class BottomNavShell extends StatefulWidget {
 class _BottomNavShellState extends State<BottomNavShell> {
   int _index = 0;
 
+  static const int _homeIndex = 0;
   static const int _mapIndex = 2;
   static const int _favoritesIndex = 3;
+
+  /// How long the "press back again" window stays open after the first Back on
+  /// the Home tab. A second Back within this window exits the app.
+  static const Duration _exitConfirmWindow = Duration(seconds: 2);
+
+  /// When the last "press back again to exit" hint was shown, or null if the
+  /// confirmation window has lapsed. Only meaningful while on the Home tab.
+  DateTime? _lastExitPrompt;
 
   /// Bumped to signal the Search tab to take focus when opened from Home.
   final ValueNotifier<int> _searchFocusRequests = ValueNotifier<int>(0);
@@ -69,7 +79,7 @@ class _BottomNavShellState extends State<BottomNavShell> {
 
   /// Returns to the Home tab when the AuthGate signals a role loss.
   void _resetToHome() {
-    if (mounted && _index != 0) setState(() => _index = 0);
+    if (mounted && _index != _homeIndex) setState(() => _index = _homeIndex);
   }
 
   void _openSearch() {
@@ -84,6 +94,31 @@ class _BottomNavShellState extends State<BottomNavShell> {
     }
   }
 
+  /// Handles a system Back press at the shell root (the only place Back would
+  /// otherwise close the app). On a non-Home tab, Back first returns to Home. On
+  /// Home, a first Back arms a two-second "press back again to exit" window and a
+  /// second Back within it exits the app. [PopScope] keeps [canPop] false so the
+  /// app is never popped implicitly; the real exit goes through [SystemNavigator].
+  void _handleBack() {
+    if (_index != _homeIndex) {
+      setState(() => _index = _homeIndex);
+      _lastExitPrompt = null;
+      return;
+    }
+
+    final now = DateTime.now();
+    final armed = _lastExitPrompt != null &&
+        now.difference(_lastExitPrompt!) <= _exitConfirmWindow;
+    if (armed) {
+      SystemNavigator.pop();
+      return;
+    }
+
+    _lastExitPrompt = now;
+    AppSnackbars.info(context, 'Press back again to exit',
+        duration: _exitConfirmWindow);
+  }
+
   @override
   void dispose() {
     widget.homeReset?.removeListener(_resetToHome);
@@ -94,16 +129,25 @@ class _BottomNavShellState extends State<BottomNavShell> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_titles[_index]),
-        actions: const [NotificationBell()],
-      ),
-      body: IndexedStack(index: _index, children: _screens),
-      bottomNavigationBar: _TravleBottomBar(
-        selectedIndex: _index,
-        mapIndex: _mapIndex,
-        onSelected: _onDestinationSelected,
+    // canPop stays false so a root Back never closes the app implicitly; the
+    // handler decides between switching to Home and the double-Back exit.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _handleBack();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(_titles[_index]),
+          actions: const [NotificationBell()],
+        ),
+        body: IndexedStack(index: _index, children: _screens),
+        bottomNavigationBar: _TravleBottomBar(
+          selectedIndex: _index,
+          mapIndex: _mapIndex,
+          onSelected: _onDestinationSelected,
+        ),
       ),
     );
   }

@@ -2,10 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'app/auth_gate.dart';
 
-void main() => runTravleApp(() {
+void main() => runTravleApp(() async {
+      WidgetsFlutterBinding.ensureInitialized();
+      // Enforce a minimum window size across all desktop platforms (Windows,
+      // macOS, Linux) from Dart — not a Windows-only native handler — so the
+      // management console's tables and toolbars can't be squeezed into an
+      // overflow. Mirrors how report_download.dart handles the desktops in Dart.
+      await windowManager.ensureInitialized();
+      await windowManager.setMinimumSize(const Size(1200, 720));
       runApp(const TravleDesktopApp());
     });
 

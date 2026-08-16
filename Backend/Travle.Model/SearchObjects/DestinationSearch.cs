@@ -12,6 +12,9 @@ namespace Travle.Model.SearchObjects
 
         public int? CategoryId { get; set; }
 
+        /// <summary>Filter by country (matched through the destination's city → region → country).</summary>
+        public int? CountryId { get; set; }
+
         /// <summary>Filter by region (matched through the destination's city).</summary>
         public int? RegionId { get; set; }
 

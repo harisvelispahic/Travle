@@ -11,6 +11,11 @@ import '../widgets/review_form_sheet.dart';
 import '../widgets/tour_card.dart';
 import 'tour_details_screen.dart';
 
+/// Vertical breathing room above/below the cards in the horizontal "Similar
+/// destinations" strip, so the card elevation shadow isn't sheared flat by the
+/// list's box clip (mirrors the home carousels' shadow gutter).
+const double _similarShadowGutter = TravleTokens.space8;
+
 /// Traveler-facing destination details (mockup Slika 8). Opening the screen
 /// fetches the detail via `GET /Destinations/{id}`, which logs a View interaction
 /// and bumps ViewCount server-side (for an approved destination viewed by someone
@@ -624,14 +629,18 @@ class _SimilarSectionState extends State<_SimilarSection> {
           )
         else
           SizedBox(
-            height: 272,
+            // +shadow gutter (top+bottom) so the card elevation shadow isn't
+            // clipped flat by the horizontal ListView's box.
+            height: 272 + _similarShadowGutter * 2,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: TravleTokens.space16),
+              padding: const EdgeInsets.symmetric(
+                horizontal: TravleTokens.space16,
+                vertical: _similarShadowGutter,
+              ),
               itemCount: _items.length,
               separatorBuilder: (_, _) =>
-                  const SizedBox(width: TravleTokens.space12),
+                  const SizedBox(width: TravleTokens.space16),
               itemBuilder: (_, i) => RecommendationCard(
                 item: _items[i],
                 onTap: () => _open(_items[i].destination),

@@ -20,6 +20,8 @@ class BookingResponse {
     required this.scheduleEndsAt,
     required this.tourId,
     required this.tourName,
+    required this.organizerId,
+    required this.organizerName,
     required this.numberOfPeople,
     required this.totalAmount,
     this.entranceFeesPerPerson = 0,
@@ -56,6 +58,10 @@ class BookingResponse {
 
   final int tourId;
   final String tourName;
+
+  /// The tour's organizer — opens the organizer's public profile from the booking.
+  final int organizerId;
+  final String organizerName;
 
   final int numberOfPeople;
   final double totalAmount;

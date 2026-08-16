@@ -142,38 +142,48 @@ class _UsersScreenState extends State<UsersScreen> {
   Widget _buildToolbar(BuildContext context) {
     return Row(
       children: [
-        SizedBox(
-          width: 300,
-          child: TextField(
-            controller: _searchController,
-            onChanged: _onSearchChanged,
-            decoration: InputDecoration(
-              isDense: true,
-              prefixIcon: const Icon(Icons.search),
-              hintText: 'Search by name…',
-              suffixIcon: _searchController.text.isEmpty
-                  ? null
-                  : IconButton(
-                      icon: const Icon(Icons.close),
-                      tooltip: 'Clear',
-                      onPressed: () {
-                        _searchController.clear();
-                        _debounce?.cancel();
-                        setState(() {
-                          _search = '';
-                          _page = 1;
-                        });
-                        _load();
-                      },
-                    ),
-            ),
+        // Search + filters live in a Wrap so they reflow onto extra lines when the
+        // window is narrow instead of overflowing; the Create action stays pinned
+        // to the right and always visible regardless of width.
+        Expanded(
+          child: Wrap(
+            spacing: TravleTokens.space12,
+            runSpacing: TravleTokens.space8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                width: 300,
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: _onSearchChanged,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    prefixIcon: const Icon(Icons.search),
+                    hintText: 'Search by name…',
+                    suffixIcon: _searchController.text.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.close),
+                            tooltip: 'Clear',
+                            onPressed: () {
+                              _searchController.clear();
+                              _debounce?.cancel();
+                              setState(() {
+                                _search = '';
+                                _page = 1;
+                              });
+                              _load();
+                            },
+                          ),
+                  ),
+                ),
+              ),
+              _buildRoleFilter(),
+              _buildStatusFilter(),
+            ],
           ),
         ),
         const SizedBox(width: TravleTokens.space12),
-        _buildRoleFilter(),
-        const SizedBox(width: TravleTokens.space12),
-        _buildStatusFilter(),
-        const Spacer(),
         if (_loading)
           const Padding(
             padding: EdgeInsets.only(right: TravleTokens.space16),
