@@ -63,6 +63,38 @@ namespace Travle.Services.Payments
             }
         }
 
+        public async Task RefundOrphanedPaymentAsync(
+            int paymentId, string reason, CancellationToken cancellationToken = default)
+        {
+            var payment = await _dbContext.Payments
+                .Include(p => p.Booking)
+                .FirstOrDefaultAsync(p => p.Id == paymentId, cancellationToken);
+
+            if (payment is null)
+            {
+                _logger.LogWarning("Orphaned-payment refund: payment {PaymentId} not found; nothing to refund.", paymentId);
+                return;
+            }
+
+            // Only a captured charge can be refunded (defensive: the webhook sets Succeeded before calling in).
+            if (payment.Status != PaymentStatus.Succeeded)
+            {
+                _logger.LogDebug("Orphaned-payment refund: payment {PaymentId} is {Status}, not Succeeded; skipping.",
+                    paymentId, payment.Status);
+                return;
+            }
+
+            // Full auto-refund, attributed to the traveler themselves (no admin/organizer initiated it). The
+            // idempotency guard inside IssueRefundAsync makes a webhook replay safe (never a double refund).
+            await IssueRefundAsync(
+                payment,
+                forcedPercentage: 100,
+                initiatedByUserId: payment.Booking.UserId,
+                reason,
+                cancellationToken,
+                notificationText: "Your payment was received after the booking hold had already expired and its seats were released, so a full refund has been issued to your original payment method.");
+        }
+
         // Paid, now-cancelled bookings that don't already carry a refund — the set that is owed a refund.
         private IQueryable<Payment> LoadRefundablePaymentsQuery()
             => _dbContext.Payments
@@ -72,7 +104,8 @@ namespace Travle.Services.Payments
                             && !p.Refunds.Any());
 
         private async Task IssueRefundAsync(
-            Payment payment, int? forcedPercentage, int initiatedByUserId, string reason, CancellationToken cancellationToken)
+            Payment payment, int? forcedPercentage, int initiatedByUserId, string reason, CancellationToken cancellationToken,
+            string? notificationText = null)
         {
             // Idempotency guard (belt-and-suspenders alongside the query filter): never refund twice.
             var alreadyRefunded = await _dbContext.Refunds.AnyAsync(r => r.PaymentId == payment.Id, cancellationToken);
@@ -118,7 +151,7 @@ namespace Travle.Services.Payments
                 {
                     _notifications.Enqueue(payment.Booking.UserId, NotificationType.RefundIssued,
                         "Refund issued",
-                        $"A refund of {amount:0.00} KM ({percentage}%) has been issued to your original payment method.",
+                        notificationText ?? $"A refund of {amount:0.00} KM ({percentage}%) has been issued to your original payment method.",
                         payment.BookingId, alsoEmail: true);
                 }
 

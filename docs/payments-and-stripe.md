@@ -316,13 +316,15 @@ Payments are **never** CRUD-edited or deleted.
   binding) + the `Stripe-Signature` header.
 - Backend builds clean. **End-to-end verification is pending real Stripe test keys + `stripe listen`.**
 
-#### Known edge: payment succeeds just after the hold expired
+#### Edge: payment succeeds just after the booking left PaymentInProgress — **RESOLVED**
 
-If a card confirms in the last moment and the 15-minute scheduler expires the booking before the
-`succeeded` webhook arrives, we record the `Payment` as `Succeeded` truthfully but do **not** resurrect
-the `Expired` booking (its seats are already released and may be resold). This is logged as a warning.
-A production system would auto-refund that payment; given the 15-minute window vs Stripe's sub-second
-webhook latency it is extremely rare, and auto-refund is intentionally out of scope for Phase 6.
+If a card confirms in the final moments and the booking leaves `PaymentInProgress` before the `succeeded`
+webhook arrives — the 15-minute hold expired (seats released, maybe resold) or the organizer cancelled the
+slot — the charge would strand: money captured, no booking. This is now closed in two layers (full
+description in the post-Phase-6 hardening entry at the end of §9): the sweep waits a **90-second grace
+period** past `ExpiresAt` so the webhook almost always promotes the booking first, and if the race is
+still lost the webhook records the charge and issues an immediate **100% auto-refund** so the traveler is
+never charged for a booking they cannot get. The booking is **not** resurrected.
 
 ### Phase 6c — Refunds ✅ (done)
 
@@ -391,6 +393,31 @@ webhook latency it is extremely rare, and auto-refund is intentionally out of sc
   read-only `PaginatedSearchTable` (sortable columns via entity paths, text search, Status + Period
   filters). Admin-only **Payments** entry added to the side nav. Both apps analyze clean; backend builds
   clean.
+
+### Post-Phase-6 hardening — orphaned-success auto-refund ✅ (done, 2026-08-17)
+
+Closed the "charged with nothing" edge (the Phase 6b note above, now RESOLVED): a captured payment whose
+`payment_intent.succeeded` lands after the booking has left `PaymentInProgress` no longer strands the
+traveler's money. Two layers:
+
+- **Prevent (shrink the race).** `BookingService.ExpireOverdueHoldsAsync` no longer expires a hold the
+  instant it passes 15:00; it waits a **90-second grace period** (`BookingService.SweepGracePeriod`) past
+  `ExpiresAt` first. Webhook latency is sub-second, so a last-moment payment's `succeeded` event almost
+  always promotes the booking to `Pending` inside the grace window and the sweep never touches it. Cost: a
+  hold is held ~16 min worst-case instead of 15.
+- **Guarantee (when the race is still lost).** `PaymentService.HandlePaymentSucceededAsync` records the
+  `Payment` as `Succeeded` truthfully, then — because the booking is no longer consumable (Expired, or
+  Cancelled after a slot-cancel) — calls `RefundService.RefundOrphanedPaymentAsync` to issue an immediate
+  **100% refund** and notify the traveler (`RefundIssued`, emailed). It reuses the normal post-commit refund
+  path (Stripe called outside any DB transaction; idempotency key `refund-payment-{id}`), and the full
+  refund is attributed to the **traveler** since no admin/organizer initiated it. The booking is **not**
+  resurrected — its seats may already be resold, so the traveler is made whole instead.
+
+The succeeded-webhook idempotency guard was tightened from "skip if already `Succeeded`" to **"skip if not
+`Pending`"**, so a replay after the auto-refund finds the payment `Refunded` and no-ops rather than
+re-recording the charge; the failed-webhook guard was tightened the same way. **No migration**
+(`Refund.InitiatedByUserId` reused). Files: `PaymentService`, `RefundService`/`IRefundService`,
+`BookingService`.
 
 ---
 

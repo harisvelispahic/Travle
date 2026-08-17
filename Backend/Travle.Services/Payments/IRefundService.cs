@@ -25,5 +25,16 @@ namespace Travle.Services.Payments
         /// </summary>
         Task RefundForScheduleCancellationAsync(
             int scheduleId, int initiatedByUserId, string reason, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Full auto-refund for a payment that was captured after its booking was no longer consumable — a
+        /// <c>payment_intent.succeeded</c> that landed after the 15-minute hold expired (seats released, maybe
+        /// resold) or the slot was cancelled. Called by the webhook once the charge is recorded, so the
+        /// traveler is never left charged with nothing. Attributed to the traveler themselves (no
+        /// admin/organizer initiated it); idempotent (a payment that already carries a <c>Refund</c> is
+        /// skipped) and, like the other refunds, a post-commit Stripe call outside any DB transaction.
+        /// </summary>
+        Task RefundOrphanedPaymentAsync(
+            int paymentId, string reason, CancellationToken cancellationToken = default);
     }
 }

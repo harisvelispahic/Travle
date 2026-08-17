@@ -22,6 +22,15 @@ namespace Travle.Services
     /// </summary>
     public class BookingService : BaseReadService<Booking, BookingResponse, BookingSearch>, IBookingService
     {
+        /// <summary>
+        /// Grace beyond <see cref="InitialBookingState.HoldDuration"/> before the sweep expires a lapsed
+        /// hold. It gives a payment confirmed in the final moments time for its
+        /// <c>payment_intent.succeeded</c> webhook to promote the booking, instead of racing this sweep and
+        /// stranding a captured charge on an already-expired booking. The orphaned-success auto-refund in
+        /// <see cref="Payments.PaymentService"/> is the backstop for when the race is still lost.
+        /// </summary>
+        private static readonly TimeSpan SweepGracePeriod = TimeSpan.FromSeconds(90);
+
         private readonly IAppAuthorizationService _authorization;
         private readonly IAuthenticatedUserAccessor _currentUser;
         private readonly BaseBookingState _states;
@@ -235,12 +244,14 @@ namespace Travle.Services
 
         public async Task<int> ExpireOverdueHoldsAsync(CancellationToken cancellationToken = default)
         {
-            var now = DateTime.UtcNow;
+            // Expire only holds overdue by at least the grace period, so a last-moment payment's webhook can
+            // promote the booking before this sweep would strand the charge (see SweepGracePeriod).
+            var cutoff = DateTime.UtcNow - SweepGracePeriod;
             var dueIds = await _dbContext.Bookings
                 .AsNoTracking()
                 .Where(b => b.StatusId == (int)BookingStatusCode.PaymentInProgress
                             && b.ExpiresAt != null
-                            && b.ExpiresAt <= now)
+                            && b.ExpiresAt <= cutoff)
                 .Select(b => b.Id)
                 .ToListAsync(cancellationToken);
 

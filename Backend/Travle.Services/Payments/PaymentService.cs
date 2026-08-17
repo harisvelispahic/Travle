@@ -25,6 +25,7 @@ namespace Travle.Services.Payments
     {
         private readonly TravleDbContext _dbContext;
         private readonly IStripeService _stripe;
+        private readonly IRefundService _refunds;
         private readonly IAppAuthorizationService _authorization;
         private readonly IValidator<PaymentIntentCreateRequest> _createValidator;
         private readonly BaseBookingState _states;
@@ -34,6 +35,7 @@ namespace Travle.Services.Payments
         public PaymentService(
             TravleDbContext dbContext,
             IStripeService stripe,
+            IRefundService refunds,
             IAppAuthorizationService authorization,
             IValidator<PaymentIntentCreateRequest> createValidator,
             BaseBookingState states,
@@ -42,6 +44,7 @@ namespace Travle.Services.Payments
         {
             _dbContext = dbContext;
             _stripe = stripe;
+            _refunds = refunds;
             _authorization = authorization;
             _createValidator = createValidator;
             _states = states;
@@ -170,11 +173,13 @@ namespace Travle.Services.Payments
                 return;
             }
 
-            // Idempotency: a replayed succeeded event finds the payment already recorded — no double effect.
-            if (payment.Status == PaymentStatus.Succeeded)
+            // Idempotency: only a still-Pending payment reacts to a succeeded event. A replay finds it
+            // already terminal — Succeeded (promoted) or Refunded (an orphaned-success auto-refund, below) —
+            // and no-ops, so a replay never re-promotes the booking nor clobbers the recorded refund.
+            if (payment.Status != PaymentStatus.Pending)
             {
-                _logger.LogDebug("Stripe webhook {EventId}: payment {PaymentId} already succeeded; skipping.",
-                    evt.Id, payment.Id);
+                _logger.LogDebug("Stripe webhook {EventId}: payment {PaymentId} already {Status}; skipping.",
+                    evt.Id, payment.Id, payment.Status);
                 return;
             }
 
@@ -189,12 +194,20 @@ namespace Travle.Services.Payments
             }
             else
             {
-                // Rare race: the payment landed after the hold already expired (or was otherwise moved).
-                // Record the payment truthfully; the booking is not resurrected here (see docs §known edges).
+                // Rare race: the charge landed after the booking left PaymentInProgress — the 15-minute hold
+                // expired (seats released, possibly resold) or the organizer cancelled the slot. The money was
+                // really captured, so record it truthfully, then auto-refund it in full: a traveler must never
+                // be charged for a booking they cannot get. The refund runs post-commit (Stripe is never called
+                // inside a DB transaction) and is idempotent, so a webhook replay is safe. The booking is not
+                // resurrected — its seats may already be resold; the traveler is simply made whole.
                 _logger.LogWarning(
-                    "Stripe webhook {EventId}: payment {PaymentId} succeeded but booking {BookingId} is in status {StatusId}; recorded payment only.",
+                    "Stripe webhook {EventId}: payment {PaymentId} succeeded but booking {BookingId} is in status {StatusId}; recording the charge and auto-refunding it in full.",
                     evt.Id, payment.Id, payment.BookingId, payment.Booking.StatusId);
                 await _dbContext.SaveChangesAsync(cancellationToken);
+                await _refunds.RefundOrphanedPaymentAsync(
+                    payment.Id,
+                    "Payment captured after the booking was no longer active; automatic full refund.",
+                    cancellationToken);
             }
         }
 
@@ -206,12 +219,10 @@ namespace Travle.Services.Payments
                 return;
             }
 
-            // Never override a success (a late failure event for a since-succeeded intent is nonsensical).
-            if (payment.Status == PaymentStatus.Succeeded)
-            {
-                return;
-            }
-            if (payment.Status == PaymentStatus.Failed)
+            // Only a still-Pending payment reacts to a failure event. A payment already terminal — Succeeded,
+            // Failed, or Refunded (an orphaned-success auto-refund) — is left untouched: a late failure event
+            // for a since-succeeded intent is nonsensical and must never clobber the recorded outcome.
+            if (payment.Status != PaymentStatus.Pending)
             {
                 return;
             }
