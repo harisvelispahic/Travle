@@ -101,6 +101,23 @@ class _OrganizerToursScreenState extends State<OrganizerToursScreen> {
 
   Future<void> _toggleActive(TourResponse tour) async {
     final provider = context.read<TourProvider>();
+
+    // Deactivation only hides the tour from new bookings; existing upcoming bookings are still honored.
+    // Make that explicit so an organizer doesn't assume it cancels/refunds anything. Reactivation is
+    // harmless and needs no confirmation.
+    if (tour.isActive) {
+      final confirmed = await showConfirmDialog(
+        context,
+        title: 'Deactivate tour',
+        message:
+            'It will be hidden from new bookings, but you must still honour any upcoming tours '
+            'already booked. To cancel those deliberately, cancel each schedule one by one from '
+            'the Schedules manager — each cancellation issues its travelers a 100% refund.',
+        confirmLabel: 'Deactivate',
+      );
+      if (!confirmed) return;
+    }
+
     setState(() => _acting.add(tour.id));
     try {
       if (tour.isActive) {
@@ -307,6 +324,13 @@ class _OrganizerTourCard extends StatelessWidget {
                                 Text(t.name, style: theme.textTheme.titleMedium),
                           ),
                           const SizedBox(width: TravleTokens.space12),
+                          if (t.hasUnavailableDestination) ...[
+                            const StatusPill(
+                              label: 'Temporarily unavailable',
+                              tone: StatusTone.warning,
+                            ),
+                            const SizedBox(width: TravleTokens.space8),
+                          ],
                           StatusPill(
                             label: t.isActive ? 'Active' : 'Inactive',
                             tone: t.isActive

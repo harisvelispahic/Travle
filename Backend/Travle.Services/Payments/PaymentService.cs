@@ -234,8 +234,9 @@ namespace Travle.Services.Payments
             if (payment.Booking.StatusId == (int)BookingStatusCode.PaymentInProgress)
             {
                 // Release the held seats immediately rather than waiting out the 15-minute hold (the
-                // lifecycle diagram's "payment failed → Expired"). Expire's SaveChanges persists the edit above.
-                await _states.GetState(BookingStatusCode.PaymentInProgress).ExpireAsync(payment.Booking);
+                // lifecycle diagram's "payment failed → Expired"). Expire's SaveChanges persists the edit
+                // above; paymentFailed:true makes the notification read as a decline, not a timeout.
+                await _states.GetState(BookingStatusCode.PaymentInProgress).ExpireAsync(payment.Booking, paymentFailed: true);
             }
             else
             {
@@ -294,7 +295,60 @@ namespace Travle.Services.Payments
             var pageSize = Math.Clamp(search.PageSize ?? 10, 1, 100);
             query = query.Skip((page - 1) * pageSize).Take(pageSize);
 
-            // Materialize with the raw enum, then map its name in memory (EF can't translate enum.ToString()).
+            var items = await MapPaymentRowsAsync(query, cancellationToken);
+            return new PageResult<PaymentResponse> { Items = items, TotalCount = totalCount };
+        }
+
+        /// <summary>
+        /// Admin action: re-run a refund that a prior automatic attempt failed to complete (a rare Stripe
+        /// error left the money owed). Reuses the idempotent <see cref="IRefundService"/> path — the amount
+        /// is recomputed from the same tier, so a retry can never over-refund. The tier is reconstructed from
+        /// who cancelled the booking: a self-cancellation is tiered by hours-before-start; any other cancel
+        /// (organizer reject / slot cancel / organizer suspension) is a full refund.
+        /// </summary>
+        public async Task<PaymentResponse> RetryRefundAsync(int paymentId, CancellationToken cancellationToken = default)
+        {
+            _authorization.EnsureInRole(RoleNames.Admin);
+            var adminId = _authorization.RequireUserId();
+
+            var payment = await _dbContext.Payments
+                .Include(p => p.Booking)
+                .Include(p => p.Refunds)
+                .FirstOrDefaultAsync(p => p.Id == paymentId, cancellationToken)
+                ?? throw new NotFoundException("Payment", paymentId);
+
+            if (payment.Booking.StatusId != (int)BookingStatusCode.Cancelled)
+            {
+                throw new BusinessRuleException("A refund can only be retried for a cancelled booking.");
+            }
+            if (payment.Status != PaymentStatus.Succeeded)
+            {
+                throw new BusinessRuleException("Only a captured payment can be refunded.");
+            }
+            if (payment.Refunds.Any())
+            {
+                throw new ConflictException("This payment has already been refunded.");
+            }
+
+            int? forcedPercentage = payment.Booking.CancelledByUserId == payment.Booking.UserId ? null : 100;
+
+            await _refunds.RefundForBookingAsync(
+                payment.BookingId, adminId, "Admin retried the owed refund.", forcedPercentage, cancellationToken);
+
+            // Re-read the row so the client sees the advanced status / refund totals (or, if the retry failed
+            // again, the still-owed flag and the fresh RefundFailed notification the refund service raised).
+            return (await MapPaymentRowsAsync(
+                    _dbContext.Payments.AsNoTracking().Where(p => p.Id == paymentId), cancellationToken))
+                .FirstOrDefault()
+                ?? throw new NotFoundException("Payment", paymentId);
+        }
+
+        // Projects payments to the admin DTO. Materializes with the raw enum then maps its name in memory
+        // (EF can't translate enum.ToString()). RefundOwed marks a captured payment on a cancelled booking
+        // that still carries no refund — the set the "Retry refund" action targets.
+        private static async Task<List<PaymentResponse>> MapPaymentRowsAsync(
+            IQueryable<Payment> query, CancellationToken cancellationToken)
+        {
             var rows = await query
                 .Select(p => new
                 {
@@ -310,12 +364,15 @@ namespace Travle.Services.Payments
                     p.Status,
                     RefundedAmount = p.Refunds.Sum(r => (decimal?)r.Amount) ?? 0m,
                     RefundCount = p.Refunds.Count,
+                    RefundOwed = p.Booking.StatusId == (int)BookingStatusCode.Cancelled
+                                 && p.Status == PaymentStatus.Succeeded
+                                 && !p.Refunds.Any(),
                     p.SucceededAt,
                     p.CreatedAt
                 })
                 .ToListAsync(cancellationToken);
 
-            var items = rows.Select(r => new PaymentResponse
+            return rows.Select(r => new PaymentResponse
             {
                 Id = r.Id,
                 BookingId = r.BookingId,
@@ -329,11 +386,10 @@ namespace Travle.Services.Payments
                 Status = r.Status.ToString(),
                 RefundedAmount = r.RefundedAmount,
                 RefundCount = r.RefundCount,
+                RefundOwed = r.RefundOwed,
                 SucceededAt = r.SucceededAt,
                 CreatedAt = r.CreatedAt
             }).ToList();
-
-            return new PageResult<PaymentResponse> { Items = items, TotalCount = totalCount };
         }
 
         public async Task<PaymentSummaryResponse> GetSummaryAsync(PaymentSearch search, CancellationToken cancellationToken = default)

@@ -45,7 +45,9 @@ Tour
 - **Who creates it:** an **Organizer** (desktop). The `OrganizerId` is taken from the JWT — a client can never set it.
 - **Price & duration live here, not on the schedule.** Every departure of "Mostar Old Town Walking Tour" costs 25 KM/person and lasts 120 minutes.
 - **`Capacity` here is only a *default*.** It is *copied* into each new schedule as a starting value; the schedule's own capacity is what actually limits bookings (see §5). This is a deliberate decision so a one-off "smaller van that day" is expressible per departure.
-- **"Deleting" a tour = deactivating it** (`IsActive = false`). It disappears from traveler browsing and can't take new bookings, but its history (past schedules, bookings, reviews) stays intact. A *hard* delete is allowed **only if the tour was never scheduled** (fixing a mistake right after creation).
+- **"Deleting" a tour = deactivating it** (`IsActive = false`). It disappears from traveler browsing and can't take new bookings, but its history (past schedules, bookings, reviews) stays intact. A *hard* delete is allowed **only if the tour was never scheduled** (fixing a mistake right after creation). Deactivation **honours** existing upcoming bookings — the desktop confirm dialog says so; to actually call one off, the organizer cancels that schedule (100% refund).
+- **A tour with an under-review stop is hidden from travelers entirely** (added 2026-08-18). Every stop must be an *approved* destination at create/update time (`EnsureApprovedDestinationsAsync`), but a stop can later be pulled back into moderation (its curator edits it) or rejected. The moment any stop is non-approved, `TourResponse.HasUnavailableDestination` flips true and the tour is dropped from **all** traveler surfaces — public browse, the "tours visiting here" list on a destination, favorites, and the detail read (`SearchAsync` forces `ExcludeUnavailableDestinations`; `GetDetailAsync` blocks non-owners; `FavoriteService` filters it). Without this a traveler could reach the tour via one of its *approved* stops and open the under-review one from the itinerary. The organizer still sees the tour on **My Tours**, badged **"Temporarily unavailable"**, so they know it's out and reappears automatically once the stop is approved again. (This pairs with the `DestinationUnavailable`/`DestinationAvailable` organizer notifications — see `notifications-and-signalr.md` §7.)
+- **A non-approved destination's detail is private** to its submitter and admins (`DestinationService.GetDetailAsync` gates on status). Approved destinations are public to any authenticated user; a pending/rejected one is never readable by id — not through a tour, not by guessing — so the moderation catalogue stays private.
 
 ### 2.2 `TourDestination` — the itinerary (the "where", ordered)
 
@@ -232,9 +234,9 @@ stateDiagram-v2
     PaymentInProgress --> Pending   : Stripe webhook<br/>payment_intent.succeeded
     PaymentInProgress --> Expired   : 15 min elapse / payment fails<br/>(seats released)
     Pending --> Confirmed : organizer confirms<br/>(notification)
-    Pending --> Cancelled : user cancels (tiered refund)<br/>OR organizer rejects (100% refund + reason)
+    Pending --> Cancelled : user cancels (tiered refund)<br/>OR organizer rejects (100% refund + reason)<br/>OR organizer suspended (100% refund)
     Confirmed --> Completed : scheduler, after the slot's end time
-    Confirmed --> Cancelled : user cancels (tiered refund)<br/>OR organizer cancels the slot (100% refund)
+    Confirmed --> Cancelled : user cancels (tiered refund)<br/>OR organizer cancels the slot (100% refund)<br/>OR organizer suspended (100% refund)
     Expired --> [*]
     Completed --> [*]
     Cancelled --> [*]
@@ -264,8 +266,8 @@ These are all enforced in the backend, never merely in the UI:
 ### Refunds (Phase 6, computed on the *charged* amount)
 
 - **User cancels:** the global tier ladder applies — **>72h before start = 100%**, 24–72h = 50%, 1–24h = 25%, **<1h = 0%**.
-- **Organizer rejects a booking, or cancels a whole slot:** always **100%** back.
-- Refunds run through the Stripe Refund API against the amount actually charged (from the `Payment` row), and each refund snapshots the percentage tier it used.
+- **Organizer rejects a booking, cancels a whole slot, or is suspended:** always **100%** back. (Suspending an organizer pulls their tours from sale, so every paid booking on them is cancelled and fully refunded — see `notifications-and-signalr.md` §12, 2026-08-17.)
+- Refunds run through the Stripe Refund API against the amount actually charged (from the `Payment` row), and each refund snapshots the percentage tier it used. A rare Stripe **failure** leaves the refund *owed* — an admin is alerted and can retry it from the payments screen (`payments-and-stripe.md`).
 
 ---
 

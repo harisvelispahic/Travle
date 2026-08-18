@@ -69,6 +69,10 @@ class PaginatedSearchTable<T> extends StatefulWidget {
     this.onEdit,
     this.onDelete,
     this.deleteDisabledReason,
+    this.rowActionIcon,
+    this.rowActionTooltip = '',
+    this.onRowAction,
+    this.rowActionVisible,
   });
 
   final List<TableColumnSpec<T>> columns;
@@ -117,6 +121,16 @@ class PaginatedSearchTable<T> extends StatefulWidget {
   /// action), or null when deletion is allowed.
   final String? Function(T row)? deleteDisabledReason;
 
+  /// Optional extra per-row action (rendered before Edit/Delete in the actions
+  /// column). When set, the actions column shows even on an otherwise read-only
+  /// table. [rowActionVisible] gates which rows actually show the button.
+  final IconData? rowActionIcon;
+  final String rowActionTooltip;
+  final void Function(T row)? onRowAction;
+
+  /// Show the row action only for rows this returns true for (null = every row).
+  final bool Function(T row)? rowActionVisible;
+
   @override
   State<PaginatedSearchTable<T>> createState() =>
       _PaginatedSearchTableState<T>();
@@ -128,7 +142,8 @@ class _PaginatedSearchTableState<T> extends State<PaginatedSearchTable<T>> {
   late final TextEditingController _searchController;
   Timer? _debounce;
 
-  bool get _hasActions => widget.onEdit != null || widget.onDelete != null;
+  bool get _hasActions =>
+      widget.onEdit != null || widget.onDelete != null || widget.onRowAction != null;
 
   @override
   void initState() {
@@ -322,6 +337,10 @@ class _PaginatedSearchTableState<T> extends State<PaginatedSearchTable<T>> {
         onEdit: widget.onEdit,
         onDelete: widget.onDelete,
         deleteDisabledReason: widget.deleteDisabledReason,
+        rowActionIcon: widget.rowActionIcon,
+        rowActionTooltip: widget.rowActionTooltip,
+        onRowAction: widget.onRowAction,
+        rowActionVisible: widget.rowActionVisible,
       ),
     );
   }
@@ -462,6 +481,10 @@ class _DataRow<T> extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.deleteDisabledReason,
+    required this.rowActionIcon,
+    required this.rowActionTooltip,
+    required this.onRowAction,
+    required this.rowActionVisible,
   });
 
   final T row;
@@ -471,6 +494,10 @@ class _DataRow<T> extends StatelessWidget {
   final void Function(T row)? onEdit;
   final void Function(T row)? onDelete;
   final String? Function(T row)? deleteDisabledReason;
+  final IconData? rowActionIcon;
+  final String rowActionTooltip;
+  final void Function(T row)? onRowAction;
+  final bool Function(T row)? rowActionVisible;
 
   @override
   Widget build(BuildContext context) {
@@ -503,6 +530,15 @@ class _DataRow<T> extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
+                  if (onRowAction != null &&
+                      rowActionIcon != null &&
+                      (rowActionVisible?.call(row) ?? true))
+                    IconButton(
+                      tooltip: rowActionTooltip,
+                      icon: Icon(rowActionIcon, size: 20),
+                      color: theme.colorScheme.primary,
+                      onPressed: () => onRowAction!(row),
+                    ),
                   if (onEdit != null)
                     IconButton(
                       tooltip: 'Edit',

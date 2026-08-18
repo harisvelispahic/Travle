@@ -20,6 +20,7 @@ PaymentResponse _$PaymentResponseFromJson(Map<String, dynamic> json) =>
       status: json['status'] as String,
       refundedAmount: (json['refundedAmount'] as num).toDouble(),
       refundCount: (json['refundCount'] as num).toInt(),
+      refundOwed: json['refundOwed'] as bool? ?? false,
       createdAt: DateTime.parse(json['createdAt'] as String),
       succeededAt: json['succeededAt'] == null
           ? null
@@ -40,6 +41,7 @@ Map<String, dynamic> _$PaymentResponseToJson(PaymentResponse instance) =>
       'status': instance.status,
       'refundedAmount': instance.refundedAmount,
       'refundCount': instance.refundCount,
+      'refundOwed': instance.refundOwed,
       'succeededAt': instance.succeededAt?.toIso8601String(),
       'createdAt': instance.createdAt.toIso8601String(),
     };

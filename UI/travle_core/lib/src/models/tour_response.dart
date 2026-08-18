@@ -26,6 +26,7 @@ class TourResponse {
     required this.destinationCount,
     required this.upcomingScheduleCount,
     required this.createdAt,
+    this.hasUnavailableDestination = false,
     this.averageRating = 0,
     this.reviewCount = 0,
     this.isFavorite = false,
@@ -61,6 +62,10 @@ class TourResponse {
   final String? organizerName;
 
   final bool isActive;
+
+  /// True when a stop left the approved catalogue (edited back to moderation / rejected). Such a tour is
+  /// hidden from travelers; on the organizer's own list it drives a "Temporarily unavailable" badge.
+  final bool hasUnavailableDestination;
 
   /// Average of the tour's non-removed reviews (0 when it has none). Computed on read.
   final double averageRating;

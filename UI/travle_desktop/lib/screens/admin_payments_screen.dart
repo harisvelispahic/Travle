@@ -127,6 +127,34 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     _load();
   }
 
+  // Retries an owed refund (an earlier automatic attempt failed). The backend reuses the idempotent,
+  // tier-capped refund path, so this can never over-refund; if Stripe fails again the row stays owed.
+  Future<void> _retryRefund(PaymentResponse row) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Retry refund',
+      message:
+          'Re-attempt the owed refund for ${row.travelerName} on "${row.tourName}"? '
+          'This re-runs the original refund at the same amount — it can never over-refund.',
+      confirmLabel: 'Retry refund',
+    );
+    if (!confirmed) return;
+    try {
+      final updated = await _provider.retryRefund(row.id);
+      if (!mounted) return;
+      if (updated.refundOwed) {
+        AppSnackbars.error(
+            context, 'The refund failed again and is still owed. Check the Stripe dashboard.');
+      } else {
+        AppSnackbars.success(context, 'Refund issued.');
+      }
+      await _load();
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      AppSnackbars.error(context, e.message);
+    }
+  }
+
   // Plain click cycles the primary key asc → desc → cleared; Shift+click adds/flips
   // a secondary key (same behaviour as the reference tables).
   static List<SortSpec> _nextSorts(
@@ -211,6 +239,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
             onToggleSort: _onToggleSort,
             onPageChanged: _onPageChanged,
             onRetry: _load,
+            rowActionIcon: Icons.currency_exchange,
+            rowActionTooltip: 'Retry owed refund',
+            rowActionVisible: (r) => r.refundOwed,
+            onRowAction: _retryRefund,
             filter: _buildFilters(),
           ),
         ),

@@ -112,7 +112,37 @@ namespace Travle.Services.Database
         /// server-side (stamp rolled + refresh tokens dropped), and this notification drives the client's
         /// immediate force-logout on all connected devices (same mechanism as <see cref="AccountSuspended"/>).
         /// </summary>
-        PasswordChanged = 23
+        PasswordChanged = 23,
+
+        /// <summary>
+        /// Organizer: a destination one of their tours visits left the published catalogue (its curator/an
+        /// admin edited it back to Pending, so it awaits re-moderation) and is no longer bookable-ready.
+        /// </summary>
+        DestinationUnavailable = 24,
+
+        /// <summary>
+        /// Organizer: a previously-unavailable destination one of their tours visits was re-approved and is
+        /// published again — the tour's itinerary is whole once more.
+        /// </summary>
+        DestinationAvailable = 25,
+
+        /// <summary>A user whose suspension was lifted by an admin (they can sign in again).</summary>
+        AccountReinstated = 26,
+
+        /// <summary>Curator: one of their destinations was featured on the platform by an admin.</summary>
+        DestinationFeatured = 27,
+
+        /// <summary>
+        /// Traveler/curator: a tour they have an upcoming booking on (or one they favorited) changed — the
+        /// organizer edited its itinerary/name, or added a new date.
+        /// </summary>
+        TourUpdated = 28,
+
+        /// <summary>
+        /// Admin: an automatic refund failed on Stripe and is owed to a traveler; it needs a manual retry
+        /// from the payments screen.
+        /// </summary>
+        RefundFailed = 29
     }
 
     /// <summary>

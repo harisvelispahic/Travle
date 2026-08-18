@@ -37,6 +37,14 @@ namespace Travle.Model.Responses
         public bool IsActive { get; set; }
 
         /// <summary>
+        /// True when at least one of the tour's stops is no longer an approved destination (its curator
+        /// edited it back into moderation, or it was rejected). Such a tour is hidden from travelers
+        /// entirely; it is surfaced only on the organizer's own "my tours" view, where it drives a
+        /// "Temporarily unavailable" badge so they know it's out of the catalogue.
+        /// </summary>
+        public bool HasUnavailableDestination { get; set; }
+
+        /// <summary>
         /// Average of this tour's non-removed reviews (0 when it has none). Computed on read — a tour has no
         /// denormalized rating column (03 §4), unlike a destination.
         /// </summary>

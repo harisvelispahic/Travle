@@ -25,5 +25,12 @@ namespace Travle.Model.SearchObjects
 
         /// <summary>When true, keep only tours that have at least one Active, future schedule.</summary>
         public bool? OnlyWithUpcomingSchedules { get; set; }
+
+        /// <summary>
+        /// When true, drop any tour that visits a non-approved destination (a stop pulled back into
+        /// moderation). Forced on by the public browse in the service so travelers never reach a tour with
+        /// an under-review stop; left off for the organizer's own list and the admin view.
+        /// </summary>
+        public bool? ExcludeUnavailableDestinations { get; set; }
     }
 }

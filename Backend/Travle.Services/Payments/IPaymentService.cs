@@ -32,6 +32,13 @@ namespace Travle.Services.Payments
         /// <summary>Admin-only: paginated, filterable list of payments for the admin payments screen.</summary>
         Task<PageResult<PaymentResponse>> SearchAsync(PaymentSearch search, CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// Admin-only: retry an owed refund a prior automatic attempt failed to complete (booking cancelled,
+        /// payment captured, no refund recorded yet). Reuses the idempotent refund path — it recomputes the
+        /// same tier amount, so it can never over-refund. Returns the updated payment row.
+        /// </summary>
+        Task<PaymentResponse> RetryRefundAsync(int paymentId, CancellationToken cancellationToken = default);
+
         /// <summary>Admin-only: revenue / commission / refund totals over the same filter as the list.</summary>
         Task<PaymentSummaryResponse> GetSummaryAsync(PaymentSearch search, CancellationToken cancellationToken = default);
     }

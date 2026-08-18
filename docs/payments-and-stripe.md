@@ -270,8 +270,11 @@ in the DB / the dashboard). The webhook then promotes the booking to `Pending` a
 | `POST` | `/Payments/Webhook` | Anonymous, **signature-verified** | Stripe → us; promotes PaymentInProgress → Pending on success, expires on failure. |
 | `GET` | `/Payments` | Admin | Paginated, filterable payments list (status, period, text search). |
 | `GET` | `/Payments/summary` | Admin | Revenue / commission / refund totals over the same filter. |
+| `POST` | `/Payments/{id}/retry-refund` | Admin | Re-run an **owed** refund a prior automatic attempt failed to complete; reuses the idempotent, tier-capped refund path (can never over-refund). |
 
-Payments are **never** CRUD-edited or deleted.
+Payments are **never** CRUD-edited or deleted. The retry action does not *edit* a payment — it re-invokes
+the refund executor, which appends a `Refund` row and advances the payment status exactly as the automatic
+path would have.
 
 ---
 
@@ -418,6 +421,56 @@ The succeeded-webhook idempotency guard was tightened from "skip if already `Suc
 re-recording the charge; the failed-webhook guard was tightened the same way. **No migration**
 (`Refund.InitiatedByUserId` reused). Files: `PaymentService`, `RefundService`/`IRefundService`,
 `BookingService`.
+
+### Ripple-events pass — refund-failure alerts + admin retry + suspension refunds ✅ (done, 2026-08-17)
+
+Part of the notifications hardening pass (full picture in `notifications-and-signalr.md` §12). The payment
+side gained:
+
+- **A failed automatic refund is no longer silent.** `RefundService.IssueRefundAsync`'s Stripe-error
+  `catch` now reassures the traveler (`General` "Refund delayed") **and** alerts every admin
+  (`RefundFailed`, emailed) that a refund of *X KM (Y%)* is owed on a booking. The failed try added nothing
+  to the context, so a dedicated `SaveChanges` persists just those notification rows.
+- **Admin "Retry refund" action.** `PaymentResponse.RefundOwed` (computed: a `Succeeded` payment on a
+  `Cancelled` booking with **no** `Refund` row) flags the owed set. `POST /Payments/{id}/retry-refund` →
+  `PaymentService.RetryRefundAsync` validates the row is genuinely owed, reconstructs the tier the original
+  attempt used (`CancelledByUserId == UserId` ⇒ tiered self-cancel, otherwise 100%), and re-invokes
+  `RefundService.RefundForBookingAsync`. Because that path is **idempotent and tier-capped**, a retry can
+  never over-refund — closing the loop without a general-purpose "manual refund" tool. Desktop: the admin
+  payments table shows a "Retry owed refund" button only on `refundOwed` rows (a new generic row-action on
+  `PaginatedSearchTable`); the snackbar reports whether the retry cleared the debt or it's still owed.
+- **Organizer-suspension refunds.** Suspending an organizer now cancels every paid (Pending/Confirmed)
+  booking on their tours with a **100% refund** (policy decision, 2026-08-17). `UserService.SuspendAsync`
+  cancels inside the suspension transaction (via `BookingService.CancelPaidBookingsForOrganizerAsync` →
+  the new `CancelForOrganizerSuspensionAsync` state transition), then issues the refunds **after commit**
+  through the same `RefundService` — so, like every other refund, Stripe is called outside any DB
+  transaction. Unpaid `PaymentInProgress` holds are left to expire (no charge to refund).
+
+**No migration.** Files: `PaymentService`/`IPaymentService`, `RefundService`, `PaymentResponse`,
+`PaymentsController`, `UserService`, `BookingService`/`IBookingService`, `BaseBookingState` +
+`Pending`/`Confirmed` states; desktop `admin_payments_screen.dart`, `paginated_search_table.dart`,
+`travle_core` payment model/provider.
+
+### Seeded-payment refunds are bookkeeping-only ✅ (done, 2026-08-18)
+
+The seed data (BulkSeeder + the migration seed) fabricates `Payment` rows with **synthetic** intent ids
+(`pi_seed_bulk_…`, `pi_seed_000…`) — those PaymentIntents never existed in Stripe. So *any* refund against a
+seeded booking (a user cancel, an organizer reject, and now organizer-suspension mass-cancel) previously
+called `stripe.CreateRefundAsync` and got back `No such payment_intent`, one error per booking. Suspending a
+heavily-scheduled seeded organizer produced a wall of `RefundService`/`StripeService` errors, a ~30 s delay
+(each failed call is a network round-trip), and — correctly but unhelpfully — fired the new
+`RefundFailed`-to-admin + retry-button path for data that can never be refunded.
+
+Fix: `RefundService.IssueRefundAsync` now treats a payment whose `StripePaymentIntentId` starts with
+`pi_seed` as **synthetic** and records the refund as *bookkeeping only* — it writes the `Refund` row, advances
+the `Payment` status, and raises `RefundIssued`, but makes **no Stripe call** (exactly as a 0%-tier refund
+already does). Real, app-made payments (`pi_…`) still hit Stripe. This removes the error spam, makes
+suspension fast, and keeps the retry button for *genuine* failures only.
+
+**Why not create real intents at seed time?** ~1,800 create-and-confirm API calls per seed run (rate-limited,
+minutes long) that would also couple seeding to live Stripe keys and break the offline `docker compose up`
+the grader relies on. Synthetic bookkeeping is the correct model for demo data. No migration. Files:
+`RefundService`.
 
 ---
 

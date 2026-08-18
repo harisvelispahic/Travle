@@ -44,15 +44,18 @@ namespace Travle.Services.BookingStateMachine
             return await BuildResponseAsync(booking.Id);
         }
 
-        public override async Task<BookingResponse> ExpireAsync(Booking booking)
+        public override async Task<BookingResponse> ExpireAsync(Booking booking, bool paymentFailed = false)
             => await InTransactionAsync(async () =>
             {
-                // The hold lapsed (or payment failed): release the seats and record the expiry.
+                // The hold lapsed or the payment was declined: release the seats and record the expiry. The
+                // message distinguishes the two so a card decline doesn't read as "you ran out of time".
                 await ReleaseSeatsAsync(booking.TourScheduleId, booking.NumberOfPeople);
                 MarkStatus(booking, BookingStatusCode.Expired);
                 AddNotification(booking.UserId, NotificationType.BookingExpired,
-                    "Booking expired",
-                    "Your booking hold expired before payment was completed, and the seats were released.",
+                    paymentFailed ? "Payment failed" : "Booking expired",
+                    paymentFailed
+                        ? "Your payment could not be completed, so the booking was released and the seats freed. You can book again to try a different card."
+                        : "Your booking hold expired before payment was completed, and the seats were released.",
                     booking.Id);
                 await DbContext.SaveChangesAsync();
                 return await BuildResponseAsync(booking.Id);

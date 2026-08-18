@@ -53,6 +53,11 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
         return 'roleRequests';
       case 'DestinationSubmitted':
         return 'destinations';
+      case 'DestinationUnavailable':
+      case 'DestinationAvailable':
+        return 'myTours';
+      case 'RefundFailed':
+        return 'payments';
       default:
         return null;
     }
@@ -68,6 +73,10 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
         return 'Role Requests';
       case 'destinations':
         return 'Destinations';
+      case 'myTours':
+        return 'My Tours';
+      case 'payments':
+        return 'Payments';
       default:
         return 'section';
     }

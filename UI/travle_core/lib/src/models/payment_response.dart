@@ -21,6 +21,7 @@ class PaymentResponse {
     required this.refundedAmount,
     required this.refundCount,
     required this.createdAt,
+    this.refundOwed = false,
     this.succeededAt,
   });
 
@@ -41,6 +42,10 @@ class PaymentResponse {
 
   final double refundedAmount;
   final int refundCount;
+
+  /// True when a refund is owed on this captured payment (booking cancelled, no
+  /// refund recorded — an automatic attempt failed). Drives the "Retry refund" action.
+  final bool refundOwed;
 
   final DateTime? succeededAt;
   final DateTime createdAt;

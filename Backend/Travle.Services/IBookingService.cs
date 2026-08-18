@@ -37,6 +37,14 @@ namespace Travle.Services
         /// </summary>
         Task CancelBookingsForScheduleAsync(int scheduleId, int organizerUserId, string reason);
 
+        /// <summary>
+        /// Cancels every paid, still-active booking (Pending/Confirmed) on a just-suspended organizer's tours
+        /// — each → Cancelled with a full refund owed and a traveler notification — and returns the cancelled
+        /// booking ids so the caller can issue the 100% refunds after the suspension transaction commits.
+        /// Called by <c>UserService.SuspendAsync</c> inside the suspension transaction.
+        /// </summary>
+        Task<List<int>> CancelPaidBookingsForOrganizerAsync(int organizerId, int adminUserId);
+
         /// <summary>Scheduler tick: expire every PaymentInProgress hold past its 15-minute window. Returns the count.</summary>
         Task<int> ExpireOverdueHoldsAsync(CancellationToken cancellationToken = default);
 

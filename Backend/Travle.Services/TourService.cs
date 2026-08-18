@@ -5,6 +5,7 @@ using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
 using Travle.Services.Database;
+using Travle.Services.Notifications;
 using Travle.Services.Payments;
 using Travle.Services.Projections;
 using FluentValidation;
@@ -33,6 +34,7 @@ namespace Travle.Services
         private readonly IAuthenticatedUserAccessor _currentUser;
         private readonly IBookingService _bookingService;
         private readonly IRefundService _refunds;
+        private readonly INotificationDispatcher _notifications;
         private readonly IValidator<TourScheduleInsertRequest> _scheduleInsertValidator;
         private readonly IValidator<TourScheduleCancelRequest> _scheduleCancelValidator;
 
@@ -43,6 +45,7 @@ namespace Travle.Services
             IAuthenticatedUserAccessor currentUser,
             IBookingService bookingService,
             IRefundService refunds,
+            INotificationDispatcher notifications,
             IValidator<TourInsertRequest> insertValidator,
             IValidator<TourUpdateRequest> updateValidator,
             IValidator<TourScheduleInsertRequest> scheduleInsertValidator,
@@ -53,6 +56,7 @@ namespace Travle.Services
             _currentUser = currentUser;
             _bookingService = bookingService;
             _refunds = refunds;
+            _notifications = notifications;
             _scheduleInsertValidator = scheduleInsertValidator;
             _scheduleCancelValidator = scheduleCancelValidator;
         }
@@ -111,6 +115,15 @@ namespace Travle.Services
                 query = query.Where(t => t.Schedules.Any(s => s.Status == ScheduleStatus.Active && s.StartsAt > now));
             }
 
+            // Public browse forces this on (see SearchAsync): a tour with any under-review stop is hidden
+            // from travelers entirely — otherwise it could still be reached via one of its *approved* stops'
+            // "tours visiting here" list, and from there its pending stop opened. The organizer's own list
+            // leaves it off so they still see the tour (flagged) and can act on it.
+            if (search.ExcludeUnavailableDestinations == true)
+            {
+                query = query.Where(t => t.TourDestinations.All(td => td.Destination.Status == DestinationStatus.Approved));
+            }
+
             return query;
         }
 
@@ -143,10 +156,11 @@ namespace Travle.Services
         public async Task<PageResult<TourResponse>> SearchAsync(TourSearch? search)
         {
             search ??= new TourSearch();
-            // Public browse is active-only; a caller can never widen it to inactive tours or scope it to
-            // another organizer.
+            // Public browse is active-only and never shows a tour with an under-review stop; a caller can
+            // never widen it to inactive tours, another organizer's tours, or tours with unavailable stops.
             search.IsActive = true;
             search.OrganizerId = null;
+            search.ExcludeUnavailableDestinations = true;
             search.SortBy ??= "CreatedAt desc";
             return await GetAllAsync(search);
         }
@@ -167,13 +181,20 @@ namespace Travle.Services
             var meta = await _dbContext.Tours
                 .AsNoTracking()
                 .Where(t => t.Id == id)
-                .Select(t => new { t.OrganizerId, t.IsActive, OrganizerSuspended = t.Organizer.IsSuspended })
+                .Select(t => new
+                {
+                    t.OrganizerId,
+                    t.IsActive,
+                    OrganizerSuspended = t.Organizer.IsSuspended,
+                    HasUnavailableDestination = t.TourDestinations.Any(td => td.Destination.Status != DestinationStatus.Approved)
+                })
                 .FirstOrDefaultAsync()
                 ?? throw new NotFoundException("Tour", id);
 
-            // A deactivated tour, or one whose organizer is suspended, is visible only to its organizer or an
-            // admin — travelers never reach it (a suspended organizer can't confirm bookings).
-            if (!meta.IsActive || meta.OrganizerSuspended)
+            // A deactivated tour, one whose organizer is suspended, or one with an under-review stop is
+            // visible only to its organizer or an admin — travelers never reach it (a suspended organizer
+            // can't confirm bookings; an under-review stop must not be reachable through the tour).
+            if (!meta.IsActive || meta.OrganizerSuspended || meta.HasUnavailableDestination)
             {
                 _authorization.EnsureSelfOrAdmin(meta.OrganizerId, "tour");
             }
@@ -269,6 +290,11 @@ namespace Travle.Services
             _dbContext.Tours.Add(tour);
             await _dbContext.SaveChangesAsync();
 
+            // Let each destination's curator know their destination is now part of a tour (a nice signal that
+            // their contribution is being used) — never the organizer themselves.
+            await NotifyCuratorsOfNewTourFeaturingDestinationsAsync(tour.Name, request.DestinationIds, userId);
+            await _dbContext.SaveChangesAsync();
+
             return await BuildDetailAsync(tour.Id);
         }
 
@@ -285,6 +311,13 @@ namespace Travle.Services
             await EnsureTourTypeExistsAsync(request.TourTypeId);
             await EnsureApprovedDestinationsAsync(request.DestinationIds);
 
+            // Capture the pre-edit state to decide whether travelers with an upcoming booking should be told
+            // the tour they booked changed materially — its name or its set of stops (the itinerary). Price
+            // and capacity are excluded: the price is snapshotted per booking, so it never changes what a
+            // traveler already owes.
+            var previousName = tour.Name;
+            var previousDestinationIds = tour.TourDestinations.Select(td => td.DestinationId).OrderBy(x => x).ToList();
+
             tour.Name = request.Name.Trim();
             tour.Description = request.Description.Trim();
             tour.DurationMinutes = request.DurationMinutes;
@@ -294,7 +327,16 @@ namespace Travle.Services
 
             ReconcileDestinations(tour, request.DestinationIds);
 
-            // All reconciliation is tracked in one SaveChanges → a single implicit transaction.
+            var newDestinationIds = request.DestinationIds.Distinct().OrderBy(x => x).ToList();
+            var materiallyChanged = previousName != tour.Name
+                                    || !previousDestinationIds.SequenceEqual(newDestinationIds);
+            if (materiallyChanged)
+            {
+                await NotifyUpcomingTravelersOfTourChangeAsync(id, tour.Name);
+            }
+
+            // All reconciliation (and any traveler notifications) is tracked in one SaveChanges → a single
+            // implicit transaction.
             await _dbContext.SaveChangesAsync();
 
             return await BuildDetailAsync(id);
@@ -362,6 +404,10 @@ namespace Travle.Services
             };
 
             _dbContext.TourSchedules.Add(schedule);
+            await _dbContext.SaveChangesAsync();
+
+            // Engagement: tell everyone who favorited this tour that a new date just opened up.
+            await NotifyFavoritersOfNewScheduleAsync(tourId, tour.Name);
             await _dbContext.SaveChangesAsync();
 
             return await BuildScheduleResponseAsync(schedule.Id);
@@ -615,6 +661,70 @@ namespace Travle.Services
             if (approvedCount != distinctIds.Count)
             {
                 throw new BusinessRuleException("Every destination on a tour must be an existing, approved destination.");
+            }
+        }
+
+        // Notifies the distinct travelers holding an upcoming, still-active (Pending/Confirmed) booking on a
+        // tour that its itinerary or name changed. Staged (unsaved) for the caller's SaveChanges. Past
+        // bookings and cancelled/expired ones are excluded — only travelers with something still ahead care.
+        private async Task NotifyUpcomingTravelersOfTourChangeAsync(int tourId, string tourName)
+        {
+            var now = DateTime.UtcNow;
+            var travelerIds = await _dbContext.Bookings
+                .Where(b => b.TourSchedule.TourId == tourId
+                            && b.TourSchedule.StartsAt > now
+                            && (b.StatusId == (int)BookingStatusCode.Pending
+                                || b.StatusId == (int)BookingStatusCode.Confirmed))
+                .Select(b => b.UserId)
+                .Distinct()
+                .ToListAsync();
+
+            foreach (var travelerId in travelerIds)
+            {
+                _notifications.Enqueue(travelerId, NotificationType.TourUpdated,
+                    "A tour you booked was updated",
+                    $"The tour '{tourName}' you have an upcoming booking on was updated by the organizer. Check the latest details.",
+                    tourId);
+            }
+        }
+
+        // Engagement fan-out: everyone who favorited this tour learns a new date opened. Staged (unsaved) for
+        // the caller's SaveChanges.
+        private async Task NotifyFavoritersOfNewScheduleAsync(int tourId, string tourName)
+        {
+            var favoriterIds = await _dbContext.Favorites
+                .Where(f => f.TourId == tourId)
+                .Select(f => f.UserId)
+                .Distinct()
+                .ToListAsync();
+
+            foreach (var userId in favoriterIds)
+            {
+                _notifications.Enqueue(userId, NotificationType.TourUpdated,
+                    "New date on a tour you saved",
+                    $"A tour you saved, '{tourName}', just opened a new date. Grab a spot!",
+                    tourId);
+            }
+        }
+
+        // Engagement fan-out: each destination's curator learns their destination was picked up by a new tour.
+        // Distinct submitters, excluding the organizer who built the tour (they know). relatedEntityId is the
+        // destination so the curator can open it. Staged (unsaved) for the caller's SaveChanges.
+        private async Task NotifyCuratorsOfNewTourFeaturingDestinationsAsync(
+            string tourName, IEnumerable<int> destinationIds, int organizerId)
+        {
+            var distinctIds = destinationIds.Distinct().ToList();
+            var curated = await _dbContext.Destinations
+                .Where(d => distinctIds.Contains(d.Id) && d.SubmittedByUserId != organizerId)
+                .Select(d => new { d.Id, d.Name, d.SubmittedByUserId })
+                .ToListAsync();
+
+            foreach (var destination in curated)
+            {
+                _notifications.Enqueue(destination.SubmittedByUserId, NotificationType.General,
+                    "Your destination is on a new tour",
+                    $"An organizer added your destination '{destination.Name}' to their tour '{tourName}'.",
+                    destination.Id);
             }
         }
 

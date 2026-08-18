@@ -7,6 +7,7 @@ using Travle.Services.Authorization;
 using Travle.Services.Database;
 using Travle.Services.Imaging;
 using Travle.Services.Notifications;
+using Travle.Services.Payments;
 using Travle.Services.Projections;
 using Travle.Services.Recommender;
 using Travle.Services.Security;
@@ -27,6 +28,8 @@ namespace Travle.Services
         private readonly RecommenderOptions _recommenderOptions;
         private readonly IRecommendationCache _recommendationCache;
         private readonly INotificationDispatcher _notifications;
+        private readonly IBookingService _bookingService;
+        private readonly IRefundService _refunds;
         private readonly IUserSecurityStore _securityStore;
         private readonly IValidator<UserRegisterRequest> _registerValidator;
         private readonly IValidator<AdminCreateUserRequest> _createValidator;
@@ -45,6 +48,8 @@ namespace Travle.Services
             IOptions<RecommenderOptions> recommenderOptions,
             IRecommendationCache recommendationCache,
             INotificationDispatcher notifications,
+            IBookingService bookingService,
+            IRefundService refunds,
             IUserSecurityStore securityStore,
             IValidator<UserRegisterRequest> registerValidator,
             IValidator<AdminCreateUserRequest> createValidator,
@@ -61,6 +66,8 @@ namespace Travle.Services
             _recommenderOptions = recommenderOptions.Value;
             _recommendationCache = recommendationCache;
             _notifications = notifications;
+            _bookingService = bookingService;
+            _refunds = refunds;
             _securityStore = securityStore;
             _registerValidator = registerValidator;
             _createValidator = createValidator;
@@ -467,7 +474,25 @@ namespace Travle.Services
                 $"Your Travle account has been suspended. Reason: {request.Reason}",
                 relatedEntityId: null, alsoEmail: true);
 
-            await _dbContext.SaveChangesAsync();
+            // Suspending an organizer pulls their tours from sale, and any paid booking on them can no longer
+            // be honored — so cancel each (Pending/Confirmed) with a full refund and tell the traveler. The
+            // suspension, every booking transition, and all their notifications commit atomically here; the
+            // Stripe refunds run only after the commit (a Stripe call must never sit inside a DB transaction).
+            // For a user who owns no tours this cancels nothing (an empty list), so it's safe to always run.
+            List<int> cancelledBookingIds;
+            await using (var transaction = await _dbContext.Database.BeginTransactionAsync())
+            {
+                await _dbContext.SaveChangesAsync();
+                cancelledBookingIds = await _bookingService.CancelPaidBookingsForOrganizerAsync(id, adminId);
+                await transaction.CommitAsync();
+            }
+
+            foreach (var bookingId in cancelledBookingIds)
+            {
+                await _refunds.RefundForBookingAsync(bookingId, adminId,
+                    "The tour organizer's account was suspended.", forcedPercentage: 100);
+            }
+
             _securityStore.Invalidate(id);
 
             return await RequireWithRolesAsync(id);
@@ -493,6 +518,13 @@ namespace Travle.Services
             // Roll the stamp for consistency (the account had no live sessions while suspended, so there
             // is nothing to invalidate) and refresh the cached state.
             user.SecurityStamp = NewSecurityStamp();
+
+            // Tell the reinstated user they're back — email is the channel that actually reaches them, since
+            // they were signed out while suspended and may never open the in-app centre to see it.
+            _notifications.Enqueue(id, NotificationType.AccountReinstated,
+                "Account reinstated",
+                "Good news — your Travle account has been reinstated. You can sign in again.",
+                relatedEntityId: null, alsoEmail: true);
 
             await _dbContext.SaveChangesAsync();
             _securityStore.Invalidate(id);

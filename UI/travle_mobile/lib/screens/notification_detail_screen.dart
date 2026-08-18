@@ -6,6 +6,7 @@ import 'package:travle_ui/travle_ui.dart';
 import '../util/notification_display.dart';
 import 'bookings/booking_details_screen.dart';
 import 'destination_details_screen.dart';
+import 'tour_details_screen.dart';
 
 /// Full view of a single notification. Opening it marks the notification read.
 /// Unlike the list row (which truncates the body), this shows the complete text —
@@ -19,7 +20,7 @@ class NotificationDetailScreen extends StatefulWidget {
 
   final NotificationResponse notification;
 
-  // RelatedEntityId is a booking id / a destination id for these type groups.
+  // RelatedEntityId is a booking id / a destination id / a tour id for these type groups.
   static const Set<String> _bookingTypes = {
     'BookingConfirmed',
     'BookingRejected',
@@ -34,7 +35,11 @@ class NotificationDetailScreen extends StatefulWidget {
   static const Set<String> _destinationTypes = {
     'DestinationApproved',
     'DestinationRejected',
+    'DestinationFeatured',
     'ReviewReceived',
+  };
+  static const Set<String> _tourTypes = {
+    'TourUpdated',
   };
 
   @override
@@ -59,20 +64,26 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
   bool get _hasRelated =>
       widget.notification.relatedEntityId != null &&
       (NotificationDetailScreen._bookingTypes.contains(_type) ||
-          NotificationDetailScreen._destinationTypes.contains(_type));
+          NotificationDetailScreen._destinationTypes.contains(_type) ||
+          NotificationDetailScreen._tourTypes.contains(_type));
 
-  String get _relatedLabel =>
-      NotificationDetailScreen._bookingTypes.contains(_type)
-          ? 'View booking'
-          : 'View destination';
+  String get _relatedLabel {
+    if (NotificationDetailScreen._bookingTypes.contains(_type)) return 'View booking';
+    if (NotificationDetailScreen._tourTypes.contains(_type)) return 'View tour';
+    return 'View destination';
+  }
 
   void _openRelated() {
     final id = widget.notification.relatedEntityId;
     if (id == null) return;
-    final Widget target =
-        NotificationDetailScreen._bookingTypes.contains(_type)
-            ? BookingDetailsScreen(bookingId: id)
-            : DestinationDetailsScreen(destinationId: id);
+    final Widget target;
+    if (NotificationDetailScreen._bookingTypes.contains(_type)) {
+      target = BookingDetailsScreen(bookingId: id);
+    } else if (NotificationDetailScreen._tourTypes.contains(_type)) {
+      target = TourDetailsScreen(tourId: id);
+    } else {
+      target = DestinationDetailsScreen(destinationId: id);
+    }
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => target));
   }
 

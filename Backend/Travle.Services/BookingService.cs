@@ -216,6 +216,34 @@ namespace Travle.Services
             return response;
         }
 
+        public async Task<List<int>> CancelPaidBookingsForOrganizerAsync(int organizerId, int adminUserId)
+        {
+            // Paid, still-active bookings (Pending/Confirmed) on the suspended organizer's tours. Unpaid
+            // PaymentInProgress holds are deliberately left to expire on their own — no money was taken, so
+            // a "full refund" message would be wrong, and the 15-minute hold clears the seats shortly anyway.
+            var paidActiveIds = await _dbContext.Bookings
+                .AsNoTracking()
+                .Where(b => b.TourSchedule.Tour.OrganizerId == organizerId
+                            && (b.StatusId == (int)BookingStatusCode.Pending
+                                || b.StatusId == (int)BookingStatusCode.Confirmed))
+                .Select(b => b.Id)
+                .ToListAsync();
+
+            foreach (var id in paidActiveIds)
+            {
+                var booking = await _dbContext.Bookings.FirstOrDefaultAsync(b => b.Id == id);
+                if (booking is null)
+                {
+                    continue;
+                }
+
+                var state = _states.GetState((BookingStatusCode)booking.StatusId);
+                await state.CancelForOrganizerSuspensionAsync(booking, adminUserId);
+            }
+
+            return paidActiveIds;
+        }
+
         public async Task CancelBookingsForScheduleAsync(int scheduleId, int organizerUserId, string reason)
         {
             var activeIds = await _dbContext.Bookings

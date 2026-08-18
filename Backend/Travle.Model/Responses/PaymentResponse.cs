@@ -27,6 +27,12 @@ namespace Travle.Model.Responses
         public decimal RefundedAmount { get; set; }
         public int RefundCount { get; set; }
 
+        /// <summary>
+        /// True when this captured payment sits on a cancelled booking but carries no refund yet — i.e. a
+        /// refund is owed (an automatic attempt failed). Drives the admin "Retry refund" action.
+        /// </summary>
+        public bool RefundOwed { get; set; }
+
         public DateTime? SucceededAt { get; set; }
         public DateTime CreatedAt { get; set; }
     }

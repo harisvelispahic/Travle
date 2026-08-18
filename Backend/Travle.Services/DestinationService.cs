@@ -264,6 +264,14 @@ namespace Travle.Services
                 .FirstOrDefaultAsync()
                 ?? throw new NotFoundException("Destination", id);
 
+            // A pending/rejected destination is only ever visible to its submitter or an admin. Approved
+            // destinations are public to any authenticated user; anything else must not be reachable — not
+            // through a tour that visits it, nor by guessing its id (the moderation catalogue stays private).
+            if (meta.Status != DestinationStatus.Approved)
+            {
+                _authorization.EnsureSelfOrAdmin(meta.SubmittedByUserId, "destination");
+            }
+
             // Opening an approved destination someone else submitted logs a View and bumps ViewCount —
             // recommender fuel + the popularity term. Self-views and non-approved rows never count.
             var viewerId = _currentUser.GetUserId();
@@ -354,8 +362,12 @@ namespace Travle.Services
 
             // Whether this edit is bringing the destination back into the moderation queue from a decided
             // state — captured before the status is reset, so admins are only re-notified on a real re-entry
-            // (not on repeated edits of an already-pending one).
+            // (not on repeated edits of an already-pending one). wasApproved additionally distinguishes the
+            // case where the destination is leaving the *published* catalogue, which ripples to any tour
+            // built on it (its organizer must be told). The editor is excluded from that fan-out.
             var wasPending = destination.Status == DestinationStatus.Pending;
+            var wasApproved = destination.Status == DestinationStatus.Approved;
+            var editorId = _authorization.RequireUserId();
 
             destination.Name = request.Name.Trim();
             destination.Description = request.Description.Trim();
@@ -381,7 +393,19 @@ namespace Travle.Services
                 await NotifyAdminsOfSubmissionAsync(destination.Name, id);
             }
 
-            // All reconciliation (and any admin notifications) is tracked in one SaveChanges → one transaction.
+            // Leaving the published catalogue (approved → back to pending) affects every organizer whose tour
+            // visits this destination — their itinerary now has a stop travelers can't see until it's approved
+            // again. Tell them (never the editor themselves).
+            if (wasApproved)
+            {
+                await NotifyOrganizersOfDestinationAvailabilityAsync(id,
+                    NotificationType.DestinationUnavailable,
+                    "A destination on your tour is unavailable",
+                    $"A destination one of your tours visits, '{destination.Name}', was edited and is awaiting re-approval, so it is temporarily hidden from travelers.",
+                    excludeUserId: editorId);
+            }
+
+            // All reconciliation (and any admin/organizer notifications) is tracked in one SaveChanges → one transaction.
             await _dbContext.SaveChangesAsync();
 
             return await RequireResponseAsync(id);
@@ -418,6 +442,17 @@ namespace Travle.Services
                 throw new ConflictException($"Cannot delete this destination: it is in {favoriteRefs} user favorite(s).");
             }
 
+            // If an admin removed someone else's pending submission, tell the submitter (they didn't do it,
+            // and their draft is now gone). Self-deletion is silent — the curator just did it themselves.
+            var actingUserId = _authorization.RequireUserId();
+            if (actingUserId != destination.SubmittedByUserId)
+            {
+                _notifications.Enqueue(destination.SubmittedByUserId, NotificationType.General,
+                    "Destination removed",
+                    $"Your pending destination '{destination.Name}' was removed by an administrator.",
+                    relatedEntityId: null);
+            }
+
             _dbContext.Destinations.Remove(destination); // images cascade away
             await _dbContext.SaveChangesAsync();
         }
@@ -443,6 +478,15 @@ namespace Travle.Services
                 "Destination approved",
                 $"Your destination '{destination.Name}' has been approved and is now published.",
                 destination.Id);
+
+            // If this approval brings a destination back that tours already reference (it can only carry tour
+            // references if it was approved before, then edited to Pending), tell those organizers their
+            // itinerary is whole again. Empty (a no-op) for a first-time approval, which no tour can reference.
+            await NotifyOrganizersOfDestinationAvailabilityAsync(id,
+                NotificationType.DestinationAvailable,
+                "A destination on your tour is available again",
+                $"A destination one of your tours visits, '{destination.Name}', has been re-approved and is visible to travelers again.",
+                excludeUserId: null);
 
             await _dbContext.SaveChangesAsync();
 
@@ -491,6 +535,17 @@ namespace Travle.Services
             }
 
             destination.IsFeatured = isFeatured;
+
+            // Being featured is a promotion the curator will want to hear about (it drives their traffic).
+            // Only on featuring — un-featuring is an internal editorial call, not news for the submitter.
+            if (isFeatured)
+            {
+                _notifications.Enqueue(destination.SubmittedByUserId, NotificationType.DestinationFeatured,
+                    "Your destination was featured",
+                    $"Great news — your destination '{destination.Name}' has been featured on Travle.",
+                    destination.Id);
+            }
+
             await _dbContext.SaveChangesAsync();
 
             return await RequireResponseAsync(id);
@@ -698,6 +753,29 @@ namespace Travle.Services
                     "Destination awaiting moderation",
                     $"'{destinationName}' was submitted and is awaiting moderation.",
                     destinationId);
+            }
+        }
+
+        // Fan-out to the distinct organizers whose tours include this destination — used when it leaves
+        // (DestinationUnavailable) or re-enters (DestinationAvailable) the published catalogue, since either
+        // ripples to their live itineraries. Empty for a destination no tour uses (e.g. a first-time
+        // approval). Staged (unsaved) for the caller's SaveChanges, like the admin fan-out above.
+        private async Task NotifyOrganizersOfDestinationAvailabilityAsync(
+            int destinationId, NotificationType type, string title, string text, int? excludeUserId)
+        {
+            var organizerIds = await _dbContext.TourDestinations
+                .Where(td => td.DestinationId == destinationId)
+                .Select(td => td.Tour.OrganizerId)
+                .Distinct()
+                .ToListAsync();
+
+            foreach (var organizerId in organizerIds)
+            {
+                if (excludeUserId.HasValue && organizerId == excludeUserId.Value)
+                {
+                    continue;
+                }
+                _notifications.Enqueue(organizerId, type, title, text, destinationId);
             }
         }
     }

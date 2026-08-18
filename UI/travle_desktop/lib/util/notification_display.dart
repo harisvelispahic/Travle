@@ -15,9 +15,11 @@ bool notificationIsNegative(String type) => const {
       'BookingExpired',
       'ScheduleCancelled',
       'DestinationRejected',
+      'DestinationUnavailable',
       'RoleApplicationRejected',
       'AccountSuspended',
       'ReviewRemoved',
+      'RefundFailed',
     }.contains(type);
 
 /// A type-specific icon for the notification's avatar.
@@ -60,8 +62,20 @@ IconData notificationIcon(String type) {
       return Icons.event_busy_outlined;
     case 'AccountSuspended':
       return Icons.gpp_bad_outlined;
+    case 'AccountReinstated':
+      return Icons.gpp_good_outlined;
     case 'PasswordChanged':
       return Icons.lock_reset;
+    case 'DestinationUnavailable':
+      return Icons.location_off_outlined;
+    case 'DestinationAvailable':
+      return Icons.location_on_outlined;
+    case 'DestinationFeatured':
+      return Icons.auto_awesome;
+    case 'TourUpdated':
+      return Icons.update;
+    case 'RefundFailed':
+      return Icons.money_off_outlined;
     default:
       return Icons.notifications_outlined;
   }

@@ -54,6 +54,9 @@ namespace Travle.Services.BookingStateMachine
         public override Task<BookingResponse> CancelForSlotAsync(Booking booking, int organizerUserId, string reason)
             => CancelForSlotInternalAsync(booking, organizerUserId, reason);
 
+        public override Task<BookingResponse> CancelForOrganizerSuspensionAsync(Booking booking, int adminUserId)
+            => CancelForOrganizerSuspensionInternalAsync(booking, adminUserId);
+
         public override List<BookingAction> GetAllowedActions()
             => new() { BookingAction.Confirm, BookingAction.Reject, BookingAction.Cancel };
     }

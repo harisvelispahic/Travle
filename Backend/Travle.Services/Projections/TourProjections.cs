@@ -30,6 +30,9 @@ namespace Travle.Services.Projections
                 OrganizerId = t.OrganizerId,
                 OrganizerName = t.Organizer.FirstName + " " + t.Organizer.LastName,
                 IsActive = t.IsActive,
+                // A tour is "unavailable" the moment any stop leaves the approved catalogue (edited back to
+                // Pending / rejected). Travelers never see such a tour; the organizer sees it flagged.
+                HasUnavailableDestination = t.TourDestinations.Any(td => td.Destination.Status != DestinationStatus.Approved),
                 // Tour rating is computed on read — a tour has no denormalized rating column (03 §4). A
                 // suspended author's review is excluded from the public aggregate (reappears on unsuspend).
                 AverageRating = t.Reviews.Where(r => !r.IsRemoved && !r.User.IsSuspended).Select(r => (double?)r.Rating).Average() ?? 0d,

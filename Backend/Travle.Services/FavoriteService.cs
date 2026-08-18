@@ -100,7 +100,10 @@ namespace Travle.Services
             IQueryable<Tour> query = _dbContext.Tours.AsNoTracking()
                 .Where(t => _dbContext.Favorites.Any(f => f.UserId == userId && f.TourId == t.Id))
                 // Hide a favorited tour whose organizer is currently suspended (reappears on unsuspend).
-                .Where(t => !t.Organizer.IsSuspended);
+                .Where(t => !t.Organizer.IsSuspended)
+                // Hide a favorited tour that has an under-review stop (reappears when it's approved again),
+                // matching the public browse — a traveler must never open such a tour.
+                .Where(t => t.TourDestinations.All(td => td.Destination.Status == DestinationStatus.Approved));
 
             query = ApplyTourText(query, search.Text);
             if (search.TourTypeId.HasValue)

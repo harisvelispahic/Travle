@@ -74,10 +74,13 @@ namespace Travle.Services.BookingStateMachine
         public virtual Task<BookingResponse> CompleteAsync(Booking booking)
             => throw Illegal("completed");
 
-        public virtual Task<BookingResponse> ExpireAsync(Booking booking)
+        public virtual Task<BookingResponse> ExpireAsync(Booking booking, bool paymentFailed = false)
             => throw Illegal("expired");
 
         public virtual Task<BookingResponse> CancelForSlotAsync(Booking booking, int organizerUserId, string reason)
+            => throw Illegal("cancelled");
+
+        public virtual Task<BookingResponse> CancelForOrganizerSuspensionAsync(Booking booking, int adminUserId)
             => throw Illegal("cancelled");
 
         /// <summary>The transitions this state currently permits (for UI button gating, rule K).</summary>
@@ -112,6 +115,39 @@ namespace Travle.Services.BookingStateMachine
                     "Booking cancelled",
                     "A traveler cancelled their booking on one of your tour schedules.",
                     booking.Id);
+
+                // Confirm the cancellation to the traveler too — otherwise a cancellation at the 0% refund
+                // tier (which issues no RefundIssued notification) would leave them with no trace at all.
+                // In-app only: emailing someone about their own just-taken action is noise.
+                AddNotification(booking.UserId, NotificationType.BookingCancelled,
+                    "Booking cancelled",
+                    "Your booking has been cancelled. Any refund due will be processed to your original payment method.",
+                    booking.Id);
+
+                await DbContext.SaveChangesAsync();
+                return await BuildResponseAsync(booking.Id);
+            });
+
+        /// <summary>
+        /// Cancellation forced by the tour organizer's suspension, shared by <see cref="PendingBookingState"/>
+        /// and <see cref="ConfirmedBookingState"/> (the paid states): release the held seats (the schedule
+        /// itself stays Active, unlike a slot-cancel), move to Cancelled with audit, and tell the traveler
+        /// their tour won't run and a full refund is coming. The 100% refund is issued by <c>IRefundService</c>
+        /// after the suspension transaction commits (UserService orchestrates), so Stripe is never called
+        /// inside this transaction. Reuses <see cref="NotificationType.ScheduleCancelled"/> — from the
+        /// traveler's side the outcome is identical (their booked tour is cancelled, fully refunded).
+        /// </summary>
+        protected async Task<BookingResponse> CancelForOrganizerSuspensionInternalAsync(Booking booking, int adminUserId)
+            => await InTransactionAsync(async () =>
+            {
+                await ReleaseSeatsAsync(booking.TourScheduleId, booking.NumberOfPeople);
+                MarkStatus(booking, BookingStatusCode.Cancelled);
+                booking.CancelledByUserId = adminUserId;
+                booking.CancellationReason = "The tour organizer's account was suspended.";
+                AddNotification(booking.UserId, NotificationType.ScheduleCancelled,
+                    "Tour cancelled",
+                    "A tour you booked has been cancelled because the organizer is no longer available. A full refund will be issued.",
+                    booking.Id, alsoEmail: true);
 
                 await DbContext.SaveChangesAsync();
                 return await BuildResponseAsync(booking.Id);

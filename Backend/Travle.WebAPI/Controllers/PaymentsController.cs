@@ -67,4 +67,13 @@ public class PaymentsController : ControllerBase
     public async Task<ActionResult<PaymentSummaryResponse>> Summary(
         [FromQuery] PaymentSearch? search, CancellationToken cancellationToken)
         => Ok(await _service.GetSummaryAsync(search ?? new PaymentSearch(), cancellationToken));
+
+    /// <summary>
+    /// Admin-only: retry an owed refund a prior automatic attempt failed to complete. Reuses the idempotent
+    /// refund path (tier-capped, so it can never over-refund) and returns the updated payment row.
+    /// </summary>
+    [Authorize(Policy = AuthPolicies.AdminOnly)]
+    [HttpPost("{paymentId:int}/retry-refund")]
+    public async Task<ActionResult<PaymentResponse>> RetryRefund(int paymentId, CancellationToken cancellationToken)
+        => Ok(await _service.RetryRefundAsync(paymentId, cancellationToken));
 }

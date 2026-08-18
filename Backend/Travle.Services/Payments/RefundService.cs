@@ -95,6 +95,13 @@ namespace Travle.Services.Payments
                 notificationText: "Your payment was received after the booking hold had already expired and its seats were released, so a full refund has been issued to your original payment method.");
         }
 
+        // Seeded/demo payments carry a fabricated "pi_seed…" intent id (see BulkSeeder / migration seed) that
+        // was never created in Stripe. Refunding one must skip the Stripe call and record bookkeeping only.
+        private const string SyntheticIntentPrefix = "pi_seed";
+
+        private static bool IsSyntheticPayment(Payment payment)
+            => payment.StripePaymentIntentId.StartsWith(SyntheticIntentPrefix, StringComparison.Ordinal);
+
         // Paid, now-cancelled bookings that don't already carry a refund — the set that is owed a refund.
         private IQueryable<Payment> LoadRefundablePaymentsQuery()
             => _dbContext.Payments
@@ -125,14 +132,28 @@ namespace Travle.Services.Payments
                 var stripeRefundId = string.Empty;
                 if (amount > 0)
                 {
-                    // The idempotency key is derived from the payment, so even if this succeeds on Stripe but
-                    // the SaveChanges below fails, a later retry returns the SAME refund (never a double refund).
-                    var refund = await _stripe.CreateRefundAsync(
-                        payment.StripePaymentIntentId,
-                        PaymentMath.ToMinorUnits(amount),
-                        $"refund-payment-{payment.Id}",
-                        cancellationToken);
-                    stripeRefundId = refund.Id;
+                    if (IsSyntheticPayment(payment))
+                    {
+                        // Seeded/demo payment: its PaymentIntent (pi_seed…) never existed in Stripe, so there
+                        // is nothing to call. Record the refund as bookkeeping only — exactly like a 0% tier —
+                        // so the demo's cancel / organizer-reject / organizer-suspension flows behave correctly
+                        // without a flood of "No such payment_intent" errors. Real (app-made) payments still
+                        // hit Stripe below.
+                        _logger.LogInformation(
+                            "Payment {PaymentId} is a seeded demo payment ({IntentId}); recording a bookkeeping-only refund (no Stripe call).",
+                            payment.Id, payment.StripePaymentIntentId);
+                    }
+                    else
+                    {
+                        // The idempotency key is derived from the payment, so even if this succeeds on Stripe but
+                        // the SaveChanges below fails, a later retry returns the SAME refund (never a double refund).
+                        var refund = await _stripe.CreateRefundAsync(
+                            payment.StripePaymentIntentId,
+                            PaymentMath.ToMinorUnits(amount),
+                            $"refund-payment-{payment.Id}",
+                            cancellationToken);
+                        stripeRefundId = refund.Id;
+                    }
                     payment.Status = percentage >= 100 ? PaymentStatus.Refunded : PaymentStatus.PartiallyRefunded;
                 }
 
@@ -168,7 +189,33 @@ namespace Travle.Services.Payments
                 _logger.LogError(ex,
                     "Refund of {Amount} KM ({Percentage}%) failed for booking {BookingId} (payment {PaymentId}); the cancellation stands and the refund is owed.",
                     amount, percentage, payment.BookingId, payment.Id);
+
+                await NotifyRefundOwedAsync(payment, amount, percentage, cancellationToken);
             }
+        }
+
+        // A Stripe refund errored, so the money is still owed. Reassure the traveler (they were told a refund
+        // was coming) and alert every admin to retry it from the payments screen. The notification rows are
+        // the only pending changes here — the failed try added nothing to the context — so a dedicated
+        // SaveChanges persists them; the request/worker flush then pushes + emails them.
+        private async Task NotifyRefundOwedAsync(
+            Payment payment, decimal amount, int percentage, CancellationToken cancellationToken)
+        {
+            _notifications.Enqueue(payment.Booking.UserId, NotificationType.General,
+                "Refund delayed",
+                $"We hit a problem processing your refund for booking #{payment.BookingId}. Our team has been notified and will make sure it is completed.",
+                payment.BookingId);
+
+            var adminIds = await NotificationRecipients.AdminUserIdsAsync(_dbContext, cancellationToken);
+            foreach (var adminId in adminIds)
+            {
+                _notifications.Enqueue(adminId, NotificationType.RefundFailed,
+                    "Refund failed — action needed",
+                    $"An automatic refund of {amount:0.00} KM ({percentage}%) for booking #{payment.BookingId} failed and is owed to the traveler. Retry it from the Payments screen.",
+                    payment.BookingId, alsoEmail: true);
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
         }
     }
 }

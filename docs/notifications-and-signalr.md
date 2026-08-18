@@ -74,13 +74,22 @@ de-duplicates against existing rows rather than adding a "reminded" column.
 
 ### 2.1 `NotificationType` catalog
 
-Existing values plus the three added in Phase 9 (all stored as `int`; adding values is not a schema
-change):
+Existing values plus the three added in Phase 9 and the batch added in the ripple-events hardening pass
+(all stored as `int`; adding values is not a schema change):
 
 `General, BookingConfirmed, BookingRejected, BookingCancelled, BookingExpired, BookingReminder,
 BookingCompleted, PaymentSucceeded, RefundIssued, DestinationApproved, DestinationRejected,
 RoleApplicationApproved, RoleApplicationRejected, ReviewReceived, AccountSuspended, ScheduleCancelled,
-ReviewRemoved` **+ (Phase 9) `BookingPlaced`, `RoleApplicationSubmitted`, `DestinationSubmitted`.**
+ReviewRemoved` **+ (Phase 9) `BookingPlaced`, `RoleApplicationSubmitted`, `DestinationSubmitted`**
+**+ (post-P10) `AccountCreated`, `RoleGranted`, `RoleRevoked`, `PasswordChanged`**
+**+ (ripple-events hardening, 2026-08-17) `DestinationUnavailable`, `DestinationAvailable`,
+`AccountReinstated`, `DestinationFeatured`, `TourUpdated`, `RefundFailed`** (ints 24–29).
+
+Two of the new events deliberately **reuse** an existing type rather than mint their own, because from the
+recipient's side the outcome is identical: a booking cancelled by an **organizer suspension** reuses
+`ScheduleCancelled` (the traveler's tour won't run, full refund), and low-key engagement notes (a curator's
+destination picked up by a new tour; an admin removing a pending submission; a traveler's own-cancellation
+confirmation) reuse `General` / `BookingCancelled`.
 
 ---
 
@@ -207,39 +216,63 @@ events that also enqueue a worker email (spec §5). "State" is relative to the s
 | Organizer confirmed the booking | `BookingConfirmed` | ✓ | ✓ | wired (+email) |
 | Organizer rejected the booking | `BookingRejected` | ✓ | ✓ | wired (+email) |
 | 15-minute hold expired | `BookingExpired` | ✓ | – | wired |
+| Payment declined (card failed) | `BookingExpired`¹ | ✓ | – | **ripple** |
 | Booking auto-completed (leave a review) | `BookingCompleted` | ✓ | – | wired |
+| Own booking cancelled (confirmation) | `BookingCancelled` | ✓ | – | **ripple** |
 | Organizer cancelled the slot | `ScheduleCancelled` | ✓ | ✓ | wired (+email) |
+| Organizer **suspended** → booked tour cancelled | `ScheduleCancelled`² | ✓ | ✓ | **ripple (+email)** |
+| A tour you booked was updated (itinerary/name) | `TourUpdated` | ✓ | – | **ripple** |
+| A tour you **saved** added a new date | `TourUpdated` | ✓ | – | **ripple** |
 | Refund issued | `RefundIssued` | ✓ | ✓ | wired (+email) |
-| 24-hour pre-tour reminder | `BookingReminder` | ✓ | ✓ | **new** |
+| Refund delayed (an automatic refund failed) | `General` | ✓ | – | **ripple** |
+| 24-hour pre-tour reminder | `BookingReminder` | ✓ | ✓ | wired (+email) |
 | Role application approved/rejected | `RoleApplication…` | ✓ | ✓ | wired (+email) |
 | Own review removed by admin | `ReviewRemoved` | ✓ | – | wired |
+
+¹ Same type as a lapsed hold, but a distinct title/body ("Payment failed", not "hold expired") — a card
+decline immediately expires the hold, and the message says so. ² Reuses `ScheduleCancelled` because the
+traveler's outcome is identical (their booked tour won't run, full refund).
 
 ### Curator (mobile)
 | Event | Type | In-app | Email | State |
 |---|---|:-:|:-:|---|
 | Destination approved/rejected | `Destination…` | ✓ | ✓ | wired (+email) |
-| New review on my destination | `ReviewReceived` | ✓ | – | **new (wire)** |
+| New review on my destination | `ReviewReceived` | ✓ | – | wired |
+| My destination was **featured** | `DestinationFeatured` | ✓ | – | **ripple** |
+| My destination was picked up by a new tour | `General` | ✓ | – | **ripple** |
+| My pending destination was removed by an admin | `General` | ✓ | – | **ripple** |
 | Own review removed by admin | `ReviewRemoved` | ✓ | – | wired |
 | Role application decisions | `RoleApplication…` | ✓ | ✓ | wired |
 
 ### Organizer (desktop)
 | Event | Type | In-app | Email | State |
 |---|---|:-:|:-:|---|
-| New booking awaiting confirmation | `BookingPlaced` | ✓ | – | **new** |
+| New booking awaiting confirmation | `BookingPlaced` | ✓ | – | wired |
 | A traveler cancelled a booking | `BookingCancelled` | ✓ | – | wired |
-| New review on my tour | `ReviewReceived` | ✓ | – | **new (wire)** |
+| New review on my tour | `ReviewReceived` | ✓ | – | wired |
+| A destination on my tour became **unavailable** | `DestinationUnavailable` | ✓ | – | **ripple** |
+| A destination on my tour is **available again** | `DestinationAvailable` | ✓ | – | **ripple** |
+
+The two destination-availability events fan out to the **distinct organizers whose tours visit the
+destination** (a `TourDestinations → Tour.OrganizerId` query, deduped), excluding the editor. They fire when
+a destination leaves the published catalogue (an approved destination edited back to Pending) and when it
+re-enters it (re-approval) — since either ripples through every tour built on it. Rejection needs no separate
+event: a destination only reaches a tour by being approved first, so its organizers were already told
+"unavailable" at the edit-to-Pending step.
 
 ### Admin (desktop)
 | Event | Type | In-app | Email | State |
 |---|---|:-:|:-:|---|
-| New role application submitted | `RoleApplicationSubmitted` | ✓ | – | **new** |
-| New / edited destination pending moderation | `DestinationSubmitted` | ✓ | – | **new** |
-| Account suspended (sent to the suspended user) | `AccountSuspended` | ✓¹ | ✓ | **new** |
+| New role application submitted | `RoleApplicationSubmitted` | ✓ | – | wired |
+| New / edited destination pending moderation | `DestinationSubmitted` | ✓ | – | wired |
+| **Refund failed — action needed** (owed to a traveler) | `RefundFailed` | ✓ | ✓ | **ripple (+email)** |
+| Account suspended (sent to the suspended user) | `AccountSuspended` | ✓¹ | ✓ | wired |
+| Account **reinstated** (sent to the reinstated user) | `AccountReinstated` | ✓ | ✓ | **ripple (+email)** |
 
-¹ Email is the channel that actually reaches a just-suspended user (their session is revoked). The in-app
-row is still written — cheap, and it gives transparency ("suspended on X for reason Y") if the account is
-later reinstated. Admin events (`RoleApplicationSubmitted`, `DestinationSubmitted`) fan out to **all** users
-holding the Admin role via `NotificationRecipients.AdminUserIdsAsync` (one query on `UserRoles`).
+¹ Email is the channel that actually reaches a just-suspended (or -reinstated) user — their session is
+revoked while suspended, so an in-app row alone might never be seen. The in-app row is still written for
+transparency. Admin fan-out events (`RoleApplicationSubmitted`, `DestinationSubmitted`, `RefundFailed`) go to
+**all** users holding the Admin role via `NotificationRecipients.AdminUserIdsAsync` (one query on `UserRoles`).
 
 ---
 
@@ -377,9 +410,18 @@ no per-record pages). Everything else — the core, the bell, the centre, the de
   Cloud Messaging (Android) / a local-notifications plugin and a push service — deliberately excluded, on
   both mobile and desktop. A closed client simply sees everything on its next open (REST load), which the
   durable DB row guarantees.
-- **Destination removed/unpublished ⇒ notify affected organizers** (hardening phase). When a curator's
-  destination is taken down, any organizer whose tour includes it should be told, since it affects their
-  live tours.
+- **Destination removed/unpublished ⇒ notify affected organizers** — ✅ **done** in the 2026-08-17
+  ripple-events pass (`DestinationUnavailable` / `DestinationAvailable`, see §7). Note a curator can never
+  *delete* a destination a tour uses (`DestinationService.DeleteAsync` blocks it with a conflict); the real
+  trigger is an approved destination being **edited back to Pending** (or rejected on re-moderation), which
+  is where the fan-out fires.
+- **Deliberately skipped ripple candidates** (surfaced in the same audit, judged not worth the noise):
+  - *Schedule sold out → organizer.* Seats are consumed at **hold** time (a 15-minute `PaymentInProgress`
+    booking), which may expire and free the seat again, so a "sold out" nudge fired on `SeatsTaken == Capacity`
+    would frequently be a false alarm. Dropped.
+  - *Booking auto-completed → organizer.* `CompleteAsync` runs **per booking**, so an organizer running a
+    20-seat tour would get 20 "your tour ran" rows. Low value, high noise. Dropped (the traveler still gets
+    their `BookingCompleted`). Both could be revisited as a single per-schedule digest if ever wanted.
 - Any additional cross-role ripple events discovered during hardening land here first, then in §7.
 
 ---
@@ -436,6 +478,55 @@ no per-record pages). Everything else — the core, the bell, the centre, the de
   live nudge. (Mobile deliberately keeps no toast — its live nudge is the badge; only the management app
   asked for toasts.) Desktop force-reauth on a live *desktop* role grant is still not wired (mobile-only for
   now) — noted for later, not part of S1.
+- **2026-08-17** — **Ripple-events hardening pass (backend + both Flutter clients, all analyzer/compile
+  clean).** Closed the cross-role notification gaps found in the 2026-08-16 audit, plus two policy/feature
+  changes that go beyond notifications. Six new `NotificationType` values (24–29, no migration).
+  - **Destination availability → organizers (§7).** `DestinationService`: edit-from-approved fans out
+    `DestinationUnavailable` and re-approval fans out `DestinationAvailable` to the distinct organizers whose
+    tours visit the destination (new `NotifyOrganizersOfDestinationAvailabilityAsync`), plus `DestinationFeatured`
+    to the curator on featuring, and a `General` "removed by admin" to the curator when an admin deletes their
+    pending submission.
+  - **Account reinstated → user.** `UserService.UnsuspendAsync` raises `AccountReinstated` (+email).
+  - **Policy: organizer suspension cancels & refunds paid bookings.** `UserService.SuspendAsync` now, inside
+    the suspension transaction, calls the new `BookingService.CancelPaidBookingsForOrganizerAsync` (cancels every
+    Pending/Confirmed booking on the organizer's tours via a new `CancelForOrganizerSuspensionAsync` state
+    transition — releases seats, notifies the traveler with `ScheduleCancelled`), then issues 100% refunds
+    **after commit** (Stripe out of the transaction). `UserService` gained `IBookingService` + `IRefundService`
+    deps (no DI cycle). Unpaid `PaymentInProgress` holds are left to expire.
+  - **Tour changes → travelers.** `TourService.UpdateAsync` raises `TourUpdated` to travelers with an upcoming
+    Pending/Confirmed booking when the **name or itinerary** changed (price/capacity excluded — price is
+    snapshotted). `AddScheduleAsync` raises `TourUpdated` to a tour's favoriters (new date). `InsertAsync` raises
+    a `General` "your destination is on a new tour" to each stop's curator. `TourService` gained
+    `INotificationDispatcher`.
+  - **Feature: retry an owed refund (§ payments doc).** `RefundService` now, on a Stripe refund failure,
+    reassures the traveler (`General` "Refund delayed") and alerts all admins (`RefundFailed`, +email).
+    `PaymentResponse.RefundOwed` (a captured payment on a cancelled booking with no refund) drives a new admin
+    **"Retry refund"** action → `POST /Payments/{id}/retry-refund` → `PaymentService.RetryRefundAsync` (reuses the
+    idempotent, tier-capped refund path; the tier is reconstructed from who cancelled the booking). Desktop:
+    `PaginatedSearchTable` gained a generic optional row-action; the admin payments screen shows the retry button
+    only on owed rows.
+  - **Wording/coverage nits.** A card decline reuses `BookingExpired` but with a distinct "Payment failed"
+    title/body (`ExpireAsync(booking, paymentFailed:true)`); a traveler's own cancellation now always gets a
+    `BookingCancelled` confirmation (previously the 0% refund tier left no trace).
+  - **Policy: tour deactivation** unchanged in behaviour (upcoming bookings are still honored) — only the
+    desktop confirm dialog now spells that out ("hidden from new bookings… cancel schedules one-by-one for a
+    100% refund"). No traveler notification (their booking is unaffected).
+  - **Client.** New type icons/labels/negative-flags in both `notification_display.dart`s; mobile deep-links
+    `TourUpdated`→tour and `DestinationFeatured`→destination; desktop deep-links `DestinationUnavailable/Available`
+    →*My Tours* and `RefundFailed`→*Payments*. **Deliberately skipped:** sold-out→organizer (hold/confirm
+    false-alarm) and auto-complete→organizer (per-booking spam) — see §11.
+- **2026-08-18** — **Follow-ups from live testing the ripple pass.**
+  - *Enforced the destination-unavailable ripple, not just the notification.* The `DestinationUnavailable`
+    event told organizers a stop went under review, but the tour was still reachable by travelers (via one of
+    its *approved* stops' "tours visiting here" list) and its pending stop openable from there. Now a tour with
+    any non-approved stop is hidden from every traveler surface (`TourResponse.HasUnavailableDestination`;
+    public browse/detail/favorites), a non-approved destination's detail is gated to submitter/admin, and the
+    organizer's *My Tours* shows a "Temporarily unavailable" badge. Full write-up in `tours-and-bookings.md`
+    §2.1.
+  - *Seeded-payment refunds are bookkeeping-only.* Suspending a seeded organizer (or any refund of a seeded
+    booking) hit Stripe with fabricated `pi_seed…` intents → a flood of "No such payment_intent" errors + the
+    (correct) `RefundFailed`/retry path firing on un-refundable demo data. `RefundService` now skips Stripe for
+    synthetic payments and records the refund as bookkeeping only. Details in `payments-and-stripe.md`.
 
 ---
 

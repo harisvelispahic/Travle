@@ -27,4 +27,11 @@ class PaymentProvider extends BaseProvider<PaymentResponse> {
     final json = await getAction('summary', filter: filter) as Map<String, dynamic>;
     return PaymentSummaryResponse.fromJson(json);
   }
+
+  /// Admin retries an owed refund a prior automatic attempt failed to complete
+  /// (`POST /Payments/{id}/retry-refund`) → the updated payment row.
+  Future<PaymentResponse> retryRefund(int paymentId) async {
+    final json = await postAction('$paymentId/retry-refund');
+    return PaymentResponse.fromJson(json as Map<String, dynamic>);
+  }
 }
