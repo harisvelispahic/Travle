@@ -256,13 +256,13 @@ class _ActivityRow extends StatelessWidget {
     );
   }
 
-  // Compact "x ago" from a server UTC wall-clock timestamp.
+  // Compact "x ago" from a server UTC instant (an audit timestamp → device zone).
   static String _timeAgo(DateTime timestamp) {
-    final diff = DateTime.now().toUtc().difference(asUtc(timestamp));
+    final diff = DateTime.now().toUtc().difference(asUtcInstant(timestamp));
     if (diff.inMinutes < 1) return 'just now';
     if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
     if (diff.inHours < 24) return '${diff.inHours}h ago';
     if (diff.inDays < 30) return '${diff.inDays}d ago';
-    return formatDate(asUtc(timestamp).toLocal());
+    return formatDate(deviceLocalTime(timestamp));
   }
 }

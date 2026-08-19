@@ -12,6 +12,7 @@ CityResponse _$CityResponseFromJson(Map<String, dynamic> json) => CityResponse(
   regionId: (json['regionId'] as num).toInt(),
   createdAt: DateTime.parse(json['createdAt'] as String),
   regionName: json['regionName'] as String?,
+  timeZoneId: json['timeZoneId'] as String? ?? 'UTC',
   modifiedAt: json['modifiedAt'] == null
       ? null
       : DateTime.parse(json['modifiedAt'] as String),
@@ -23,6 +24,7 @@ Map<String, dynamic> _$CityResponseToJson(CityResponse instance) =>
       'name': instance.name,
       'regionId': instance.regionId,
       'regionName': instance.regionName,
+      'timeZoneId': instance.timeZoneId,
       'createdAt': instance.createdAt.toIso8601String(),
       'modifiedAt': instance.modifiedAt?.toIso8601String(),
     };

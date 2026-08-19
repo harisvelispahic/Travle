@@ -515,8 +515,8 @@ class _DetailCard extends StatelessWidget {
             _Row(
               icon: Icons.event_outlined,
               label: 'Departure',
-              value: formatScheduleRange(
-                  booking.scheduleStartsAt, booking.scheduleEndsAt),
+              value: formatEventScheduleRange(booking.scheduleStartsAt,
+                  booking.scheduleEndsAt, booking.timeZoneId),
             ),
             const Divider(height: TravleTokens.space24),
             _Row(
@@ -585,8 +585,8 @@ class _Row extends StatelessWidget {
 
 /// A live count-down of the 15-minute payment hold. Ticks once a second toward
 /// [expiresAt] and stops at 00:00 (never goes negative). The remaining time is
-/// computed in UTC on both sides (see [asUtc]) so it is correct on any device
-/// time zone, even though the app otherwise shows server times as wall-clock.
+/// computed in UTC on both sides (see [asUtcInstant]) so it is correct on any
+/// device time zone.
 class _HoldNotice extends StatefulWidget {
   const _HoldNotice({required this.expiresAt});
 
@@ -615,7 +615,7 @@ class _HoldNoticeState extends State<_HoldNotice> {
   }
 
   Duration _timeLeft() {
-    final diff = asUtc(widget.expiresAt).difference(DateTime.now().toUtc());
+    final diff = asUtcInstant(widget.expiresAt).difference(DateTime.now().toUtc());
     return diff.isNegative ? Duration.zero : diff;
   }
 

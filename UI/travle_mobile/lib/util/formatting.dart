@@ -1,7 +1,11 @@
-/// Small display formatters for the tour screens. Times from the API are UTC
-/// wall-clock stored without a zone marker; Phase 4 shows them as-is (a proper
-/// local-time conversion arrives with the booking screens).
+/// Small display formatters for the tour screens. The API sends every time as a
+/// UTC instant; **event** times (tour schedule start/end) are shown in the tour
+/// destination's zone via `formatEvent*` (labelled "(local time)"), while audit
+/// timestamps use the device zone. The zone conversion lives in `travle_core`
+/// ([eventLocalTime]/[deviceLocalTime]). See docs/time-and-timezones.md.
 library;
+
+import 'package:travle_core/travle_core.dart';
 
 const List<String> _months = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -41,16 +45,16 @@ String formatDuration(int minutes) {
 /// "25.00 KM" — a price in the displayed currency.
 String formatPrice(double amount) => '${amount.toStringAsFixed(2)} KM';
 
-/// Reinterprets a server timestamp (a UTC wall-clock value parsed without a zone
-/// marker, so Dart tags it local) as the real UTC instant it represents. Use this
-/// before computing a duration against [DateTime.now], so the result is correct
-/// regardless of the device's time zone (e.g. a booking-hold countdown).
-DateTime asUtc(DateTime serverTime) => DateTime.utc(
-      serverTime.year,
-      serverTime.month,
-      serverTime.day,
-      serverTime.hour,
-      serverTime.minute,
-      serverTime.second,
-      serverTime.millisecond,
-    );
+// ── Event times (shown in the destination's zone, labelled "(local time)") ──────
+
+/// A tour event date-time in its destination's zone, e.g. "15 Aug 2026, 10:00 (local time)".
+String formatEventDateTime(DateTime utc, String? zone) =>
+    '${formatDateTime(eventLocalTime(utc, zone))} (local time)';
+
+/// A tour event date only, in its destination's zone (no time-of-day → no zone label).
+String formatEventDate(DateTime utc, String? zone) =>
+    formatDate(eventLocalTime(utc, zone));
+
+/// A tour schedule's start–end range in its destination's zone, labelled "(local time)".
+String formatEventScheduleRange(DateTime startUtc, DateTime endUtc, String? zone) =>
+    '${formatScheduleRange(eventLocalTime(startUtc, zone), eventLocalTime(endUtc, zone))} (local time)';

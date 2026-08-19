@@ -31,6 +31,7 @@ TourResponse _$TourResponseFromJson(Map<String, dynamic> json) => TourResponse(
   nextDepartureAt: json['nextDepartureAt'] == null
       ? null
       : DateTime.parse(json['nextDepartureAt'] as String),
+  timeZoneId: json['timeZoneId'] as String? ?? 'UTC',
   primaryThumbnail: json['primaryThumbnail'] as String?,
   primaryThumbnailContentType: json['primaryThumbnailContentType'] as String?,
   destinations:
@@ -67,6 +68,7 @@ Map<String, dynamic> _$TourResponseToJson(TourResponse instance) =>
       'destinationCount': instance.destinationCount,
       'upcomingScheduleCount': instance.upcomingScheduleCount,
       'nextDepartureAt': instance.nextDepartureAt?.toIso8601String(),
+      'timeZoneId': instance.timeZoneId,
       'primaryThumbnail': instance.primaryThumbnail,
       'primaryThumbnailContentType': instance.primaryThumbnailContentType,
       'destinations': instance.destinations,

@@ -13,6 +13,11 @@ namespace Travle.Services.Validators
 
             RuleFor(x => x.RegionId)
                 .GreaterThan(0).WithMessage("A region must be selected.");
+
+            // Optional; a real IANA id is verified against the zone database in CityService.
+            RuleFor(x => x.TimeZoneId)
+                .MaximumLength(64).WithMessage("Time zone id cannot exceed 64 characters.")
+                .When(x => !string.IsNullOrWhiteSpace(x.TimeZoneId));
         }
     }
 }

@@ -20,6 +20,14 @@ namespace Travle.Model.Responses
         public DateTime ScheduleStartsAt { get; set; }
         public DateTime ScheduleEndsAt { get; set; }
 
+        /// <summary>
+        /// IANA zone (e.g. "Europe/Sarajevo") the schedule's event times display in — the tour's
+        /// ordered-first destination's city zone. <see cref="ScheduleStartsAt"/>/<see cref="ScheduleEndsAt"/>
+        /// are UTC instants; the client converts them to this zone, labelled "(local time)". Audit fields
+        /// (<see cref="CreatedAt"/>, <see cref="ExpiresAt"/>, …) stay device-local. See docs/time-and-timezones.md.
+        /// </summary>
+        public string TimeZoneId { get; set; } = string.Empty;
+
         public int TourId { get; set; }
         public string TourName { get; set; } = string.Empty;
 

@@ -16,7 +16,7 @@ class TourCard extends StatelessWidget {
 
   String get _departure {
     if (tour.nextDepartureAt != null) {
-      return 'Next: ${formatDate(tour.nextDepartureAt!)}';
+      return 'Next: ${formatEventDate(tour.nextDepartureAt!, tour.timeZoneId)}';
     }
     return 'No upcoming dates';
   }

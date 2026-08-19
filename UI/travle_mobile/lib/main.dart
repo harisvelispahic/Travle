@@ -8,6 +8,9 @@ import 'app/auth_gate.dart';
 
 void main() => runTravleApp(() {
       WidgetsFlutterBinding.ensureInitialized();
+      // Load the IANA time-zone database so tour event times render in their
+      // destination's zone (see docs/time-and-timezones.md).
+      initTravleTimeZones();
       // The mobile app is portrait-only — lock it upright so no screen rotates.
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,

@@ -5,7 +5,7 @@ import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
 /// The kind of control rendered for a [CrudField].
-enum CrudFieldKind { text, multiline, integer, dropdown, image }
+enum CrudFieldKind { text, multiline, integer, dropdown, image, timezone }
 
 /// One selectable option in a [CrudFieldKind.dropdown] field: a [value] (the id
 /// sent to the API — never shown) paired with a human [label].
@@ -124,6 +124,13 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
   /// Text/integer controllers, keyed by field id.
   final Map<String, TextEditingController> _controllers = {};
 
+  /// Focus nodes for timezone (autocomplete) fields, keyed by field id.
+  final Map<String, FocusNode> _focusNodes = {};
+
+  /// The sorted IANA id list, loaded once the first timezone field needs it.
+  List<String>? _zoneIds;
+  List<String> get _timeZoneIds => _zoneIds ??= allTimeZoneIds();
+
   /// Current dropdown selections, keyed by field id.
   final Map<String, Object?> _dropdownValues = {};
 
@@ -153,6 +160,12 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
         case CrudFieldKind.integer:
           _controllers[field.id] =
               TextEditingController(text: initial?.toString() ?? '');
+        case CrudFieldKind.timezone:
+          // Same controller-owned text as a text field, plus a focus node the
+          // autocomplete overlay needs to open/close correctly.
+          _controllers[field.id] =
+              TextEditingController(text: initial?.toString() ?? '');
+          _focusNodes[field.id] = FocusNode();
         case CrudFieldKind.dropdown:
           _dropdownValues[field.id] = initial;
           // Set the flag directly (we're pre-first-build; setState would throw),
@@ -175,6 +188,9 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
   void dispose() {
     for (final c in _controllers.values) {
       c.dispose();
+    }
+    for (final f in _focusNodes.values) {
+      f.dispose();
     }
     super.dispose();
   }
@@ -213,6 +229,7 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
       switch (field.kind) {
         case CrudFieldKind.text:
         case CrudFieldKind.multiline:
+        case CrudFieldKind.timezone:
           values[field.id] = _controllers[field.id]!.text.trim();
         case CrudFieldKind.integer:
           values[field.id] = _parseInt(_controllers[field.id]!.text);
@@ -384,7 +401,75 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
         return _buildDropdown(field);
       case CrudFieldKind.image:
         return _buildImageControl(field);
+      case CrudFieldKind.timezone:
+        return _buildTimeZoneControl(field);
     }
+  }
+
+  /// A searchable IANA time-zone picker: type to filter the bundled zone database,
+  /// pick a suggestion. The value is the exact id (validated against the list), so
+  /// a typo can't reach the API. Optional/required is honoured like a text field.
+  Widget _buildTimeZoneControl(CrudField field) {
+    return RawAutocomplete<String>(
+      textEditingController: _controllers[field.id],
+      focusNode: _focusNodes[field.id],
+      optionsBuilder: (value) {
+        final query = value.text.trim().toLowerCase();
+        final all = _timeZoneIds;
+        final matches = query.isEmpty
+            ? all
+            : all.where((id) => id.toLowerCase().contains(query));
+        return matches.take(50);
+      },
+      fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+        return TravleTextField(
+          controller: controller,
+          focusNode: focusNode,
+          hint: field.hint ?? 'e.g. Europe/Sarajevo',
+          helperText: field.helperText,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => onFieldSubmitted(),
+          validator: (raw) {
+            final text = raw?.trim() ?? '';
+            if (text.isEmpty) {
+              return field.required ? '${field.label} is required' : null;
+            }
+            if (!_timeZoneIds.contains(text)) {
+              return 'Choose a time zone from the list';
+            }
+            return null;
+          },
+        );
+      },
+      optionsViewBuilder: (context, onSelected, options) {
+        final theme = Theme.of(context);
+        final items = options.toList();
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(TravleTokens.radius),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 260, maxWidth: 360),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                itemCount: items.length,
+                itemBuilder: (context, i) => InkWell(
+                  onTap: () => onSelected(items[i]),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: TravleTokens.space12,
+                        vertical: TravleTokens.space8),
+                    child: Text(items[i], style: theme.textTheme.bodyMedium),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildImageControl(CrudField field) {

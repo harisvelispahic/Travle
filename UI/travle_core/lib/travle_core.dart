@@ -90,6 +90,7 @@ export 'src/providers/user_provider.dart';
 export 'src/utils/document_codec.dart';
 export 'src/utils/image_codec.dart';
 export 'src/utils/text_search.dart';
+export 'src/utils/time_display.dart';
 export 'src/utils/validators.dart';
 export 'src/auth/app_role.dart';
 export 'src/auth/auth_provider.dart';

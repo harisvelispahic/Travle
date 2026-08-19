@@ -12,6 +12,7 @@ class CityResponse {
     required this.regionId,
     required this.createdAt,
     this.regionName,
+    this.timeZoneId = 'UTC',
     this.modifiedAt,
   });
 
@@ -21,6 +22,11 @@ class CityResponse {
 
   /// Flattened parent region name (present on detail reads).
   final String? regionName;
+
+  /// IANA time-zone id (e.g. "Europe/Sarajevo") the city's tours display event times in.
+  @JsonKey(defaultValue: 'UTC')
+  final String timeZoneId;
+
   final DateTime createdAt;
   final DateTime? modifiedAt;
 

@@ -51,7 +51,9 @@ class _TourSchedulesDialogState extends State<TourSchedulesDialog> {
           'includeTotalCount': true,
           if (!_includePast) ...{
             'activeOnly': true,
-            'fromDate': DateTime.now(),
+            // Server-side "starts after now" (compared to UtcNow) — never our local clock, which would
+            // be off by the UTC offset and hide imminent slots. See docs/time-and-timezones.md.
+            'upcomingOnly': true,
           },
         },
       );
@@ -109,7 +111,8 @@ class _TourSchedulesDialogState extends State<TourSchedulesDialog> {
     final confirmed = await showConfirmDialog(
       context,
       title: 'Delete schedule',
-      message: 'Delete the slot on ${formatDateTime(slot.startsAt)}? '
+      message: 'Delete the slot on '
+          '${formatEventDateTime(slot.startsAt, slot.timeZoneId)}? '
           'This cannot be undone.',
       confirmLabel: 'Delete',
       destructive: true,
@@ -273,7 +276,8 @@ class _ScheduleTile extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    formatScheduleRange(slot.startsAt, slot.endsAt),
+                    formatEventScheduleRange(
+                        slot.startsAt, slot.endsAt, slot.timeZoneId),
                     style: theme.textTheme.titleSmall,
                   ),
                 ),
@@ -525,6 +529,12 @@ class _AddScheduleDialogState extends State<_AddScheduleDialog> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: TravleTokens.space8),
+            Text(
+              'Times are local to the tour’s destination.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: TravleTokens.space12),
             TravleTextField(

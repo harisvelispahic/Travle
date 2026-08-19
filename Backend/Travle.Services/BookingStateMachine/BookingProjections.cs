@@ -1,3 +1,4 @@
+using Travle.Model.Constants;
 using Travle.Model.Responses;
 using Travle.Services.Database;
 
@@ -25,6 +26,11 @@ namespace Travle.Services.BookingStateMachine
                 TourScheduleId = b.TourScheduleId,
                 ScheduleStartsAt = b.TourSchedule.StartsAt,
                 ScheduleEndsAt = b.TourSchedule.EndsAt,
+                // Zone the schedule's event times display in: the tour's ordered-first destination's city zone.
+                TimeZoneId = b.TourSchedule.Tour.TourDestinations
+                    .OrderBy(td => td.SortOrder)
+                    .Select(td => td.Destination.City.TimeZoneId)
+                    .FirstOrDefault() ?? TimeDefaults.PlatformTimeZoneId,
                 TourId = b.TourSchedule.TourId,
                 TourName = b.TourSchedule.Tour.Name,
                 OrganizerId = b.TourSchedule.Tour.OrganizerId,

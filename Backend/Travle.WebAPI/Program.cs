@@ -14,6 +14,7 @@ using Travle.Services.Payments;
 using Travle.Services.Recommender;
 using Travle.Services.Reports;
 using Travle.Services.Security;
+using Travle.Services.Time;
 using Travle.Services.Validators;
 using Travle.WebAPI.Authorization;
 using Travle.WebAPI.Filters;
@@ -21,6 +22,7 @@ using Travle.WebAPI.Hubs;
 using Travle.WebAPI.Middleware;
 using Travle.WebAPI.OpenApi;
 using Travle.WebAPI.Options;
+using Travle.WebAPI.Serialization;
 using Travle.WebAPI.Services;
 using Travle.WebAPI.Services.AccessManager;
 using FluentValidation;
@@ -101,6 +103,12 @@ builder.Services.AddControllers(options =>
 
             return new BadRequestObjectResult(body) { ContentTypes = { "application/json" } };
         };
+    })
+    .AddJsonOptions(options =>
+    {
+        // Every DateTime ships as a UTC instant with a 'Z' marker (SQL datetime2 loses Kind, so DB reads
+        // are otherwise Unspecified and serialize without a zone). See Serialization/UtcDateTimeConverter.
+        options.JsonSerializerOptions.Converters.Add(new UtcDateTimeConverter());
     });
 
 // CORS configured once with explicit origins from configuration (course §3.4). Native Flutter
@@ -124,6 +132,14 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddDbContext<TravleDbContext>(options =>
     options.UseSqlServer(connectionString)
 );
+
+// Time-zone handling: the platform fallback zone is bound once (env PLATFORM_TIMEZONE →
+// Time__PlatformTimeZoneId). TimeZoneService is stateless and backed by NodaTime's bundled IANA
+// database (no OS tzdata dependency), so it is a singleton. See docs/time-and-timezones.md.
+builder.Services.AddOptions<TimeOptions>()
+    .Bind(builder.Configuration.GetSection(TimeOptions.SectionName))
+    .ValidateDataAnnotations();
+builder.Services.AddSingleton<ITimeZoneService, TimeZoneService>();
 
 // register Mapster for object mapping
 builder.Services.AddMapster();
@@ -168,7 +184,11 @@ builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddScoped<INotificationDispatcher, NotificationDispatcher>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<INotificationRealtimePush, SignalRNotificationPush>();
-builder.Services.AddSignalR();
+builder.Services.AddSignalR()
+    // Same UTC-with-Z contract on the hub payloads as the HTTP API, so notification timestamps are
+    // unambiguous over the WebSocket too.
+    .AddJsonProtocol(options =>
+        options.PayloadSerializerOptions.Converters.Add(new UtcDateTimeConverter()));
 
 // Booking state machine: the base acts as the factory host injected into the service, and each concrete
 // state is a scoped service resolved by BaseBookingState.GetState per the persisted status (state pattern).

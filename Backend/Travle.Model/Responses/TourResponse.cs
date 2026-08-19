@@ -65,6 +65,13 @@ namespace Travle.Model.Responses
         /// <summary>Start of the next Active, future schedule, if any (for a "next departure" chip).</summary>
         public DateTime? NextDepartureAt { get; set; }
 
+        /// <summary>
+        /// IANA zone (e.g. "Europe/Sarajevo") the tour's event times display in — the ordered-first
+        /// destination's city zone. All <see cref="DateTime"/> event fields are UTC instants; the client
+        /// converts them to this zone for display, labelled "(local time)". See docs/time-and-timezones.md.
+        /// </summary>
+        public string TimeZoneId { get; set; } = string.Empty;
+
         /// <summary>The ordered-first destination's thumbnail, used as the tour cover on list cards.</summary>
         public byte[]? PrimaryThumbnail { get; set; }
         public string? PrimaryThumbnailContentType { get; set; }

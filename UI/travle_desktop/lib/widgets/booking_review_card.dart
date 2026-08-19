@@ -68,8 +68,8 @@ class BookingReviewCard extends StatelessWidget {
               children: [
                 _Meta(
                   icon: Icons.event_outlined,
-                  label: formatScheduleRange(
-                      booking.scheduleStartsAt, booking.scheduleEndsAt),
+                  label: formatEventScheduleRange(booking.scheduleStartsAt,
+                      booking.scheduleEndsAt, booking.timeZoneId),
                 ),
                 _Meta(icon: Icons.group_outlined, label: peopleLabel),
                 _Meta(

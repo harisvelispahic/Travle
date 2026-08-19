@@ -33,6 +33,7 @@ class TourResponse {
     this.tourTypeName,
     this.organizerName,
     this.nextDepartureAt,
+    this.timeZoneId = 'UTC',
     this.primaryThumbnail,
     this.primaryThumbnailContentType,
     this.destinations = const [],
@@ -79,6 +80,10 @@ class TourResponse {
   final int destinationCount;
   final int upcomingScheduleCount;
   final DateTime? nextDepartureAt;
+
+  /// IANA time-zone id (e.g. "Europe/Sarajevo") the tour's event times display in (UTC instants on the wire).
+  @JsonKey(defaultValue: 'UTC')
+  final String timeZoneId;
 
   /// Base64 cover thumbnail for list cards (null when no stop has an image).
   final String? primaryThumbnail;

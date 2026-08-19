@@ -18,6 +18,7 @@ class BookingResponse {
     required this.tourScheduleId,
     required this.scheduleStartsAt,
     required this.scheduleEndsAt,
+    this.timeZoneId = 'UTC',
     required this.tourId,
     required this.tourName,
     required this.organizerId,
@@ -55,6 +56,11 @@ class BookingResponse {
   final int tourScheduleId;
   final DateTime scheduleStartsAt;
   final DateTime scheduleEndsAt;
+
+  /// IANA time-zone id (e.g. "Europe/Sarajevo") the schedule's event times display in (UTC instants on
+  /// the wire). Audit fields ([createdAt], [expiresAt], …) stay device-local.
+  @JsonKey(defaultValue: 'UTC')
+  final String timeZoneId;
 
   final int tourId;
   final String tourName;

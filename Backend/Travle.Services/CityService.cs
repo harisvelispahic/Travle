@@ -4,6 +4,7 @@ using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
 using Travle.Services.Database;
+using Travle.Services.Time;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,14 +14,50 @@ namespace Travle.Services
         : ReferenceCrudService<City, CityResponse, CitySearch, CityInsertRequest, CityUpdateRequest>,
           ICityService
     {
+        private readonly ITimeZoneService _timeZones;
+
         public CityService(
             TravleDbContext dbContext,
             MapsterMapper.IMapper mapper,
             IValidator<CityInsertRequest> insertValidator,
             IValidator<CityUpdateRequest> updateValidator,
-            IAppAuthorizationService authorization)
+            IAppAuthorizationService authorization,
+            ITimeZoneService timeZones)
             : base(dbContext, mapper, insertValidator, updateValidator, authorization)
         {
+            _timeZones = timeZones;
+        }
+
+        // A blank zone on insert inherits the platform default; a provided one must be a real IANA id.
+        protected override City MapInsertRequestToEntity(CityInsertRequest request)
+        {
+            var entity = base.MapInsertRequestToEntity(request);
+            entity.TimeZoneId = string.IsNullOrWhiteSpace(request.TimeZoneId)
+                ? _timeZones.PlatformTimeZoneId
+                : ValidateZone(request.TimeZoneId);
+            return entity;
+        }
+
+        // A blank zone on update keeps the stored one; a provided one must be a real IANA id. Captured
+        // before the base map because Mapster would otherwise overwrite the existing value with null.
+        protected override void MapUpdateRequestToEntity(CityUpdateRequest request, City entity)
+        {
+            var existingZone = entity.TimeZoneId;
+            base.MapUpdateRequestToEntity(request, entity);
+            entity.TimeZoneId = string.IsNullOrWhiteSpace(request.TimeZoneId)
+                ? existingZone
+                : ValidateZone(request.TimeZoneId);
+        }
+
+        private string ValidateZone(string timeZoneId)
+        {
+            var trimmed = timeZoneId.Trim();
+            if (!_timeZones.IsKnownZone(trimmed))
+            {
+                throw new BusinessRuleException(
+                    $"'{trimmed}' is not a valid IANA time-zone identifier (e.g. 'Europe/Sarajevo').");
+            }
+            return trimmed;
         }
 
         protected override IQueryable<City> ApplyFilters(IQueryable<City> query, CitySearch? search)

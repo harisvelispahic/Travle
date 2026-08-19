@@ -370,7 +370,8 @@ class _OrganizerTourCard extends StatelessWidget {
                           if (t.nextDepartureAt != null)
                             _MetaChip(
                               icon: Icons.flight_takeoff_outlined,
-                              label: 'Next: ${formatDate(t.nextDepartureAt!)}',
+                              label:
+                                  'Next: ${formatEventDate(t.nextDepartureAt!, t.timeZoneId)}',
                             ),
                         ],
                       ),

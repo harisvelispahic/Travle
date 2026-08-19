@@ -13,6 +13,7 @@ class TourScheduleResponse {
     required this.tourId,
     required this.startsAt,
     required this.endsAt,
+    this.timeZoneId = 'UTC',
     required this.capacity,
     required this.seatsTaken,
     required this.freeSeats,
@@ -30,6 +31,10 @@ class TourScheduleResponse {
 
   final DateTime startsAt;
   final DateTime endsAt;
+
+  /// IANA time-zone id (e.g. "Europe/Sarajevo") [startsAt]/[endsAt] display in — those are UTC instants.
+  @JsonKey(defaultValue: 'UTC')
+  final String timeZoneId;
 
   final int capacity;
   final int seatsTaken;

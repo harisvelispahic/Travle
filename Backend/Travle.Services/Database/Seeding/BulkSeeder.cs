@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using NodaTime;
 using Travle.Model.Constants;
 
 namespace Travle.Services.Database.Seeding
@@ -454,7 +455,10 @@ namespace Travle.Services.Database.Seeding
                 for (var s = 0; s < scheduleCount; s++)
                 {
                     var offsetDays = ScheduleOffsetDays(rng);
-                    var startsAt = now.Date.AddDays(offsetDays).AddHours(8 + rng.Next(0, 9));
+                    // Generate a nice local departure hour (08:00–16:00) at the platform zone, then store the
+                    // true UTC instant it represents — matching how the write path treats an organizer's pick,
+                    // so the seeded slots display back at exactly these hours. See docs/time-and-timezones.md.
+                    var startsAt = PlatformLocalToUtc(now.Date.AddDays(offsetDays).AddHours(8 + rng.Next(0, 9)));
                     var schedule = new TourSchedule
                     {
                         StartsAt = startsAt,
@@ -924,6 +928,17 @@ namespace Travle.Services.Database.Seeding
         {
             var roll = rng.Next(100);
             return roll < 45 ? 5 : roll < 75 ? 4 : roll < 90 ? 3 : roll < 96 ? 2 : 1;
+        }
+
+        // Interprets a naive wall-clock as local to the platform zone and returns the UTC instant it
+        // represents (DST-aware, via NodaTime's bundled tzdb). Lenient so a generated hour that happens to
+        // land on a DST transition never throws; the seed's 08:00–16:00 range never hits a transition
+        // anyway. All seeded cities are in the platform zone, so this matches the runtime write path.
+        private static DateTime PlatformLocalToUtc(DateTime naiveLocal)
+        {
+            var zone = DateTimeZoneProviders.Tzdb[TimeDefaults.PlatformTimeZoneId];
+            var local = LocalDateTime.FromDateTime(DateTime.SpecifyKind(naiveLocal, DateTimeKind.Unspecified));
+            return local.InZoneLeniently(zone).ToDateTimeUtc();
         }
 
         // Schedule dates cluster near "now": ~60% within a month, then a month-to-quarter band, then the tails.

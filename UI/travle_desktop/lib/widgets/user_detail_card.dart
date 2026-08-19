@@ -102,7 +102,7 @@ class UserDetailCard extends StatelessWidget {
         _InfoRow(
           icon: Icons.event_outlined,
           label: 'Member since',
-          value: formatDate(asUtc(user.createdAt).toLocal()),
+          value: formatDate(deviceLocalTime(user.createdAt)),
         ),
         if (user.isSuspended) ...[
           const SizedBox(height: TravleTokens.space16),
@@ -168,7 +168,7 @@ class _SuspensionDetail extends StatelessWidget {
               const SizedBox(width: TravleTokens.space8),
               Text(
                 user.suspendedAt != null
-                    ? 'Suspended ${formatDateTime(asUtc(user.suspendedAt!).toLocal())}'
+                    ? 'Suspended ${formatDateTime(deviceLocalTime(user.suspendedAt!))}'
                     : 'Suspended',
                 style: theme.textTheme.labelLarge?.copyWith(color: color),
               ),

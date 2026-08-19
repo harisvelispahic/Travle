@@ -8,6 +8,7 @@ using Travle.Services.Database;
 using Travle.Services.Notifications;
 using Travle.Services.Payments;
 using Travle.Services.Projections;
+using Travle.Services.Time;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 
@@ -35,6 +36,7 @@ namespace Travle.Services
         private readonly IBookingService _bookingService;
         private readonly IRefundService _refunds;
         private readonly INotificationDispatcher _notifications;
+        private readonly ITimeZoneService _timeZones;
         private readonly IValidator<TourScheduleInsertRequest> _scheduleInsertValidator;
         private readonly IValidator<TourScheduleCancelRequest> _scheduleCancelValidator;
 
@@ -46,6 +48,7 @@ namespace Travle.Services
             IBookingService bookingService,
             IRefundService refunds,
             INotificationDispatcher notifications,
+            ITimeZoneService timeZones,
             IValidator<TourInsertRequest> insertValidator,
             IValidator<TourUpdateRequest> updateValidator,
             IValidator<TourScheduleInsertRequest> scheduleInsertValidator,
@@ -57,6 +60,7 @@ namespace Travle.Services
             _bookingService = bookingService;
             _refunds = refunds;
             _notifications = notifications;
+            _timeZones = timeZones;
             _scheduleInsertValidator = scheduleInsertValidator;
             _scheduleCancelValidator = scheduleCancelValidator;
         }
@@ -222,6 +226,12 @@ namespace Travle.Services
                 {
                     query = query.Where(s => s.Status == ScheduleStatus.Active);
                 }
+                if (search?.UpcomingOnly == true)
+                {
+                    // Compared against UtcNow server-side — never a client-supplied clock (which would be
+                    // off by the UTC offset and hide imminent slots). See docs/time-and-timezones.md §10.
+                    query = query.Where(s => s.StartsAt > now);
+                }
                 if (search?.FromDate is DateTime from)
                 {
                     query = query.Where(s => s.StartsAt >= from);
@@ -386,7 +396,11 @@ namespace Travle.Services
                 throw new BusinessRuleException("Schedules can only be added to an active tour. Reactivate it first.");
             }
 
-            var startsAt = NormalizeToUtc(request.StartsAt);
+            // The organizer picks the start as wall-clock at the destination; interpret it in that
+            // destination's zone (DST-aware) to get the true UTC instant we store. The future-check is
+            // then an honest instant-vs-instant comparison (see docs/time-and-timezones.md).
+            var timeZoneId = await ResolveTourTimeZoneAsync(tourId);
+            var startsAt = _timeZones.ConvertLocalToUtc(request.StartsAt, timeZoneId);
             if (startsAt <= DateTime.UtcNow)
             {
                 throw new BusinessRuleException("A schedule must start in the future.");
@@ -559,6 +573,10 @@ namespace Travle.Services
                 TourId = s.TourId,
                 StartsAt = s.StartsAt,
                 EndsAt = s.EndsAt,
+                TimeZoneId = s.Tour.TourDestinations
+                    .OrderBy(td => td.SortOrder)
+                    .Select(td => td.Destination.City.TimeZoneId)
+                    .FirstOrDefault() ?? TimeDefaults.PlatformTimeZoneId,
                 Capacity = s.Capacity,
                 SeatsTaken = s.SeatsTaken,
                 FreeSeats = s.Capacity - s.SeatsTaken,
@@ -746,9 +764,14 @@ namespace Travle.Services
             return query.Skip((page - 1) * pageSize).Take(pageSize);
         }
 
-        private static DateTime NormalizeToUtc(DateTime value)
-            => value.Kind == DateTimeKind.Unspecified
-                ? DateTime.SpecifyKind(value, DateTimeKind.Utc)
-                : value.ToUniversalTime();
+        // The IANA zone a tour's event times are entered/displayed in: the ordered-first destination's
+        // city zone. Falls back to the platform zone only if a tour somehow has no destinations.
+        private async Task<string> ResolveTourTimeZoneAsync(int tourId)
+            => await _dbContext.TourDestinations
+                   .Where(td => td.TourId == tourId)
+                   .OrderBy(td => td.SortOrder)
+                   .Select(td => td.Destination.City.TimeZoneId)
+                   .FirstOrDefaultAsync()
+               ?? _timeZones.PlatformTimeZoneId;
     }
 }

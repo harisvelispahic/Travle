@@ -8,6 +8,9 @@ import 'app/auth_gate.dart';
 
 void main() => runTravleApp(() async {
       WidgetsFlutterBinding.ensureInitialized();
+      // Load the IANA time-zone database so tour event times render in their
+      // destination's zone (see docs/time-and-timezones.md).
+      initTravleTimeZones();
       // Enforce a minimum window size across all desktop platforms (Windows,
       // macOS, Linux) from Dart — not a Windows-only native handler — so the
       // management console's tables and toolbars can't be squeezed into an

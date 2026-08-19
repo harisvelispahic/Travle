@@ -13,6 +13,7 @@ class TravleTextField extends StatefulWidget {
   const TravleTextField({
     super.key,
     this.controller,
+    this.focusNode,
     this.label,
     this.hint,
     this.helperText,
@@ -31,6 +32,7 @@ class TravleTextField extends StatefulWidget {
   });
 
   final TextEditingController? controller;
+  final FocusNode? focusNode;
   final String? label;
   final String? hint;
   final String? helperText;
@@ -70,6 +72,7 @@ class _TravleTextFieldState extends State<TravleTextField> {
   Widget build(BuildContext context) {
     return TextFormField(
       controller: widget.controller,
+      focusNode: widget.focusNode,
       validator: widget.validator,
       keyboardType: widget.keyboardType,
       textInputAction: widget.textInputAction,

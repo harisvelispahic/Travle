@@ -8,6 +8,7 @@ using Travle.Services.BookingStateMachine;
 using Travle.Services.Database;
 using Travle.Services.Notifications;
 using Travle.Services.Payments;
+using Travle.Services.Time;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 
@@ -36,6 +37,7 @@ namespace Travle.Services
         private readonly BaseBookingState _states;
         private readonly IRefundService _refunds;
         private readonly INotificationDispatcher _notifications;
+        private readonly ITimeZoneService _timeZones;
         private readonly IValidator<BookingRejectRequest> _rejectValidator;
         private readonly IValidator<BookingCancelRequest> _cancelValidator;
 
@@ -47,6 +49,7 @@ namespace Travle.Services
             BaseBookingState states,
             IRefundService refunds,
             INotificationDispatcher notifications,
+            ITimeZoneService timeZones,
             IValidator<BookingRejectRequest> rejectValidator,
             IValidator<BookingCancelRequest> cancelValidator)
             : base(mapper, dbContext)
@@ -56,6 +59,7 @@ namespace Travle.Services
             _states = states;
             _refunds = refunds;
             _notifications = notifications;
+            _timeZones = timeZones;
             _rejectValidator = rejectValidator;
             _cancelValidator = cancelValidator;
         }
@@ -346,15 +350,23 @@ namespace Travle.Services
                     b.Id,
                     b.UserId,
                     TourName = b.TourSchedule.Tour.Name,
-                    b.TourSchedule.StartsAt
+                    b.TourSchedule.StartsAt,
+                    // Zone the start time should be shown in: the tour's ordered-first destination's city zone.
+                    TimeZoneId = b.TourSchedule.Tour.TourDestinations
+                        .OrderBy(td => td.SortOrder)
+                        .Select(td => td.Destination.City.TimeZoneId)
+                        .FirstOrDefault()
                 })
                 .ToListAsync(cancellationToken);
 
             foreach (var booking in due)
             {
+                // Show the start as local time at the destination (the traveler will be there), not UTC.
+                var zoneId = booking.TimeZoneId ?? _timeZones.PlatformTimeZoneId;
+                var localStart = _timeZones.ConvertUtcToZone(booking.StartsAt, zoneId);
                 _notifications.Enqueue(booking.UserId, NotificationType.BookingReminder,
                     "Upcoming tour reminder",
-                    $"Reminder: your tour '{booking.TourName}' starts on {booking.StartsAt:dd MMM yyyy HH:mm} UTC. We look forward to seeing you!",
+                    $"Reminder: your tour '{booking.TourName}' starts on {localStart:dd MMM yyyy HH:mm} (local time). We look forward to seeing you!",
                     booking.Id, alsoEmail: true);
             }
 

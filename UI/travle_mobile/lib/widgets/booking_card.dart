@@ -66,7 +66,8 @@ class BookingCard extends StatelessWidget {
                         const SizedBox(width: TravleTokens.space4),
                         Expanded(
                           child: Text(
-                            formatDate(booking.scheduleStartsAt),
+                            formatEventDate(
+                                booking.scheduleStartsAt, booking.timeZoneId),
                             style: theme.textTheme.bodySmall
                                 ?.copyWith(color: muted),
                           ),

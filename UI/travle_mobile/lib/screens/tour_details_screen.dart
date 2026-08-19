@@ -563,7 +563,7 @@ class _Departures extends StatelessWidget {
                       const SizedBox(width: TravleTokens.space12),
                       Expanded(
                         child: Text(
-                          formatScheduleRange(s.startsAt, s.endsAt),
+                          formatEventScheduleRange(s.startsAt, s.endsAt, s.timeZoneId),
                           style: theme.textTheme.bodyMedium,
                         ),
                       ),
@@ -631,8 +631,8 @@ class _BookSheetState extends State<_BookSheet> {
             Text('Book this departure', style: theme.textTheme.titleLarge),
             const SizedBox(height: TravleTokens.space4),
             Text(
-              formatScheduleRange(
-                  widget.schedule.startsAt, widget.schedule.endsAt),
+              formatEventScheduleRange(widget.schedule.startsAt,
+                  widget.schedule.endsAt, widget.schedule.timeZoneId),
               style: theme.textTheme.bodyMedium?.copyWith(color: muted),
             ),
             const SizedBox(height: TravleTokens.space24),

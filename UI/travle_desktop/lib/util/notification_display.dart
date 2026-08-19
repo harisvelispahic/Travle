@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:travle_core/travle_core.dart';
 
 import 'formatting.dart';
 
@@ -94,18 +95,18 @@ String notificationTypeLabel(String type) {
   return buffer.toString();
 }
 
-/// "Just now" / "5m ago" / "3h ago" / "2d ago", else a date. [createdAt] is a UTC
-/// wall-clock value (see [asUtc]); reinterpret it as UTC before measuring elapsed.
+/// "Just now" / "5m ago" / "3h ago" / "2d ago", else a date. A notification's time
+/// is an audit instant, so it is measured/shown in the viewer's device zone.
 String notificationRelativeTime(DateTime createdAt) {
-  final created = asUtc(createdAt);
+  final created = asUtcInstant(createdAt);
   final diff = DateTime.now().toUtc().difference(created);
   if (diff.inMinutes < 1) return 'Just now';
   if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
   if (diff.inHours < 24) return '${diff.inHours}h ago';
   if (diff.inDays < 7) return '${diff.inDays}d ago';
-  return formatDate(created.toLocal());
+  return formatDate(deviceLocalTime(createdAt));
 }
 
-/// The full local date-time for the detail screen, e.g. "15 Aug 2026, 10:00".
+/// The full device-local date-time for the detail screen, e.g. "15 Aug 2026, 10:00".
 String notificationFullTime(DateTime createdAt) =>
-    formatDateTime(asUtc(createdAt).toLocal());
+    formatDateTime(deviceLocalTime(createdAt));

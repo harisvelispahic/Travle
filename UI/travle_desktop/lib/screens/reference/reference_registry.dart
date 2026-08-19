@@ -167,6 +167,8 @@ ReferenceEntityConfig<CityResponse> _city() => ReferenceEntityConfig<CityRespons
             flex: 3,
             cell: (c) => c.regionName ?? '—'),
         TableColumnSpec(
+            label: 'Time zone', flex: 3, cell: (c) => c.timeZoneId),
+        TableColumnSpec(
             label: 'Added', sortKey: 'CreatedAt', flex: 2, cell: (c) => _date(c.createdAt)),
       ],
       filter: ReferenceFilter(
@@ -194,9 +196,26 @@ ReferenceEntityConfig<CityResponse> _city() => ReferenceEntityConfig<CityRespons
           optionsLoader: (current) =>
               _loadRegions(countryId: current['country'] as int?),
         ),
+        // The zone the city's tours display their event times in. Searchable IANA
+        // picker; blank inherits the platform default.
+        const CrudField(
+          id: 'timeZoneId',
+          label: 'Time zone',
+          kind: CrudFieldKind.timezone,
+          required: false,
+          hint: 'Search e.g. Sarajevo, Tokyo…',
+          helperText: 'IANA time-zone id. Blank uses the platform default.',
+        ),
       ],
-      formValues: (c) => {'name': c.name, 'regionId': c.regionId},
-      toBody: (v) => {'name': v['name'], 'regionId': v['regionId']},
+      formValues: (c) =>
+          {'name': c.name, 'regionId': c.regionId, 'timeZoneId': c.timeZoneId},
+      toBody: (v) => {
+        'name': v['name'],
+        'regionId': v['regionId'],
+        // Only send a non-empty override; blank leaves the stored zone (or the default on create).
+        if ((v['timeZoneId'] as String?)?.trim().isNotEmpty ?? false)
+          'timeZoneId': (v['timeZoneId'] as String).trim(),
+      },
     );
 
 ReferenceEntityConfig<DestinationCategoryResponse> _category() =>

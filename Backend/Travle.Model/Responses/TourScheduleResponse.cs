@@ -15,6 +15,13 @@ namespace Travle.Model.Responses
         public DateTime StartsAt { get; set; }
         public DateTime EndsAt { get; set; }
 
+        /// <summary>
+        /// IANA zone (e.g. "Europe/Sarajevo") <see cref="StartsAt"/>/<see cref="EndsAt"/> display in — the
+        /// tour's ordered-first destination's city zone. Those are UTC instants; the client converts them
+        /// to this zone for display, labelled "(local time)". See docs/time-and-timezones.md.
+        /// </summary>
+        public string TimeZoneId { get; set; } = string.Empty;
+
         public int Capacity { get; set; }
         public int SeatsTaken { get; set; }
 

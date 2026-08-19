@@ -1,3 +1,4 @@
+using Travle.Model.Constants;
 using Travle.Model.Responses;
 using Travle.Services.Database;
 
@@ -46,6 +47,11 @@ namespace Travle.Services.Projections
                     .OrderBy(s => s.StartsAt)
                     .Select(s => (DateTime?)s.StartsAt)
                     .FirstOrDefault(),
+                // Zone the tour's event times display in: the ordered-first destination's city zone.
+                TimeZoneId = t.TourDestinations
+                    .OrderBy(td => td.SortOrder)
+                    .Select(td => td.Destination.City.TimeZoneId)
+                    .FirstOrDefault() ?? TimeDefaults.PlatformTimeZoneId,
                 PrimaryThumbnail = t.TourDestinations
                     .OrderBy(td => td.SortOrder)
                     .Select(td => td.Destination.Images
