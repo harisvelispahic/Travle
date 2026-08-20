@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
+import '../widgets/pager_bar.dart';
+
 /// Opens the tour create/edit dialog. Resolves to `true` when the tour was saved
 /// (the caller refreshes and shows a snackbar), or null on cancel.
 Future<bool?> showTourFormDialog(
@@ -627,8 +629,12 @@ class _DestinationPickerDialog extends StatefulWidget {
 }
 
 class _DestinationPickerDialogState extends State<_DestinationPickerDialog> {
+  static const int _pageSize = 20;
+
   final _searchController = TextEditingController();
   String _search = '';
+  int _page = 1;
+  int? _totalCount;
   bool _loading = true;
   String? _error;
   List<DestinationResponse> _items = [];
@@ -652,6 +658,12 @@ class _DestinationPickerDialogState extends State<_DestinationPickerDialog> {
   /// is what tells the organizer it is searchable at all.
   void _runSearch() {
     _search = _searchController.text.trim();
+    _page = 1;
+    _load();
+  }
+
+  void _goToPage(int page) {
+    setState(() => _page = page);
     _load();
   }
 
@@ -663,7 +675,9 @@ class _DestinationPickerDialogState extends State<_DestinationPickerDialog> {
     try {
       final result = await context.read<DestinationProvider>().get(
         filter: {
-          'pageSize': 50,
+          'page': _page,
+          'pageSize': _pageSize,
+          'includeTotalCount': true,
           'sortBy': 'Name',
           if (_search.isNotEmpty) 'text': _search,
         },
@@ -673,6 +687,7 @@ class _DestinationPickerDialogState extends State<_DestinationPickerDialog> {
         _items = result.items
             .where((d) => !widget.excludeIds.contains(d.id))
             .toList();
+        _totalCount = result.totalCount;
         _loading = false;
       });
     } on ApiClientException catch (e) {
@@ -749,6 +764,18 @@ class _DestinationPickerDialogState extends State<_DestinationPickerDialog> {
               ),
               const SizedBox(height: TravleTokens.space16),
               Flexible(child: _buildList(theme)),
+              const Divider(height: 1),
+              // Paged like every other desktop list: the approved catalogue is far
+              // longer than one page, and picks survive paging (they are held by
+              // row, not by index).
+              PagerBar(
+                page: _page,
+                pageSize: _pageSize,
+                itemCount: _items.length,
+                totalCount: _totalCount,
+                loading: _loading,
+                onPageChanged: _goToPage,
+              ),
               const SizedBox(height: TravleTokens.space16),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,

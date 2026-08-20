@@ -102,20 +102,6 @@ class _MapBrowseScreenState extends State<MapBrowseScreen> {
     return _categories!;
   }
 
-  // The chip label reflects the multi-select: none → "Category", one → its name,
-  // many → a count.
-  String get _categoryLabel {
-    if (_categoryIds.isEmpty) return 'Category';
-    if (_categoryIds.length == 1) {
-      final id = _categoryIds.first;
-      for (final c in _categories ?? const <DestinationCategoryResponse>[]) {
-        if (c.id == id) return c.name;
-      }
-      return '1 category';
-    }
-    return '${_categoryIds.length} categories';
-  }
-
   Future<void> _openCategorySheet() async {
     final List<DestinationCategoryResponse> categories;
     try {
@@ -126,7 +112,14 @@ class _MapBrowseScreenState extends State<MapBrowseScreen> {
       return;
     }
     if (!mounted) return;
-    final result = await _showCategoryMultiSheet(categories);
+    final result = await showMultiSelectSheet(
+      context,
+      title: 'Categories',
+      options: [
+        for (final c in categories) MultiSelectOption(c.id, c.name),
+      ],
+      selected: _categoryIds,
+    );
     if (result == null) return; // dismissed without applying
     setState(() {
       _categoryIds
@@ -134,76 +127,6 @@ class _MapBrowseScreenState extends State<MapBrowseScreen> {
         ..addAll(result);
     });
     _fetch();
-  }
-
-  /// A checkbox sheet for picking any number of categories. Returns the chosen set
-  /// on Apply, or null if dismissed (leaving the filter unchanged).
-  Future<Set<int>?> _showCategoryMultiSheet(
-      List<DestinationCategoryResponse> categories) {
-    final theme = Theme.of(context);
-    final selected = {..._categoryIds};
-    return showModalBottomSheet<Set<int>>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheet) => SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                    TravleTokens.space16, 0, TravleTokens.space8, 0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child:
-                          Text('Categories', style: theme.textTheme.titleMedium),
-                    ),
-                    TextButton(
-                      onPressed:
-                          selected.isEmpty ? null : () => setSheet(selected.clear),
-                      child: const Text('Clear'),
-                    ),
-                  ],
-                ),
-              ),
-              Flexible(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    for (final c in categories)
-                      CheckboxListTile(
-                        value: selected.contains(c.id),
-                        title: Text(c.name),
-                        controlAffinity: ListTileControlAffinity.leading,
-                        onChanged: (v) => setSheet(() {
-                          if (v ?? false) {
-                            selected.add(c.id);
-                          } else {
-                            selected.remove(c.id);
-                          }
-                        }),
-                      ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(TravleTokens.space16),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: () => Navigator.of(ctx).pop(selected),
-                    child: const Text('Apply'),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   Future<void> _openRatingSheet() async {
@@ -415,7 +338,16 @@ class _MapBrowseScreenState extends State<MapBrowseScreen> {
       child: Row(
         children: [
           _FilterButton(
-            label: _categoryLabel,
+            label: multiSelectChipLabel(
+              emptyLabel: 'Category',
+              selected: _categoryIds,
+              options: [
+                for (final c in _categories ??
+                    const <DestinationCategoryResponse>[])
+                  MultiSelectOption(c.id, c.name),
+              ],
+              pluralNoun: 'categories',
+            ),
             active: _categoryIds.isNotEmpty,
             onTap: _openCategorySheet,
           ),

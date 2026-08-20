@@ -72,11 +72,12 @@ String _tierWindow(int min, int? max) {
   return '$min–$max h before';
 }
 
+// Every page — the seeded set outgrew the API's 100-row cap, and a Region row whose
+// country sits past the first page would otherwise open its form on a value the
+// dropdown has no item for (a DropdownButton assertion).
 Future<List<CrudOption>> _loadCountries() async {
-  final result = await CountryProvider().get(
-    filter: {'pageSize': 100, 'sortBy': 'Name', 'includeTotalCount': false},
-  );
-  return [for (final c in result.items) CrudOption(c.id, c.name)];
+  final countries = await CountryProvider().getAll();
+  return [for (final c in countries) CrudOption(c.id, c.name)];
 }
 
 Future<List<CrudOption>> _loadRegions({int? countryId}) async {

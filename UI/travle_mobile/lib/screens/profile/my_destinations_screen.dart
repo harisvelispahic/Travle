@@ -5,9 +5,13 @@ import 'package:travle_ui/travle_ui.dart';
 
 import 'destination_form_screen.dart';
 
-/// A curator/organizer's own destinations, grouped by moderation status. New
+/// A curator/organizer's own destinations, filtered by moderation status. New
 /// submissions and edits open the [DestinationFormScreen]; a rejected card shows
 /// the reason; a pending card can be deleted (while still unreferenced).
+///
+/// The status filter runs **server-side** and the list loads further pages as it
+/// is scrolled (the mobile default) - it used to pull one 100-row page and filter
+/// it in memory, which silently hid everything past the hundredth submission.
 class MyDestinationsScreen extends StatefulWidget {
   const MyDestinationsScreen({super.key});
 
@@ -16,18 +20,54 @@ class MyDestinationsScreen extends StatefulWidget {
 }
 
 class _MyDestinationsScreenState extends State<MyDestinationsScreen> {
-  static const List<String?> _statusFilters = [null, 'Pending', 'Approved', 'Rejected'];
+  static const int _pageSize = 10;
 
-  List<DestinationResponse> _all = [];
-  String? _statusFilter;
+  /// (label, backend DestinationStatus id) - a null id means "every status".
+  static const List<(String, int?)> _statusFilters = [
+    ('All', null),
+    ('Pending', 0),
+    ('Approved', 1),
+    ('Rejected', 2),
+  ];
+
+  final ScrollController _scrollController = ScrollController();
+
+  final List<DestinationResponse> _items = [];
+  int? _statusFilter;
+  int _page = 1;
+  int _totalCount = 0;
   bool _loading = true;
+  bool _loadingMore = false;
   String? _loadError;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _load();
   }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 300) {
+      _loadMore();
+    }
+  }
+
+  Map<String, dynamic> _filter(int page) => <String, dynamic>{
+        'page': page,
+        'pageSize': _pageSize,
+        'includeTotalCount': true,
+        'sortBy': 'CreatedAt desc',
+        if (_statusFilter != null) 'status': _statusFilter,
+      };
 
   Future<void> _load() async {
     setState(() {
@@ -35,12 +75,15 @@ class _MyDestinationsScreenState extends State<MyDestinationsScreen> {
       _loadError = null;
     });
     try {
-      final result = await context
-          .read<DestinationProvider>()
-          .mine(filter: {'pageSize': 100, 'sortBy': 'CreatedAt desc'});
+      final result =
+          await context.read<DestinationProvider>().mine(filter: _filter(1));
       if (!mounted) return;
       setState(() {
-        _all = result.items;
+        _items
+          ..clear()
+          ..addAll(result.items);
+        _totalCount = result.totalCount ?? result.items.length;
+        _page = 1;
         _loading = false;
       });
     } on ApiClientException catch (e) {
@@ -52,9 +95,38 @@ class _MyDestinationsScreenState extends State<MyDestinationsScreen> {
     }
   }
 
-  List<DestinationResponse> get _visible => _statusFilter == null
-      ? _all
-      : _all.where((d) => d.status == _statusFilter).toList();
+  Future<void> _loadMore() async {
+    if (_loadingMore || _loading) return;
+    if (_items.length >= _totalCount) return;
+
+    setState(() => _loadingMore = true);
+    try {
+      final result = await context
+          .read<DestinationProvider>()
+          .mine(filter: _filter(_page + 1));
+      if (!mounted) return;
+      setState(() {
+        _items.addAll(result.items);
+        _totalCount = result.totalCount ?? _totalCount;
+        _page += 1;
+        _loadingMore = false;
+      });
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingMore = false);
+      AppSnackbars.error(context, e.message);
+    }
+  }
+
+  void _selectStatus(int? status) {
+    if (_statusFilter == status) return;
+    setState(() => _statusFilter = status);
+    _load();
+  }
+
+  /// Label of the active status filter, for the empty-state copy.
+  String get _statusLabel =>
+      _statusFilters.firstWhere((f) => f.$2 == _statusFilter).$1;
 
   Future<void> _openForm({DestinationResponse? existing}) async {
     final changed = await Navigator.of(context).push<bool>(
@@ -133,9 +205,10 @@ class _MyDestinationsScreenState extends State<MyDestinationsScreen> {
         Expanded(
           child: RefreshIndicator(
             onRefresh: _load,
-            child: _visible.isEmpty
+            child: _items.isEmpty
                 ? _buildEmpty()
                 : ListView.separated(
+                    controller: _scrollController,
                     padding: const EdgeInsets.fromLTRB(
                       TravleTokens.space16,
                       TravleTokens.space8,
@@ -143,16 +216,25 @@ class _MyDestinationsScreenState extends State<MyDestinationsScreen> {
                       // Leave room for the FAB.
                       TravleTokens.space32 * 2.5,
                     ),
-                    itemCount: _visible.length,
+                    // One trailing slot for the next-page spinner.
+                    itemCount: _items.length + (_loadingMore ? 1 : 0),
                     separatorBuilder: (_, _) =>
                         const SizedBox(height: TravleTokens.space12),
-                    itemBuilder: (_, i) => _DestinationCard(
-                      destination: _visible[i],
-                      onTap: () => _openForm(existing: _visible[i]),
-                      onDelete: _visible[i].isPending
-                          ? () => _delete(_visible[i])
-                          : null,
-                    ),
+                    itemBuilder: (_, i) {
+                      if (i >= _items.length) {
+                        return const Padding(
+                          padding: EdgeInsets.all(TravleTokens.space16),
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      }
+                      return _DestinationCard(
+                        destination: _items[i],
+                        onTap: () => _openForm(existing: _items[i]),
+                        onDelete: _items[i].isPending
+                            ? () => _delete(_items[i])
+                            : null,
+                      );
+                    },
                   ),
           ),
         ),
@@ -169,11 +251,11 @@ class _MyDestinationsScreenState extends State<MyDestinationsScreen> {
       ),
       child: Row(
         children: [
-          for (final status in _statusFilters) ...[
+          for (final (label, status) in _statusFilters) ...[
             ChoiceChip(
-              label: Text(status ?? 'All'),
+              label: Text(label),
               selected: _statusFilter == status,
-              onSelected: (_) => setState(() => _statusFilter = status),
+              onSelected: (_) => _selectStatus(status),
             ),
             const SizedBox(width: TravleTokens.space8),
           ],
@@ -191,7 +273,7 @@ class _MyDestinationsScreenState extends State<MyDestinationsScreen> {
           icon: Icons.travel_explore_outlined,
           message: _statusFilter == null
               ? 'No destinations yet'
-              : 'No ${_statusFilter!.toLowerCase()} destinations',
+              : 'No ${_statusLabel.toLowerCase()} destinations',
           hint: _statusFilter == null
               ? 'Submit your first destination for review.'
               : 'Try a different filter.',

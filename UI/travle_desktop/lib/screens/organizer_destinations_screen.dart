@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
+import '../widgets/pager_bar.dart';
+
 import 'destination_form_dialog.dart';
 
 /// An organizer's own submitted destinations, grouped by moderation status. New
@@ -18,8 +20,11 @@ class OrganizerDestinationsScreen extends StatefulWidget {
 
 class _OrganizerDestinationsScreenState
     extends State<OrganizerDestinationsScreen> {
+  static const int _pageSize = 20;
+
   // -1 = All, 0 = Pending, 1 = Approved, 2 = Rejected.
   int _statusFilter = -1;
+  int _page = 1;
   bool _loading = true;
   String? _error;
   int? _totalCount;
@@ -32,6 +37,12 @@ class _OrganizerDestinationsScreenState
     _load();
   }
 
+  /// Reloads from page 1 — for anything that changes *which* rows match.
+  void _reload() {
+    _page = 1;
+    _load();
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -40,7 +51,8 @@ class _OrganizerDestinationsScreenState
     try {
       final result = await context.read<DestinationProvider>().mine(
         filter: {
-          'pageSize': 50,
+          'page': _page,
+          'pageSize': _pageSize,
           'includeTotalCount': true,
           'sortBy': 'CreatedAt desc',
           if (_statusFilter != -1) 'status': _statusFilter,
@@ -59,6 +71,11 @@ class _OrganizerDestinationsScreenState
         _loading = false;
       });
     }
+  }
+
+  void _goToPage(int page) {
+    setState(() => _page = page);
+    _load();
   }
 
   Future<void> _openForm({DestinationResponse? existing}) async {
@@ -124,7 +141,7 @@ class _OrganizerDestinationsScreenState
                     ? null
                     : (selection) {
                         setState(() => _statusFilter = selection.first);
-                        _load();
+                        _reload();
                       },
               ),
               const Spacer(),
@@ -143,6 +160,15 @@ class _OrganizerDestinationsScreenState
           ),
           const SizedBox(height: TravleTokens.space16),
           Expanded(child: _buildBody(theme)),
+          const Divider(height: 1),
+          PagerBar(
+            page: _page,
+            pageSize: _pageSize,
+            itemCount: _items.length,
+            totalCount: _totalCount,
+            loading: _loading,
+            onPageChanged: _goToPage,
+          ),
         ],
       ),
     );

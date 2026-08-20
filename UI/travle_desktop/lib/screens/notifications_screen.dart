@@ -4,6 +4,7 @@ import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
 import '../util/notification_display.dart';
+import '../widgets/pager_bar.dart';
 import 'notification_detail_screen.dart';
 
 /// The management-app notification centre (organizer/admin). Loads the current
@@ -12,6 +13,10 @@ import 'notification_detail_screen.dart';
 /// without a manual refresh. Unread rows are emphasised; a row opens the detail
 /// (which marks it read and can jump to the relevant management section).
 /// "Mark all as read" (with a confirmation) lives in the app bar.
+///
+/// Paged, not infinitely scrolled: on a management surface an endless list is easy
+/// to get lost in, and every other desktop list already pages. Mobile keeps the
+/// infinite scroll — same provider, different read (see [NotificationProvider]).
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key, required this.onNavigateToSection});
 
@@ -22,28 +27,16 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  final ScrollController _scroll = ScrollController();
-
   @override
   void initState() {
     super.initState();
-    _scroll.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<NotificationProvider>().loadFirstPage();
+      if (mounted) context.read<NotificationProvider>().loadPage(1);
     });
   }
 
-  void _onScroll() {
-    if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 240) {
-      context.read<NotificationProvider>().loadMore();
-    }
-  }
-
-  @override
-  void dispose() {
-    _scroll.dispose();
-    super.dispose();
-  }
+  void _goToPage(int page) =>
+      context.read<NotificationProvider>().loadPage(page);
 
   Future<void> _markAllRead() async {
     final confirmed = await showConfirmDialog(
@@ -95,9 +88,23 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),
-          child: RefreshIndicator(
-            onRefresh: provider.loadFirstPage,
-            child: _buildBody(provider),
+          child: Column(
+            children: [
+              Expanded(child: _buildBody(provider)),
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: TravleTokens.space16),
+                child: PagerBar(
+                  page: provider.page,
+                  pageSize: NotificationProvider.pageSize,
+                  itemCount: provider.items.length,
+                  totalCount: provider.totalCount,
+                  loading: provider.isLoading,
+                  onPageChanged: _goToPage,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -124,22 +131,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
 
     return ListView.separated(
-      controller: _scroll,
-      itemCount: items.length + (provider.hasMore ? 1 : 0),
+      itemCount: items.length,
       separatorBuilder: (_, _) => const Divider(height: 1),
-      itemBuilder: (_, index) {
-        if (index >= items.length) {
-          return const Padding(
-            padding: EdgeInsets.all(TravleTokens.space16),
-            child: Center(child: CircularProgressIndicator()),
-          );
-        }
-        final notification = items[index];
-        return _NotificationTile(
-          notification: notification,
-          onTap: () => _open(notification),
-        );
-      },
+      itemBuilder: (_, index) => _NotificationTile(
+        notification: items[index],
+        onTap: () => _open(items[index]),
+      ),
     );
   }
 }

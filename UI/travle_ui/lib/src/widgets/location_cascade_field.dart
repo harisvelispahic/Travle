@@ -119,19 +119,24 @@ class _LocationCascadeFieldState extends State<LocationCascadeField> {
       var regions = <RegionResponse>[];
       var cities = <CityResponse>[];
 
+      CityResponse? city;
+      RegionResponse? region;
+
       if (_wantsCity && widget.initialCityId != null) {
-        final city = await _cityProvider.getById(widget.initialCityId!);
-        final region = await _regionProvider.getById(city.regionId);
+        city = await _cityProvider.getById(widget.initialCityId!);
+        region = await _regionProvider.getById(city.regionId);
         countryId = region.countryId;
         regionId = region.id;
         cityId = city.id;
       } else if (!_wantsCity && widget.initialRegionId != null) {
-        final region = await _regionProvider.getById(widget.initialRegionId!);
+        region = await _regionProvider.getById(widget.initialRegionId!);
         countryId = region.countryId;
         regionId = region.id;
       }
 
-      final countries = await _countryProvider.get(filter: _page());
+      // Countries need every page (see CountryProvider.getAll); a region's cities
+      // and a country's regions always fit one.
+      final countries = await _countryProvider.getAll();
       if (countryId != null) {
         regions = (await _regionProvider.get(
           filter: {..._page(), 'countryId': countryId},
@@ -143,12 +148,23 @@ class _LocationCascadeFieldState extends State<LocationCascadeField> {
         )).items;
       }
 
+      // Belt and braces: a prefilled value that somehow isn't in its list would
+      // trip DropdownButton's "exactly one item with this value" assertion and take
+      // the whole form down. We already hold the resolved rows, so splice them in.
+      if (region != null && !regions.any((r) => r.id == region!.id)) {
+        regions = [...regions, region];
+      }
+      if (city != null && !cities.any((c) => c.id == city!.id)) {
+        cities = [...cities, city];
+      }
+
       if (!mounted) return;
       setState(() {
-        _countries = countries.items;
+        _countries = countries;
         _regions = regions;
         _cities = cities;
-        _countryId = countryId;
+        _countryId =
+            countries.any((c) => c.id == countryId) ? countryId : null;
         _regionId = regionId;
         _cityId = cityId;
         _loading = false;
@@ -163,7 +179,8 @@ class _LocationCascadeFieldState extends State<LocationCascadeField> {
   }
 
   /// One page of alphabetically ordered options — enough for any single parent's
-  /// children, which is exactly why the chain exists.
+  /// children, which is exactly why the chain exists. (The country level is the
+  /// exception and pages through everything; see [CountryProvider.getAll].)
   Map<String, dynamic> _page() =>
       {'pageSize': 100, 'sortBy': 'Name', 'includeTotalCount': false};
 

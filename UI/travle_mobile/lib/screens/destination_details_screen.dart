@@ -9,6 +9,7 @@ import '../widgets/recommendation_card.dart';
 import '../widgets/review_card.dart';
 import '../widgets/review_form_sheet.dart';
 import '../widgets/tour_card.dart';
+import 'reviews_screen.dart';
 import 'tour_details_screen.dart';
 
 /// Vertical breathing room above/below the cards in the horizontal "Similar
@@ -221,11 +222,21 @@ class _DestinationReviewsSection extends StatefulWidget {
 
 class _DestinationReviewsSectionState
     extends State<_DestinationReviewsSection> {
+  /// How many reviews the detail page shows inline. The rest are one tap away on
+  /// [ReviewsScreen] — a long list here would push the tours and map sections far
+  /// below the fold.
+  static const int _previewCount = 10;
+
   bool _loading = true;
   bool _busy = false;
   String? _error;
   List<DestinationReviewResponse> _reviews = [];
   int _total = 0;
+
+  /// The viewer's own review, fetched by author rather than picked out of the
+  /// preview — theirs may well sit past the tenth newest, and the Write/Edit
+  /// button must still be right.
+  DestinationReviewResponse? _myReview;
 
   @override
   void initState() {
@@ -238,20 +249,35 @@ class _DestinationReviewsSectionState
       _loading = true;
       _error = null;
     });
+    final provider = context.read<DestinationReviewProvider>();
+    final userId = context.read<AuthProvider>().userId;
     try {
-      final result =
-          await context.read<DestinationReviewProvider>().forDestination(
-        widget.destinationId,
-        filter: {
-          'pageSize': 50,
-          'includeTotalCount': true,
-          'sortBy': 'CreatedAt desc',
-        },
-      );
+      // Independent reads in parallel (constraint A.2): the newest page, and the
+      // viewer's own review looked up by author.
+      final results = await Future.wait([
+        provider.forDestination(
+          widget.destinationId,
+          filter: {
+            'pageSize': _previewCount,
+            'includeTotalCount': true,
+            'sortBy': 'CreatedAt desc',
+          },
+        ),
+        if (userId != null)
+          provider.forDestination(
+            widget.destinationId,
+            filter: {'userId': userId, 'pageSize': 1},
+          ),
+      ]);
+      final page = results.first;
+      final mine = results.length > 1 && results[1].items.isNotEmpty
+          ? results[1].items.first
+          : null;
       if (!mounted) return;
       setState(() {
-        _reviews = result.items;
-        _total = result.totalCount ?? result.items.length;
+        _reviews = page.items;
+        _total = page.totalCount ?? page.items.length;
+        _myReview = mine;
         _loading = false;
       });
     } on ApiClientException catch (e) {
@@ -263,13 +289,39 @@ class _DestinationReviewsSectionState
     }
   }
 
-  DestinationReviewResponse? get _myReview {
-    final userId = context.read<AuthProvider>().userId;
-    if (userId == null) return null;
-    for (final r in _reviews) {
-      if (r.userId == userId) return r;
-    }
-    return null;
+  void _openAll() {
+    final provider = context.read<DestinationReviewProvider>();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ReviewsScreen(
+          title: 'Reviews',
+          fetch: (page, pageSize) async {
+            final result = await provider.forDestination(
+              widget.destinationId,
+              filter: {
+                'page': page,
+                'pageSize': pageSize,
+                'includeTotalCount': true,
+                'sortBy': 'CreatedAt desc',
+              },
+            );
+            return (
+              items: [
+                for (final r in result.items)
+                  ReviewListEntry(
+                    userId: r.userId,
+                    authorName: r.authorName,
+                    rating: r.rating,
+                    createdAt: r.createdAt,
+                    comment: r.comment,
+                  ),
+              ],
+              totalCount: result.totalCount,
+            );
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _write() async {
@@ -358,6 +410,7 @@ class _DestinationReviewsSectionState
     final theme = Theme.of(context);
     final myReview = _myReview;
     final currentUserId = context.read<AuthProvider>().userId;
+    final hidden = _total - _reviews.length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -410,7 +463,7 @@ class _DestinationReviewsSectionState
             style: theme.textTheme.bodyMedium
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           )
-        else
+        else ...[
           for (final review in _reviews)
             ReviewCard(
               authorName: review.authorName,
@@ -425,6 +478,16 @@ class _DestinationReviewsSectionState
                   ? () => _remove(review)
                   : null,
             ),
+          if (hidden > 0)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _openAll,
+                icon: const Icon(Icons.reviews_outlined, size: 18),
+                label: Text('Show all $_total reviews'),
+              ),
+            ),
+        ],
       ],
     );
   }

@@ -30,17 +30,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   String? _pickedContentType;
 
   // Location cascade.
-  List<CountryResponse> _countries = [];
-  List<RegionResponse> _regions = [];
-  List<CityResponse> _cities = [];
-  int? _countryId;
-  int? _regionId;
+  /// The chosen home city; the Country → Region → City chain above it is owned by
+  /// [LocationCascadeField].
   int? _cityId;
-  bool _loadingRegions = false;
-  bool _loadingCities = false;
-
-  bool _loading = true;
-  String? _loadError;
   bool _busy = false;
   String? _error;
 
@@ -56,8 +48,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       _phone.text = user.phoneNumber ?? '';
       // Self reads carry only the thumbnail now; use it as the current-photo preview.
       _currentImageBase64 = user.profileImageThumbnail ?? user.profileImage;
+      _cityId = user.cityId;
     }
-    _bootstrap();
   }
 
   @override
@@ -68,108 +60,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _email.dispose();
     _phone.dispose();
     super.dispose();
-  }
-
-  /// Loads the country list and, if the user already has a home city, resolves it
-  /// up the chain (city → region → country) to prefill all three dropdowns.
-  Future<void> _bootstrap() async {
-    setState(() {
-      _loading = true;
-      _loadError = null;
-    });
-    final countryProvider = context.read<CountryProvider>();
-    final regionProvider = context.read<RegionProvider>();
-    final cityProvider = context.read<CityProvider>();
-    final user = context.read<AuthProvider>().currentUser;
-    try {
-      final countries = await countryProvider.get(filter: {'pageSize': 100});
-      int? countryId;
-      int? regionId;
-      int? cityId;
-      var regions = <RegionResponse>[];
-      var cities = <CityResponse>[];
-
-      if (user?.cityId != null) {
-        final city = await cityProvider.getById(user!.cityId!);
-        final region = await regionProvider.getById(city.regionId);
-        countryId = region.countryId;
-        regionId = city.regionId;
-        cityId = city.id;
-        regions = (await regionProvider.get(
-          filter: {'pageSize': 100, 'countryId': countryId},
-        )).items;
-        cities = (await cityProvider.get(
-          filter: {'pageSize': 100, 'regionId': regionId},
-        )).items;
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _countries = countries.items;
-        _regions = regions;
-        _cities = cities;
-        _countryId = countryId;
-        _regionId = regionId;
-        _cityId = cityId;
-        _loading = false;
-      });
-    } on ApiClientException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _loadError = e.message;
-        _loading = false;
-      });
-    }
-  }
-
-  Future<void> _onCountryChanged(int? id) async {
-    setState(() {
-      _countryId = id;
-      _regionId = null;
-      _cityId = null;
-      _regions = [];
-      _cities = [];
-    });
-    if (id == null) return;
-    setState(() => _loadingRegions = true);
-    try {
-      final regions = await context.read<RegionProvider>().get(
-        filter: {'pageSize': 100, 'countryId': id},
-      );
-      if (!mounted) return;
-      setState(() {
-        _regions = regions.items;
-        _loadingRegions = false;
-      });
-    } on ApiClientException catch (e) {
-      if (!mounted) return;
-      setState(() => _loadingRegions = false);
-      AppSnackbars.error(context, e.message);
-    }
-  }
-
-  Future<void> _onRegionChanged(int? id) async {
-    setState(() {
-      _regionId = id;
-      _cityId = null;
-      _cities = [];
-    });
-    if (id == null) return;
-    setState(() => _loadingCities = true);
-    try {
-      final cities = await context.read<CityProvider>().get(
-        filter: {'pageSize': 100, 'regionId': id},
-      );
-      if (!mounted) return;
-      setState(() {
-        _cities = cities.items;
-        _loadingCities = false;
-      });
-    } on ApiClientException catch (e) {
-      if (!mounted) return;
-      setState(() => _loadingCities = false);
-      AppSnackbars.error(context, e.message);
-    }
   }
 
   Future<void> _pickImage() async {
@@ -254,29 +144,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Widget _buildBody(ThemeData theme) {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_loadError != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(TravleTokens.space24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                _loadError!,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: theme.colorScheme.error),
-              ),
-              const SizedBox(height: TravleTokens.space16),
-              ElevatedButton(onPressed: _bootstrap, child: const Text('Retry')),
-            ],
-          ),
-        ),
-      );
-    }
-
     return SingleChildScrollView(
       padding: const EdgeInsets.all(TravleTokens.space16),
       child: Center(
@@ -370,11 +237,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       ),
                     ),
                     const SizedBox(height: TravleTokens.space16),
-                    _buildCountryDropdown(),
-                    const SizedBox(height: TravleTokens.space16),
-                    _buildRegionDropdown(),
-                    const SizedBox(height: TravleTokens.space16),
-                    _buildCityDropdown(),
+                    LocationCascadeField(
+                      initialCityId:
+                          context.read<AuthProvider>().currentUser?.cityId,
+                      isRequired: false,
+                      enabled: !_busy,
+                      onChanged: (cityId) => _cityId = cityId,
+                    ),
                     if (_error != null) ...[
                       const SizedBox(height: TravleTokens.space16),
                       Text(
@@ -400,62 +269,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildCountryDropdown() {
-    return DropdownButtonFormField<int>(
-      isExpanded: true,
-      initialValue: _countryId,
-      decoration: const InputDecoration(
-        labelText: 'Country',
-        hintText: 'Select a country',
-      ),
-      items: [
-        for (final c in _countries)
-          DropdownMenuItem(value: c.id, child: Text(c.name)),
-      ],
-      onChanged: _busy ? null : _onCountryChanged,
-    );
-  }
-
-  Widget _buildRegionDropdown() {
-    final enabled = _countryId != null && !_loadingRegions && !_busy;
-    return DropdownButtonFormField<int>(
-      isExpanded: true,
-      initialValue: _regionId,
-      decoration: InputDecoration(
-        labelText: 'Region',
-        hintText: 'Select a region',
-        helperText: _countryId == null
-            ? 'Select a country first'
-            : (_loadingRegions ? 'Loading regions…' : null),
-      ),
-      items: [
-        for (final r in _regions)
-          DropdownMenuItem(value: r.id, child: Text(r.name)),
-      ],
-      onChanged: enabled ? _onRegionChanged : null,
-    );
-  }
-
-  Widget _buildCityDropdown() {
-    final enabled = _regionId != null && !_loadingCities && !_busy;
-    return DropdownButtonFormField<int>(
-      isExpanded: true,
-      initialValue: _cityId,
-      decoration: InputDecoration(
-        labelText: 'City',
-        hintText: 'Select a city',
-        helperText: _regionId == null
-            ? 'Select a region first'
-            : (_loadingCities ? 'Loading cities…' : null),
-      ),
-      items: [
-        for (final c in _cities)
-          DropdownMenuItem(value: c.id, child: Text(c.name)),
-      ],
-      onChanged: enabled ? (id) => setState(() => _cityId = id) : null,
     );
   }
 }

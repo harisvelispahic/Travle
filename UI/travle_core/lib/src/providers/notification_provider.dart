@@ -18,7 +18,8 @@ class NotificationProvider extends BaseProvider<NotificationResponse> {
     _realtime = NotificationRealtimeService(onNotification: _onPushed);
   }
 
-  static const int _pageSize = 30;
+  /// Rows per fetch — one infinite-scroll chunk on mobile, one page on desktop.
+  static const int pageSize = 30;
 
   late final NotificationRealtimeService _realtime;
 
@@ -32,6 +33,7 @@ class NotificationProvider extends BaseProvider<NotificationResponse> {
   bool _loading = false;
   bool _authConnected = false;
   int _page = 1;
+  int? _totalCount;
   bool _hasMore = true;
 
   /// The loaded notifications, newest first.
@@ -42,6 +44,13 @@ class NotificationProvider extends BaseProvider<NotificationResponse> {
 
   bool get isLoading => _loading;
   bool get hasMore => _hasMore;
+
+  /// The page currently loaded — meaningful for the desktop pager; on mobile the
+  /// list accumulates and this is simply the last chunk fetched.
+  int get page => _page;
+
+  /// Total matching rows as of the last [loadPage] (null until one lands).
+  int? get totalCount => _totalCount;
   bool get isConnected => _realtime.isConnected;
 
   /// Fires for every live (SignalR) push, for app-level reactions to specific
@@ -65,6 +74,7 @@ class NotificationProvider extends BaseProvider<NotificationResponse> {
       _items.clear();
       _unreadCount = 0;
       _page = 1;
+      _totalCount = null;
       _hasMore = true;
       notifyListeners();
     }
@@ -84,20 +94,28 @@ class NotificationProvider extends BaseProvider<NotificationResponse> {
   }
 
   /// Loads (or reloads) the first page and refreshes the badge.
-  Future<void> loadFirstPage() async {
+  Future<void> loadFirstPage() => loadPage(1);
+
+  /// Loads one page, **replacing** the list rather than appending to it.
+  ///
+  /// This is the desktop centre's model — a management surface pages the way its
+  /// tables do, so an admin can walk a long history without an ever-growing list.
+  /// Mobile calls [loadFirstPage] once and then [loadMore] to accumulate.
+  Future<void> loadPage(int page) async {
     _loading = true;
     notifyListeners();
     try {
       final result = await get(filter: {
-        'page': 1,
-        'pageSize': _pageSize,
+        'page': page,
+        'pageSize': pageSize,
         'includeTotalCount': true,
       });
       _items
         ..clear()
         ..addAll(result.items);
-      _page = 1;
-      _hasMore = result.items.length >= _pageSize;
+      _page = page;
+      _totalCount = result.totalCount;
+      _hasMore = result.items.length >= pageSize;
       await refreshUnreadCount();
     } finally {
       _loading = false;
@@ -113,10 +131,10 @@ class NotificationProvider extends BaseProvider<NotificationResponse> {
     notifyListeners();
     try {
       final next = _page + 1;
-      final result = await get(filter: {'page': next, 'pageSize': _pageSize});
+      final result = await get(filter: {'page': next, 'pageSize': pageSize});
       _items.addAll(result.items);
       _page = next;
-      _hasMore = result.items.length >= _pageSize;
+      _hasMore = result.items.length >= pageSize;
     } finally {
       _loading = false;
       notifyListeners();

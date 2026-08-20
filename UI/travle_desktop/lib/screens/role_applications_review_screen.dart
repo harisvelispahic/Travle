@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
+import '../widgets/pager_bar.dart';
+
 /// Admin moderation queue for Curator/Organizer role applications: filter by
 /// status, review the applicant's motivation and any supporting document, and
 /// approve (grants the role live) or reject with a mandatory reason.
@@ -19,8 +21,12 @@ class RoleApplicationsReviewScreen extends StatefulWidget {
 
 class _RoleApplicationsReviewScreenState
     extends State<RoleApplicationsReviewScreen> {
+  static const int _pageSize = 20;
+
   // 0 = Pending, 1 = Approved, 2 = Rejected (matches the backend enum).
   int _statusFilter = 0;
+  int _page = 1;
+  int? _totalCount;
   bool _loading = true;
   String? _error;
   List<RoleApplicationResponse> _items = [];
@@ -32,6 +38,12 @@ class _RoleApplicationsReviewScreenState
     _load();
   }
 
+  /// Reloads from page 1 — for anything that changes *which* rows match.
+  void _reload() {
+    _page = 1;
+    _load();
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -39,11 +51,17 @@ class _RoleApplicationsReviewScreenState
     });
     try {
       final result = await context.read<RoleApplicationProvider>().get(
-        filter: {'status': _statusFilter, 'pageSize': 50},
+        filter: {
+          'status': _statusFilter,
+          'page': _page,
+          'pageSize': _pageSize,
+          'includeTotalCount': true,
+        },
       );
       if (!mounted) return;
       setState(() {
         _items = result.items;
+        _totalCount = result.totalCount;
         _loading = false;
       });
     } on ApiClientException catch (e) {
@@ -53,6 +71,11 @@ class _RoleApplicationsReviewScreenState
         _loading = false;
       });
     }
+  }
+
+  void _goToPage(int page) {
+    setState(() => _page = page);
+    _load();
   }
 
   Future<void> _approve(RoleApplicationResponse app) async {
@@ -164,7 +187,7 @@ class _RoleApplicationsReviewScreenState
                     ? null
                     : (selection) {
                         setState(() => _statusFilter = selection.first);
-                        _load();
+                        _reload();
                       },
               ),
               const Spacer(),
@@ -177,6 +200,15 @@ class _RoleApplicationsReviewScreenState
           ),
           const SizedBox(height: TravleTokens.space16),
           Expanded(child: _buildBody(Theme.of(context))),
+          const Divider(height: 1),
+          PagerBar(
+            page: _page,
+            pageSize: _pageSize,
+            itemCount: _items.length,
+            totalCount: _totalCount,
+            loading: _loading,
+            onPageChanged: _goToPage,
+          ),
         ],
       ),
     );

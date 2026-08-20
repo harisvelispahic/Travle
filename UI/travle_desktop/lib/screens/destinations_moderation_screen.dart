@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
+import '../widgets/pager_bar.dart';
+
 /// Admin moderation queue for submitted destinations: filter by status (and search
 /// by text), review a submission's details and photos, then approve (publishes it)
 /// or reject with a mandatory reason. Approved destinations can be toggled as
@@ -19,8 +21,11 @@ class DestinationsModerationScreen extends StatefulWidget {
 
 class _DestinationsModerationScreenState
     extends State<DestinationsModerationScreen> {
+  static const int _pageSize = 20;
+
   // 0 = Pending, 1 = Approved, 2 = Rejected (matches the backend enum).
   int _statusFilter = 0;
+  int _page = 1;
   final _search = TextEditingController();
   bool _loading = true;
   String? _error;
@@ -40,6 +45,12 @@ class _DestinationsModerationScreenState
     super.dispose();
   }
 
+  /// Reloads from page 1 — for anything that changes *which* rows match.
+  void _reload() {
+    _page = 1;
+    _load();
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -50,7 +61,8 @@ class _DestinationsModerationScreenState
       final result = await context.read<DestinationProvider>().moderationQueue(
         filter: {
           'status': _statusFilter,
-          'pageSize': 50,
+          'page': _page,
+          'pageSize': _pageSize,
           'includeTotalCount': true,
           if (text.isNotEmpty) 'text': text,
         },
@@ -68,6 +80,11 @@ class _DestinationsModerationScreenState
         _loading = false;
       });
     }
+  }
+
+  void _goToPage(int page) {
+    setState(() => _page = page);
+    _load();
   }
 
   Future<void> _approve(DestinationResponse d) async {
@@ -152,7 +169,7 @@ class _DestinationsModerationScreenState
                     ? null
                     : (selection) {
                         setState(() => _statusFilter = selection.first);
-                        _load();
+                        _reload();
                       },
               ),
               const SizedBox(width: TravleTokens.space16),
@@ -173,12 +190,12 @@ class _DestinationsModerationScreenState
                                 ? null
                                 : () {
                                     _search.clear();
-                                    _load();
+                                    _reload();
                                   },
                           ),
                   ),
                   onChanged: (_) => setState(() {}), // toggle the clear button
-                  onSubmitted: (_) => _load(),
+                  onSubmitted: (_) => _reload(),
                 ),
               ),
               const Spacer(),
@@ -191,6 +208,15 @@ class _DestinationsModerationScreenState
           ),
           const SizedBox(height: TravleTokens.space16),
           Expanded(child: _buildBody(Theme.of(context))),
+          const Divider(height: 1),
+          PagerBar(
+            page: _page,
+            pageSize: _pageSize,
+            itemCount: _items.length,
+            totalCount: _totalCount,
+            loading: _loading,
+            onPageChanged: _goToPage,
+          ),
         ],
       ),
     );

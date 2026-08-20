@@ -46,8 +46,9 @@ class _SearchScreenState extends State<SearchScreen> {
 
   // Active filters.
   String _query = '';
-  int? _categoryId;
-  String? _categoryName;
+  /// Multi-select: a destination matches if it is in **any** chosen category.
+  /// Empty means "every category".
+  final Set<int> _categoryIds = {};
   // Country → Region cascade: a region is chosen within a selected country, so the
   // Region filter is disabled until a country is picked and resets when it changes.
   int? _countryId;
@@ -113,7 +114,7 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   bool get _hasActiveFilters =>
-      _categoryId != null ||
+      _categoryIds.isNotEmpty ||
       _countryId != null ||
       _regionId != null ||
       _minRating != null;
@@ -124,7 +125,7 @@ class _SearchScreenState extends State<SearchScreen> {
         'includeTotalCount': true,
         'sortBy': 'AverageRating desc',
         if (_query.isNotEmpty) 'text': _query,
-        if (_categoryId != null) 'categoryId': _categoryId,
+        if (_categoryIds.isNotEmpty) 'categoryIds': _categoryIds.toList(),
         if (_countryId != null) 'countryId': _countryId,
         if (_regionId != null) 'regionId': _regionId,
         if (_minRating != null) 'minRating': _minRating,
@@ -267,25 +268,11 @@ class _SearchScreenState extends State<SearchScreen> {
     return _categories!;
   }
 
-  /// Loads every country for the Country filter. The reference set is larger than
-  /// one page (max page size is 100), so we page through and accumulate — the
-  /// Country sheet is searchable, so the full list stays usable. Cached after the
-  /// first open.
-  Future<List<CountryResponse>> _ensureCountries() async {
-    if (_countries != null) return _countries!;
-    final provider = context.read<CountryProvider>();
-    final all = <CountryResponse>[];
-    var page = 1;
-    while (true) {
-      final result = await provider
-          .get(filter: {'page': page, 'pageSize': 100, 'sortBy': 'Name'});
-      all.addAll(result.items);
-      if (result.items.length < 100) break; // last page reached
-      page++;
-    }
-    _countries = all;
-    return _countries!;
-  }
+  /// Loads every country for the Country filter (the reference set is larger than
+  /// one page — see [CountryProvider.getAll]). The Country sheet is searchable, so
+  /// the full list stays usable. Cached after the first open.
+  Future<List<CountryResponse>> _ensureCountries() async =>
+      _countries ??= await context.read<CountryProvider>().getAll();
 
   /// Regions of the currently-selected country (the cascade's second step). A
   /// country has at most a handful of regions, so a single page covers it. Cached
@@ -309,18 +296,17 @@ class _SearchScreenState extends State<SearchScreen> {
       return;
     }
     if (!mounted) return;
-    final choice = await _showChoiceSheet<int>(
-      title: 'Category',
-      selected: _categoryId,
-      items: [
-        const _Choice<int>(null, 'Any category'),
-        for (final c in categories) _Choice<int>(c.id, c.name),
-      ],
+    final result = await showMultiSelectSheet(
+      context,
+      title: 'Categories',
+      options: [for (final c in categories) MultiSelectOption(c.id, c.name)],
+      selected: _categoryIds,
     );
-    if (choice == null) return;
+    if (result == null) return; // dismissed without applying
     setState(() {
-      _categoryId = choice.value;
-      _categoryName = choice.value == null ? null : choice.label;
+      _categoryIds
+        ..clear()
+        ..addAll(result);
     });
     _runSearch();
   }
@@ -526,8 +512,17 @@ class _SearchScreenState extends State<SearchScreen> {
       child: Row(
         children: [
           _FilterButton(
-            label: _categoryName ?? 'Category',
-            active: _categoryId != null,
+            label: multiSelectChipLabel(
+              emptyLabel: 'Category',
+              selected: _categoryIds,
+              options: [
+                for (final c in _categories ??
+                    const <DestinationCategoryResponse>[])
+                  MultiSelectOption(c.id, c.name),
+              ],
+              pluralNoun: 'categories',
+            ),
+            active: _categoryIds.isNotEmpty,
             onTap: _openCategorySheet,
           ),
           const SizedBox(width: TravleTokens.space8),

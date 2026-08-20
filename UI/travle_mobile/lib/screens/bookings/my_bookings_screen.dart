@@ -8,7 +8,8 @@ import 'booking_details_screen.dart';
 
 /// The traveler's booking history (`GET /Bookings/mine`): a filterable, newest-first
 /// list of their bookings, each opening the detail (master-detail). Status filter
-/// chips scope the list server-side by status id.
+/// chips scope the list server-side by status id, and the list loads further pages
+/// as it is scrolled (the mobile default — desktop pages instead).
 class MyBookingsScreen extends StatefulWidget {
   const MyBookingsScreen({super.key});
 
@@ -28,16 +29,45 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
     ('Expired', 6),
   ];
 
-  List<BookingResponse> _bookings = const [];
+  static const int _pageSize = 10;
+
+  final ScrollController _scrollController = ScrollController();
+
+  final List<BookingResponse> _bookings = [];
+  int _page = 1;
+  int _totalCount = 0;
   bool _loading = true;
+  bool _loadingMore = false;
   String? _error;
   int? _statusId;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _load();
   }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 300) {
+      _loadMore();
+    }
+  }
+
+  Map<String, dynamic> _filter(int page) => <String, dynamic>{
+        'page': page,
+        'pageSize': _pageSize,
+        'includeTotalCount': true,
+        if (_statusId != null) 'statusId': _statusId,
+      };
 
   Future<void> _load() async {
     setState(() {
@@ -45,16 +75,15 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
       _error = null;
     });
     try {
-      final filter = <String, dynamic>{
-        'page': 1,
-        'pageSize': 50,
-        'includeTotalCount': false,
-        if (_statusId != null) 'statusId': _statusId,
-      };
-      final result = await context.read<BookingProvider>().mine(filter: filter);
+      final result =
+          await context.read<BookingProvider>().mine(filter: _filter(1));
       if (!mounted) return;
       setState(() {
-        _bookings = result.items;
+        _bookings
+          ..clear()
+          ..addAll(result.items);
+        _totalCount = result.totalCount ?? result.items.length;
+        _page = 1;
         _loading = false;
       });
     } on ApiClientException catch (e) {
@@ -63,6 +92,29 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
         _error = e.message;
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || _loading) return;
+    if (_bookings.length >= _totalCount) return;
+
+    setState(() => _loadingMore = true);
+    try {
+      final result = await context
+          .read<BookingProvider>()
+          .mine(filter: _filter(_page + 1));
+      if (!mounted) return;
+      setState(() {
+        _bookings.addAll(result.items);
+        _totalCount = result.totalCount ?? _totalCount;
+        _page += 1;
+        _loadingMore = false;
+      });
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingMore = false);
+      AppSnackbars.error(context, e.message);
     }
   }
 
@@ -142,9 +194,17 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView.builder(
+        controller: _scrollController,
         padding: const EdgeInsets.all(TravleTokens.space16),
-        itemCount: _bookings.length,
+        // One trailing slot for the "loading the next page" spinner.
+        itemCount: _bookings.length + (_loadingMore ? 1 : 0),
         itemBuilder: (context, i) {
+          if (i >= _bookings.length) {
+            return const Padding(
+              padding: EdgeInsets.all(TravleTokens.space16),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
           final booking = _bookings[i];
           return Padding(
             padding: const EdgeInsets.only(bottom: TravleTokens.space8),

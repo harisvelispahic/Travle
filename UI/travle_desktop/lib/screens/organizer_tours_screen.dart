@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
+import '../widgets/pager_bar.dart';
+
 import '../util/formatting.dart';
 import 'tour_form_dialog.dart';
 import 'tour_schedules_dialog.dart';
@@ -21,8 +23,11 @@ class OrganizerToursScreen extends StatefulWidget {
 }
 
 class _OrganizerToursScreenState extends State<OrganizerToursScreen> {
+  static const int _pageSize = 20;
+
   // -1 = All, 1 = Active only, 0 = Inactive only.
   int _activeFilter = -1;
+  int _page = 1;
   String _search = '';
   Timer? _debounce;
 
@@ -44,6 +49,12 @@ class _OrganizerToursScreenState extends State<OrganizerToursScreen> {
     super.dispose();
   }
 
+  /// Reloads from page 1 — for anything that changes *which* rows match.
+  void _reload() {
+    _page = 1;
+    _load();
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -52,7 +63,8 @@ class _OrganizerToursScreenState extends State<OrganizerToursScreen> {
     try {
       final result = await context.read<TourProvider>().mine(
         filter: {
-          'pageSize': 50,
+          'page': _page,
+          'pageSize': _pageSize,
           'includeTotalCount': true,
           'sortBy': 'CreatedAt desc',
           if (_search.isNotEmpty) 'text': _search,
@@ -74,11 +86,16 @@ class _OrganizerToursScreenState extends State<OrganizerToursScreen> {
     }
   }
 
+  void _goToPage(int page) {
+    setState(() => _page = page);
+    _load();
+  }
+
   void _onSearchChanged(String value) {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 350), () {
       _search = value.trim();
-      _load();
+      _reload();
     });
   }
 
@@ -198,7 +215,7 @@ class _OrganizerToursScreenState extends State<OrganizerToursScreen> {
                     ? null
                     : (selection) {
                         setState(() => _activeFilter = selection.first);
-                        _load();
+                        _reload();
                       },
               ),
               const Spacer(),
@@ -217,6 +234,15 @@ class _OrganizerToursScreenState extends State<OrganizerToursScreen> {
           ),
           const SizedBox(height: TravleTokens.space16),
           Expanded(child: _buildBody(theme)),
+          const Divider(height: 1),
+          PagerBar(
+            page: _page,
+            pageSize: _pageSize,
+            itemCount: _items.length,
+            totalCount: _totalCount,
+            loading: _loading,
+            onPageChanged: _goToPage,
+          ),
         ],
       ),
     );

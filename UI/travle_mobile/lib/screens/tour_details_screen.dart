@@ -9,6 +9,7 @@ import '../widgets/organizer_row.dart';
 import '../widgets/review_card.dart';
 import 'bookings/booking_details_screen.dart';
 import 'destination_details_screen.dart';
+import 'reviews_screen.dart';
 
 /// Traveler-facing tour details. Fetches `GET /Tours/{id}`, showing the tour
 /// header (cover, type, price per person, duration, rating), the ordered itinerary
@@ -267,9 +268,14 @@ class _TourReviews extends StatefulWidget {
 }
 
 class _TourReviewsState extends State<_TourReviews> {
+  /// How many reviews the detail page shows inline; the rest live on
+  /// [ReviewsScreen], one tap away.
+  static const int _previewCount = 10;
+
   bool _loading = true;
   String? _error;
   List<TourReviewResponse> _reviews = [];
+  int _total = 0;
 
   @override
   void initState() {
@@ -286,7 +292,7 @@ class _TourReviewsState extends State<_TourReviews> {
       final result = await context.read<TourReviewProvider>().forTour(
         widget.tourId,
         filter: {
-          'pageSize': 50,
+          'pageSize': _previewCount,
           'includeTotalCount': true,
           'sortBy': 'CreatedAt desc',
         },
@@ -294,6 +300,7 @@ class _TourReviewsState extends State<_TourReviews> {
       if (!mounted) return;
       setState(() {
         _reviews = result.items;
+        _total = result.totalCount ?? result.items.length;
         _loading = false;
       });
     } on ApiClientException catch (e) {
@@ -338,6 +345,7 @@ class _TourReviewsState extends State<_TourReviews> {
       );
     }
 
+    final hidden = _total - _reviews.length;
     return Column(
       children: [
         for (final review in _reviews)
@@ -348,7 +356,51 @@ class _TourReviewsState extends State<_TourReviews> {
             comment: review.comment,
             isMine: review.userId == currentUserId,
           ),
+        if (hidden > 0)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _openAll,
+              icon: const Icon(Icons.reviews_outlined, size: 18),
+              label: Text('Show all $_total reviews'),
+            ),
+          ),
       ],
+    );
+  }
+
+  void _openAll() {
+    final provider = context.read<TourReviewProvider>();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ReviewsScreen(
+          title: 'Reviews',
+          fetch: (page, pageSize) async {
+            final result = await provider.forTour(
+              widget.tourId,
+              filter: {
+                'page': page,
+                'pageSize': pageSize,
+                'includeTotalCount': true,
+                'sortBy': 'CreatedAt desc',
+              },
+            );
+            return (
+              items: [
+                for (final r in result.items)
+                  ReviewListEntry(
+                    userId: r.userId,
+                    authorName: r.authorName,
+                    rating: r.rating,
+                    createdAt: r.createdAt,
+                    comment: r.comment,
+                  ),
+              ],
+              totalCount: result.totalCount,
+            );
+          },
+        ),
+      ),
     );
   }
 }

@@ -10,7 +10,16 @@ namespace Travle.Model.SearchObjects
         /// <summary>Free-text match over name and description (accent-insensitive).</summary>
         public string? Text { get; set; }
 
+        /// <summary>Single-category filter. Kept alongside <see cref="CategoryIds"/> because it is also the
+        /// recommender's search signal (the category a text search was narrowed to).</summary>
         public int? CategoryId { get; set; }
+
+        /// <summary>
+        /// Multi-select category filter — a destination matches if it is in <b>any</b> of these (empty/null =
+        /// all categories). Mirrors <c>DestinationMapSearch.CategoryIds</c> so the browse filters behave the
+        /// same on the search screen and the map. Combined with <see cref="CategoryId"/> both must hold.
+        /// </summary>
+        public List<int>? CategoryIds { get; set; }
 
         /// <summary>Filter by country (matched through the destination's city → region → country).</summary>
         public int? CountryId { get; set; }

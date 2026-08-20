@@ -88,6 +88,11 @@ namespace Travle.Services
                 query = query.Where(d => d.CategoryId == search.CategoryId.Value);
             }
 
+            if (search.CategoryIds is { Count: > 0 })
+            {
+                query = query.Where(d => search.CategoryIds.Contains(d.CategoryId));
+            }
+
             if (search.CountryId.HasValue)
             {
                 query = query.Where(d => d.City.Region.CountryId == search.CountryId.Value);
@@ -164,7 +169,11 @@ namespace Travle.Services
 
             if (!string.IsNullOrWhiteSpace(search.Text))
             {
-                await RecordSearchInteractionAsync(search.Text.Trim(), search.CategoryId);
+                // One selected category is a clean recommender signal; several are ambiguous, so fall back to
+                // inferring the category from the search text (04 §2).
+                var signalCategoryId = search.CategoryId
+                    ?? (search.CategoryIds is { Count: 1 } single ? single[0] : null);
+                await RecordSearchInteractionAsync(search.Text.Trim(), signalCategoryId);
             }
 
             return await GetAllAsync(search);
