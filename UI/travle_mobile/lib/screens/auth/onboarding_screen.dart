@@ -125,7 +125,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('What interests you?'),
+        // A neutral wizard title — each step asks its own question below it.
+        title: const Text('Personalize Travle'),
         automaticallyImplyLeading: false,
       ),
       body: SafeArea(child: _buildBody(Theme.of(context))),
@@ -187,7 +188,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('What do you love?', style: theme.textTheme.titleLarge),
+              Text('What are you interested in?',
+                  style: theme.textTheme.titleLarge),
               const SizedBox(height: TravleTokens.space4),
               Text(
                 'Pick the kinds of places you enjoy — we\'ll tailor your recommendations.',
@@ -286,7 +288,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Any favourites?', style: theme.textTheme.titleLarge),
+          // Not "favourites" — Favorites is a separate feature (saved
+          // destinations/tours), and these are just interest tags.
+          Text('Anything more specific?', style: theme.textTheme.titleLarge),
           const SizedBox(height: TravleTokens.space4),
           Text(
             'Add tags to fine-tune what we suggest. Optional — pick as many as you like.',

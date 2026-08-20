@@ -98,54 +98,12 @@ class _RoleApplicationsReviewScreenState
     }
   }
 
-  Future<String?> _promptReason() {
-    final controller = TextEditingController();
-    String? errorText;
-    return showDialog<String>(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setLocal) {
-            return AlertDialog(
-              title: const Text('Reject application'),
-              content: TextField(
-                controller: controller,
-                autofocus: true,
-                minLines: 2,
-                maxLines: 4,
-                maxLength: 500,
-                decoration: InputDecoration(
-                  labelText: 'Reason (sent to the applicant)',
-                  errorText: errorText,
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.error,
-                    foregroundColor: Theme.of(context).colorScheme.onError,
-                  ),
-                  onPressed: () {
-                    final text = controller.text.trim();
-                    if (text.isEmpty) {
-                      setLocal(() => errorText = 'A reason is required');
-                      return;
-                    }
-                    Navigator.of(context).pop(text);
-                  },
-                  child: const Text('Reject'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    ).whenComplete(controller.dispose);
-  }
+  Future<String?> _promptReason() => showReasonDialog(
+        context,
+        title: 'Reject application',
+        label: 'Reason (sent to the applicant)',
+        confirmLabel: 'Reject',
+      );
 
   Future<void> _downloadDocument(RoleApplicationResponse app) async {
     setState(() => _acting.add(app.id));

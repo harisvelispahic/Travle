@@ -340,7 +340,8 @@ never charged for a booking they cannot get. The booking is **not** resurrected.
   of the state transition: the orchestrators move the booking to Cancelled (in a transaction), then call
   in here so the Stripe call runs **outside** any DB transaction.
   - `RefundForBookingAsync(bookingId, initiatedBy, reason, forcedPercentage)` — user cancel
-    (`forcedPercentage: null` ⇒ tiered) and organizer reject (`100`).
+    (`forcedPercentage: null` ⇒ tiered), organizer reject (`100`) and organizer per-booking cancel of a
+    *confirmed* booking (`100`, whatever the notice period — 00 §1.4).
   - `RefundForScheduleCancellationAsync(scheduleId, …)` — 100% for every paid, now-cancelled booking on a
     retired slot.
   - Computes amount from the **actually charged** `Payment.Amount`; writes the `Refund` row; sets

@@ -29,6 +29,7 @@ class TravleTextField extends StatefulWidget {
     this.minLines,
     this.maxLines = 1,
     this.onSubmitted,
+    this.autofocus = false,
   });
 
   final TextEditingController? controller;
@@ -54,6 +55,9 @@ class TravleTextField extends StatefulWidget {
   /// Maximum visible lines; defaults to 1 (single line). Ignored when [obscure].
   final int? maxLines;
   final ValueChanged<String>? onSubmitted;
+
+  /// Takes focus as soon as it is shown — for the single field of a prompt dialog.
+  final bool autofocus;
 
   @override
   State<TravleTextField> createState() => _TravleTextFieldState();
@@ -85,6 +89,7 @@ class _TravleTextFieldState extends State<TravleTextField> {
       minLines: widget.obscure ? 1 : widget.minLines,
       maxLines: widget.obscure ? 1 : widget.maxLines,
       onFieldSubmitted: widget.onSubmitted,
+      autofocus: widget.autofocus,
       decoration: InputDecoration(
         labelText: widget.label,
         hintText: widget.hint,

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'tokens.dart';
 
 /// Semantic colors the Material [ColorScheme] does not carry — success /
-/// warning / info / neutral plus their on-colors. Read anywhere with
+/// warning / info / neutral / completed plus their on-colors. Read anywhere with
 /// `Theme.of(context).extension<TravleColors>()!`; used by status pills,
 /// banners, and the success/error snackbars.
 @immutable
@@ -17,6 +17,8 @@ class TravleColors extends ThemeExtension<TravleColors> {
     required this.onInfo,
     required this.neutral,
     required this.onNeutral,
+    required this.completed,
+    required this.onCompleted,
   });
 
   final Color success;
@@ -28,6 +30,10 @@ class TravleColors extends ThemeExtension<TravleColors> {
   final Color neutral;
   final Color onNeutral;
 
+  /// A finished, archived state (a completed booking) — see [TravleTokens.completed].
+  final Color completed;
+  final Color onCompleted;
+
   static const TravleColors light = TravleColors(
     success: TravleTokens.success,
     onSuccess: TravleTokens.onSuccess,
@@ -37,6 +43,8 @@ class TravleColors extends ThemeExtension<TravleColors> {
     onInfo: TravleTokens.onInfo,
     neutral: TravleTokens.neutral,
     onNeutral: TravleTokens.onNeutral,
+    completed: TravleTokens.completed,
+    onCompleted: TravleTokens.onCompleted,
   );
 
   @override
@@ -49,6 +57,8 @@ class TravleColors extends ThemeExtension<TravleColors> {
     Color? onInfo,
     Color? neutral,
     Color? onNeutral,
+    Color? completed,
+    Color? onCompleted,
   }) {
     return TravleColors(
       success: success ?? this.success,
@@ -59,6 +69,8 @@ class TravleColors extends ThemeExtension<TravleColors> {
       onInfo: onInfo ?? this.onInfo,
       neutral: neutral ?? this.neutral,
       onNeutral: onNeutral ?? this.onNeutral,
+      completed: completed ?? this.completed,
+      onCompleted: onCompleted ?? this.onCompleted,
     );
   }
 
@@ -76,6 +88,8 @@ class TravleColors extends ThemeExtension<TravleColors> {
       onInfo: Color.lerp(onInfo, other.onInfo, t)!,
       neutral: Color.lerp(neutral, other.neutral, t)!,
       onNeutral: Color.lerp(onNeutral, other.onNeutral, t)!,
+      completed: Color.lerp(completed, other.completed, t)!,
+      onCompleted: Color.lerp(onCompleted, other.onCompleted, t)!,
     );
   }
 }

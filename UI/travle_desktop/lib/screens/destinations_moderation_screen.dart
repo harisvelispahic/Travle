@@ -115,54 +115,12 @@ class _DestinationsModerationScreenState
     }
   }
 
-  Future<String?> _promptReason() {
-    final controller = TextEditingController();
-    String? errorText;
-    return showDialog<String>(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setLocal) {
-            return AlertDialog(
-              title: const Text('Reject destination'),
-              content: TextField(
-                controller: controller,
-                autofocus: true,
-                minLines: 2,
-                maxLines: 4,
-                maxLength: 500,
-                decoration: InputDecoration(
-                  labelText: 'Reason (sent to the submitter)',
-                  errorText: errorText,
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.error,
-                    foregroundColor: Theme.of(context).colorScheme.onError,
-                  ),
-                  onPressed: () {
-                    final text = controller.text.trim();
-                    if (text.isEmpty) {
-                      setLocal(() => errorText = 'A reason is required');
-                      return;
-                    }
-                    Navigator.of(context).pop(text);
-                  },
-                  child: const Text('Reject'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    ).whenComplete(controller.dispose);
-  }
+  Future<String?> _promptReason() => showReasonDialog(
+        context,
+        title: 'Reject destination',
+        label: 'Reason (sent to the submitter)',
+        confirmLabel: 'Reject',
+      );
 
   void _viewPhotos(DestinationResponse d) {
     showDialog<void>(

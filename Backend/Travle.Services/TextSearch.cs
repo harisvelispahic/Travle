@@ -17,6 +17,10 @@ namespace Travle.Services
     /// while the term itself stays a bound parameter (closed over a holder), exactly as the hand-written
     /// per-service filters did.
     /// </para>
+    /// <para>
+    /// <see cref="WhereContainsAllWords{T}"/> is the people-search variant: it splits the term into words and
+    /// requires each to land in <i>some</i> column, so a first-name-plus-last-name query matches.
+    /// </para>
     /// </summary>
     public static class TextSearch
     {
@@ -45,6 +49,55 @@ namespace Travle.Services
                 return query;
             }
 
+            var parameter = Expression.Parameter(typeof(T), "e");
+            var predicate = ContainsAnyColumn(term, columns, parameter);
+            return query.Where(Expression.Lambda<Func<T, bool>>(predicate, parameter));
+        }
+
+        /// <summary>
+        /// Like <see cref="WhereContains{T}"/>, but each whitespace-separated <b>word</b> of
+        /// <paramref name="term"/> must be found in some column: words are AND-ed, columns OR-ed. A
+        /// single-word term is therefore identical to <see cref="WhereContains{T}"/>, while a multi-word one
+        /// spans columns — "haris velispahic" (or "velispahic haris") matches the user whose FirstName holds
+        /// one word and LastName the other, which a contains-the-whole-phrase filter never can. Accent
+        /// awareness is decided per word, so a mixed "haris velispahić" stays exact only where it was typed
+        /// with diacritics. Use for people-style searches over first/last name; keep the plain
+        /// <see cref="WhereContains{T}"/> where a phrase should stay a phrase (destination/tour free text).
+        /// </summary>
+        public static IQueryable<T> WhereContainsAllWords<T>(
+            this IQueryable<T> query,
+            string? term,
+            params Expression<Func<T, string?>>[] columns)
+        {
+            if (string.IsNullOrWhiteSpace(term) || columns.Length == 0)
+            {
+                return query;
+            }
+
+            var words = term.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            var parameter = Expression.Parameter(typeof(T), "e");
+            Expression? predicate = null;
+
+            foreach (var word in words)
+            {
+                var wordPredicate = ContainsAnyColumn(word, columns, parameter);
+                predicate = predicate is null
+                    ? wordPredicate
+                    : Expression.AndAlso(predicate, wordPredicate);
+            }
+
+            return query.Where(Expression.Lambda<Func<T, bool>>(predicate!, parameter));
+        }
+
+        /// <summary>
+        /// "Any of <paramref name="columns"/> contains <paramref name="term"/>", as an expression over the
+        /// supplied <paramref name="parameter"/> so several such predicates can be combined.
+        /// </summary>
+        private static Expression ContainsAnyColumn<T>(
+            string term,
+            Expression<Func<T, string?>>[] columns,
+            ParameterExpression parameter)
+        {
             // Compile-time literal per branch — the collation must reach EF as a constant, not a variable.
             var collation = SearchCollation.HasDiacritics(term)
                 ? SearchCollation.CaseInsensitiveAccentSensitive
@@ -55,9 +108,7 @@ namespace Travle.Services
             var termExpr = Expression.Property(
                 Expression.Constant(new TermHolder(term)), nameof(TermHolder.Value));
 
-            var parameter = Expression.Parameter(typeof(T), "e");
             Expression? predicate = null;
-
             foreach (var column in columns)
             {
                 var member = new ParameterRebinder(column.Parameters[0], parameter).Visit(column.Body)!;
@@ -67,8 +118,7 @@ namespace Travle.Services
                 predicate = predicate is null ? contains : Expression.OrElse(predicate, contains);
             }
 
-            var lambda = Expression.Lambda<Func<T, bool>>(predicate!, parameter);
-            return query.Where(lambda);
+            return predicate!;
         }
 
         private sealed class TermHolder

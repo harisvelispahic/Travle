@@ -4,33 +4,34 @@ Covers: when theming happens, design tokens, how Flutter theming actually works 
 
 ## 1. When this happens
 
-**Tokens, theme, and the shared package are Phase 0 work** — defining them costs an hour at scaffold time and a week if retrofitted after twenty screens exist. Screens start *consuming* the system in Phase 2 (desktop CRUD backbone) and Phase 3 (mobile). Standing rule from then on: **screens never hardcode colors or text styles** — everything reads the theme. Phase 11 enforces it with a grep: `Colors\.` and `TextStyle(` outside `travle_ui` should return (near) zero hits.
+**Tokens, theme, and the shared package are Phase 0 work** — defining them costs an hour at scaffold time and a week if retrofitted after twenty screens exist. Screens start _consuming_ the system in Phase 2 (desktop CRUD backbone) and Phase 3 (mobile). Standing rule from then on: **screens never hardcode colors or text styles** — everything reads the theme. Phase 11 enforces it with a grep: `Colors\.` and `TextStyle(` outside `travle_ui` should return (near) zero hits.
 
 ## 2. Design tokens — PASTE YOUR PALETTE HERE
 
 Fill the hex values once; everything else derives from this table. (Slots follow Material 3's `ColorScheme` naming so wiring is mechanical.)
 
-| Token | Hex | Used for |
-|---|---|---|
-| `primary` | `#______` | app bars, primary buttons, active nav item, selected chips |
-| `onPrimary` | `#______` | text/icons on primary |
-| `secondary` | `#______` | secondary actions, accents |
-| `surface` | `#______` | cards, dialogs, sheets |
-| `background` | `#______` | screen background |
-| `error` | `#______` | validation text, destructive actions |
-| `success` | `#______` | Confirmed pill, success snackbars |
-| `warning` | `#______` | Pending pill, hold-countdown hints |
-| `info` | `#______` | Completed pill, informational banners |
-| `neutral` | `#______` | Expired/disabled states, dividers, muted text |
+| Token        | Hex       | Used for                                                       |
+| ------------ | --------- | -------------------------------------------------------------- |
+| `primary`    | `#______` | app bars, primary buttons, active nav item, selected chips     |
+| `onPrimary`  | `#______` | text/icons on primary                                          |
+| `secondary`  | `#______` | secondary actions, accents                                     |
+| `surface`    | `#______` | cards, dialogs, sheets                                         |
+| `background` | `#______` | screen background                                              |
+| `error`      | `#______` | validation text, destructive actions                           |
+| `success`    | `#______` | Confirmed pill, success snackbars                              |
+| `warning`    | `#______` | Pending pill, hold-countdown hints                             |
+| `info`       | `#______` | Featured badge, informational banners                          |
+| `neutral`    | `#______` | Expired/disabled states, dividers, muted text                  |
+| `completed`  | `#5AFFFF` | Completed pill (on-color = `#000000` — far too light to carry white) |
 
-Status-pill mapping (fixed): Pending → `warning` · Confirmed → `success` · Completed → `info` · Cancelled → `error` · Expired → `neutral` · PaymentInProgress → `neutral` (rarely user-visible).
+Status-pill mapping (fixed): Pending → `warning` · Confirmed → `success` · Completed → `completed` · Cancelled → `error` · Expired → `neutral` · PaymentInProgress → `warning`.
 
 Non-color tokens: spacing scale **4 / 8 / 12 / 16 / 24 / 32**; corner radius **12** (cards, dialogs, inputs), **999** (chips, pills); one type ramp via `TextTheme` (display/title/body/label) — no ad-hoc font sizes.
 
 ## 3. How theming works in Flutter (the Angular translation)
 
-- **`ThemeData` is your global stylesheet.** It carries a `ColorScheme` (semantic slots — think CSS variables, not literal colors), a `TextTheme`, and **component themes**: `ElevatedButtonThemeData`, `InputDecorationTheme`, `CardThemeData`, `ChipThemeData`, `DialogThemeData`, `DataTableThemeData`, `SnackBarThemeData`… Configure these once and every *standard* widget in the app picks the styling up automatically.
-- **The mindset shift from Angular:** in Angular you often built a styled component to standardize a button. In Flutter you *don't wrap widgets to restyle them* — you configure the component theme and keep using the stock `ElevatedButton`. Custom widgets are for **structure and behavior** (a status pill, a paginated table), not for re-skinning primitives.
+- **`ThemeData` is your global stylesheet.** It carries a `ColorScheme` (semantic slots — think CSS variables, not literal colors), a `TextTheme`, and **component themes**: `ElevatedButtonThemeData`, `InputDecorationTheme`, `CardThemeData`, `ChipThemeData`, `DialogThemeData`, `DataTableThemeData`, `SnackBarThemeData`… Configure these once and every _standard_ widget in the app picks the styling up automatically.
+- **The mindset shift from Angular:** in Angular you often built a styled component to standardize a button. In Flutter you _don't wrap widgets to restyle them_ — you configure the component theme and keep using the stock `ElevatedButton`. Custom widgets are for **structure and behavior** (a status pill, a paginated table), not for re-skinning primitives.
 - **`ThemeExtension`** covers tokens `ColorScheme` doesn't have (success/warning/info, spacing). You define a `TravleColors` extension class and read it anywhere via `Theme.of(context).extension<TravleColors>()!` — typed, autocompleted, no magic strings.
 - **Desktop vs mobile:** same tokens, same `buildTravleTheme()`; the desktop app additionally sets `visualDensity: VisualDensity.compact` and uses a different layout shell (sidebar vs bottom nav). One design language, two densities.
 
@@ -52,20 +53,30 @@ UI/
 └── travle_desktop/                   pubspec: travle_ui: { path: ../travle_ui }
 ```
 
-Path dependencies inside one repo are standard Flutter monorepo practice and work fine in `flutter build apk/windows --release`. **Placement rule:** tokens/theme + widgets used by *both* apps → `travle_ui`; app-specific composites (a mobile destination card, the desktop sidebar) → that app's own `widgets/` folder. Acceptable fallback if the package ever feels heavy: per-app `widgets/` folders only — but the package is the direct analogue of your Angular setup, keeps DRY across the two apps, and costs ~10 minutes to create.
+Path dependencies inside one repo are standard Flutter monorepo practice and work fine in `flutter build apk/windows --release`. **Placement rule:** tokens/theme + widgets used by _both_ apps → `travle_ui`; app-specific composites (a mobile destination card, the desktop sidebar) → that app's own `widgets/` folder. Acceptable fallback if the package ever feels heavy: per-app `widgets/` folders only — but the package is the direct analogue of your Angular setup, keeps DRY across the two apps, and costs ~10 minutes to create.
 
 ## 5. Widget catalogue (each maps to a course rule)
 
 **Shared — `travle_ui/widgets`:**
-`StatusPill(status)` (fixed color mapping from §2) · `RatingStars(value, count)` · `ConfirmDialog` (required for every irreversible action: delete, pay, cancel) · `TravleImage(bytes)` (memoized `Uint8List` decode + placeholder — never decode in `build()`, Dodatak A.2) · `EmptyState(message, hint)` · `LoadingOverlay` · `AppSnackbars.success/error` (meaningful messages, never bare "Success") · `FormFieldWrapper` (renders validation text **below** the control) · `DisableableButton(onPressed, disabledReason)` (disabled state always explains why) · `SectionHeader` · `MapCoordinatePicker` + `MapLocationField` (flutter_map tap-to-place modal replacing raw coordinate textboxes, constraint K) · `TravleMapView` (read-only map — one pin for a destination, or numbered pins + dashed connector for a tour itinerary; street ⇄ satellite toggle).
+`StatusPill(status)` (fixed color mapping from §2) · `RatingStars(value, count)` · `ConfirmDialog` (required for every irreversible action: delete, pay, cancel) · `showReasonDialog(...)` (the single "why?" prompt behind every destructive decision — reject a booking/application, remove a review, suspend a user, call off a schedule; owns its controller, returns null on dismissal so a back-out is never mistaken for an empty reason) · `TravleImage(bytes)` (memoized `Uint8List` decode + placeholder — never decode in `build()`, Dodatak A.2) · `EmptyState(message, hint)` · `LoadingOverlay` · `AppSnackbars.success/error` (meaningful messages, never bare "Success") · `FormFieldWrapper` (renders validation text **below** the control) · `DisableableButton(onPressed, disabledReason)` (disabled state always explains why) · `SectionHeader` · `MapCoordinatePicker` + `MapLocationField` (flutter_map tap-to-place modal replacing raw coordinate textboxes, constraint K) · `TravleMapView` (read-only map — one pin for a destination, or numbered pins + dashed connector for a tour itinerary; street ⇄ satellite toggle) · `LocationCascadeField(depth)` (Country → Region → City, or → Region; each level a real `FormField` so validation lands under its own control, children disabled-with-reason until their parent is picked — see §5a).
 
 **Desktop-only — `travle_desktop/widgets`:**
-`SideNavShell` (green sidebar layout from the mockups) · `PaginatedSearchTable` (search row + server-side pagination + image column for image-bearing entities + per-row actions honoring `disabledReason`) · `CrudFormDialog` (X close top-right, Back, aligned two-column label/value layout, images ≤50% of the form) · `PdfReportBar` (download + print actions).
+`SideNavShell` (green sidebar layout from the mockups) · `PaginatedSearchTable` (search row + server-side pagination + image column for image-bearing entities + per-row actions honoring `disabledReason`) · `PagerBar` (the "Page 2 of 7 · 63 total" + prev/next footer, extracted from `PaginatedSearchTable` so the card-based lists — the booking screens — page identically) · `CrudFormDialog` (X close top-right, Back, aligned two-column label/value layout, images ≤50% of the form) · `PdfReportBar` (download + print actions).
 
 **Mobile-only — `travle_mobile/widgets`:**
 `BottomNavShell` · `DestinationCard` / `TourCard` (thumbnail, name, location, rating) · `ReasonBanner` (italic recommendation-reason line) · `FilterChipsRow` + bottom-sheet pickers (DB-fed) · `ScheduleChipPicker` · `PeopleStepper` (capped at free seats) · `PriceSummary` (server-quoted values only) · `NotificationBell` (unread badge).
 
 No "widget gallery" screen in the final build — the course removes points for controls without real functionality; develop widgets directly against their first consuming screen.
+
+## 5a. Two cross-cutting rules for pickers and dialogs
+
+**Every location input is a cascade, never a flat list.** The seeded reference geography spans ~200 countries and 600+ cities, so a single page of options (`pageSize` ≤ 100) doesn't merely bury the right row — it makes most rows unreachable. So: pick a place by narrowing (`LocationCascadeField` in both apps; `CrudField.dependsOn` in the desktop reference forms; a `ReferenceFilter.grandparent` above a reference table's parent filter). Map pickers are exempt — they answer "where exactly", not "which reference row".
+
+_Gotcha when wiring one by hand:_ a `DropdownButtonFormField` reads `initialValue` **once**, so clearing a child's selection from the parent's `onChanged` leaves the field holding a value the reloaded items no longer contain — which `DropdownButton` asserts on. Either give the child a `ValueKey` derived from the parent's value (forcing a fresh `FormField`), or swap it for a non-`FormField` spinner while the reload is in flight, as `CrudFormDialog` does.
+
+**Every dialog closes three ways:** its Cancel/Back button, the Escape key, and a click on the barrier. Escape and the barrier are the same switch — `showDialog`'s `barrierDismissible` (default `true`), which routes through `Navigator.maybePop` — so never pass `barrierDismissible: false`. To protect an in-flight save, wrap the dialog body in `PopScope(canPop: !busy)`: that blocks Escape and the barrier while the request is away, and the Cancel/X buttons already disable themselves on the same flag.
+
+_Gotcha — a dialog's `TextEditingController` must be owned by a `State`._ `showDialog`'s future completes **synchronously** when the route is popped, while the dialog is still animating out with a live `EditableText`, so `showDialog(...).whenComplete(controller.dispose)` disposes the controller out from under the field and throws _"A TextEditingController was used after being disposed"_ — surfacing in the running app as a duplicate `_OverlayEntryWidgetState` GlobalKey cascade. It fires only when the field still holds focus, i.e. precisely the Escape and barrier paths (tapping a button moves focus off the field first), which is what makes it look like a dismissal bug rather than a lifetime bug. Make the dialog a `StatefulWidget` and dispose in `State.dispose` — or just call `showReasonDialog`, which every destructive "why?" prompt now shares (`travle_desktop/test/reason_dialog_test.dart` locks the behaviour down).
 
 ## 6. Concrete build order (the Phase 0 UI slice)
 

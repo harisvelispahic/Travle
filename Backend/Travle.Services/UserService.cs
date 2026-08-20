@@ -95,7 +95,9 @@ namespace Travle.Services
                 query = query.Where(u => u.Username.Contains(search.Username));
             }
 
-            query = query.WhereContains(search.Name, u => u.FirstName, u => u.LastName);
+            // Word-wise so a full name matches: "haris" hits either column, "haris velispahic" (in either
+            // order) requires both — a plain phrase contains would find neither column holding the whole thing.
+            query = query.WhereContainsAllWords(search.Name, u => u.FirstName, u => u.LastName);
 
             if (search.IsSuspended.HasValue)
             {

@@ -12,7 +12,6 @@ Future<bool?> showTourFormDialog(
 }) {
   return showDialog<bool>(
     context: context,
-    barrierDismissible: false,
     builder: (_) => TourFormDialog(existing: existing),
   );
 }
@@ -236,7 +235,14 @@ class _TourFormDialogState extends State<TourFormDialog> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PopScope(
+        // Closable by Cancel, Escape, or the barrier — but never mid-save, when
+        // tearing the form down would strand the request that is already away.
+        canPop: !_submitting,
+        child: _buildDialog(context),
+      );
+
+  Widget _buildDialog(BuildContext context) {
     final theme = Theme.of(context);
     return Dialog(
       child: ConstrainedBox(
@@ -621,6 +627,7 @@ class _DestinationPickerDialog extends StatefulWidget {
 }
 
 class _DestinationPickerDialogState extends State<_DestinationPickerDialog> {
+  final _searchController = TextEditingController();
   String _search = '';
   bool _loading = true;
   String? _error;
@@ -631,6 +638,20 @@ class _DestinationPickerDialogState extends State<_DestinationPickerDialog> {
   @override
   void initState() {
     super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  /// Runs the search the box currently holds. Wired to the magnifier button as
+  /// well as the keyboard's submit — the field is search-on-demand, and the button
+  /// is what tells the organizer it is searchable at all.
+  void _runSearch() {
+    _search = _searchController.text.trim();
     _load();
   }
 
@@ -690,15 +711,41 @@ class _DestinationPickerDialogState extends State<_DestinationPickerDialog> {
               ),
               const SizedBox(height: TravleTokens.space16),
               TextField(
-                decoration: const InputDecoration(
+                controller: _searchController,
+                // Rebuild so the clear (✕) affordance tracks the field's contents.
+                onChanged: (_) => setState(() {}),
+                onSubmitted: (_) => _runSearch(),
+                decoration: InputDecoration(
                   isDense: true,
-                  prefixIcon: Icon(Icons.search),
                   hintText: 'Search approved destinations…',
+                  // The magnifier is the search *button*, not decoration: this list
+                  // is search-on-demand (no debounce), so the organizer needs an
+                  // affordance saying the box is searchable and how to fire it.
+                  suffixIconConstraints:
+                      const BoxConstraints(minWidth: 40, minHeight: 40),
+                  suffixIcon: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_searchController.text.isNotEmpty)
+                        _FieldIconButton(
+                          tooltip: 'Clear',
+                          icon: Icons.close,
+                          onPressed: _loading
+                              ? null
+                              : () {
+                                  _searchController.clear();
+                                  _runSearch();
+                                },
+                        ),
+                      _FieldIconButton(
+                        tooltip: 'Search',
+                        icon: Icons.search,
+                        onPressed: _loading ? null : _runSearch,
+                      ),
+                      const SizedBox(width: TravleTokens.space4),
+                    ],
+                  ),
                 ),
-                onSubmitted: (v) {
-                  _search = v.trim();
-                  _load();
-                },
               ),
               const SizedBox(height: TravleTokens.space16),
               Flexible(child: _buildList(theme)),
@@ -782,6 +829,32 @@ class _DestinationPickerDialogState extends State<_DestinationPickerDialog> {
           ),
         );
       },
+    );
+  }
+}
+
+/// A compact icon button sized to sit inside a dense [TextField]'s suffix without
+/// stretching the field to a full 48 px tap target.
+class _FieldIconButton extends StatelessWidget {
+  const _FieldIconButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: tooltip,
+      icon: Icon(icon, size: 20),
+      onPressed: onPressed,
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
     );
   }
 }

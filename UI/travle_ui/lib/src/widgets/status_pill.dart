@@ -4,8 +4,9 @@ import '../theme/tokens.dart';
 import '../theme/travle_colors.dart';
 
 /// The semantic tone of a [StatusPill]. Screens map their domain status to a tone
-/// (e.g. a Pending destination → [warning], Approved → [success]).
-enum StatusTone { success, warning, info, danger, neutral }
+/// (e.g. a Pending destination → [warning], Approved → [success]). [completed] is
+/// for a finished, archived state — done, but no longer live like [success].
+enum StatusTone { success, warning, info, danger, neutral, completed }
 
 /// A small rounded status pill with a semantic colour, for lists and detail
 /// headers (destination moderation status, booking status, …). Colours come from
@@ -28,6 +29,7 @@ class StatusPill extends StatelessWidget {
       StatusTone.info => (colors.info, colors.onInfo),
       StatusTone.danger => (scheme.error, scheme.onError),
       StatusTone.neutral => (colors.neutral, colors.onNeutral),
+      StatusTone.completed => (colors.completed, colors.onCompleted),
     };
 
     return Container(

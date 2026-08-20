@@ -41,7 +41,6 @@ class _RoleApplicationScreenState extends State<RoleApplicationScreen> {
   final _formKey = GlobalKey<FormState>();
   final _motivation = TextEditingController();
 
-  List<RegionResponse> _regions = [];
   int? _regionId;
 
   // Resolved from the server: the applied-for role option (null → can't apply now).
@@ -77,14 +76,9 @@ class _RoleApplicationScreenState extends State<RoleApplicationScreen> {
       _loadError = null;
     });
     final roleApps = context.read<RoleApplicationProvider>();
-    final regionProvider = context.read<RegionProvider>();
     try {
       final applicable = await roleApps.applicableRoles();
       final mine = await roleApps.mine(filter: {'pageSize': 100});
-      // Only fetch regions when the form actually uses them.
-      final regions = widget.showRegion
-          ? (await regionProvider.get(filter: {'pageSize': 100})).items
-          : <RegionResponse>[];
 
       final myApps = mine.items
           .where((a) => a.roleName == widget.roleName)
@@ -97,7 +91,6 @@ class _RoleApplicationScreenState extends State<RoleApplicationScreen> {
       setState(() {
         _roleOption = options.isEmpty ? null : options.first;
         _existingApp = myApps.isEmpty ? null : myApps.first;
-        _regions = regions;
         _loading = false;
       });
     } on ApiClientException catch (e) {
@@ -247,31 +240,15 @@ class _RoleApplicationScreenState extends State<RoleApplicationScreen> {
                     ],
                     const SizedBox(height: TravleTokens.space24),
                     if (widget.showRegion) ...[
-                      DropdownButtonFormField<int>(
-                        isExpanded: true,
-                        initialValue: _regionId,
-                        decoration: InputDecoration(
-                          labelText: widget.regionLabel,
-                          hintText: 'Select a region',
-                          prefixIcon: const Icon(Icons.map_outlined),
-                        ),
-                        items: [
-                          for (final r in _regions)
-                            DropdownMenuItem(
-                              value: r.id,
-                              child: Text(
-                                r.countryName == null
-                                    ? r.name
-                                    : '${r.name} — ${r.countryName}',
-                              ),
-                            ),
-                        ],
-                        onChanged: _busy
-                            ? null
-                            : (id) => setState(() => _regionId = id),
-                        validator: widget.regionRequired
-                            ? (v) => v == null ? 'Please select a region' : null
-                            : null,
+                      // Country → Region: the seeded reference data spans ~200
+                      // countries, so a single flat page of regions would hide
+                      // most of them outright.
+                      LocationCascadeField(
+                        depth: LocationDepth.region,
+                        regionLabel: widget.regionLabel,
+                        isRequired: widget.regionRequired,
+                        enabled: !_busy,
+                        onChanged: (regionId) => _regionId = regionId,
                       ),
                       const SizedBox(height: TravleTokens.space16),
                     ],

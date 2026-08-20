@@ -4,8 +4,9 @@ import 'package:flutter/material.dart';
 /// server-side (suspension, a role change, an expired/rejected token). It only
 /// informs — the caller has already cleared the session and routed to login — so
 /// its single action just dismisses it. Mirrors the tone of the mobile "you're now
-/// a curator" re-login prompt, generalised to any reason. Not dismissible by
-/// tapping outside, so the reason is acknowledged.
+/// a curator" re-login prompt, generalised to any reason. Dismissible like every
+/// other dialog (button, Escape, or the barrier) — nothing depends on the
+/// acknowledgement, the session is already gone either way.
 Future<void> showSessionEndedDialog(
   BuildContext context, {
   required String message,
@@ -13,7 +14,6 @@ Future<void> showSessionEndedDialog(
 }) {
   return showDialog<void>(
     context: context,
-    barrierDismissible: false,
     builder: (context) => AlertDialog(
       icon: const Icon(Icons.lock_clock_outlined),
       title: Text(title),

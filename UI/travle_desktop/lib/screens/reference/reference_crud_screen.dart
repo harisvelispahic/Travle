@@ -33,9 +33,13 @@ class _ReferenceCrudScreenState<T> extends State<ReferenceCrudScreen<T>> {
   List<SortSpec> _sorts = const [];
   String _search = '';
 
-  // Optional single-level parent filter (Regions-by-Country, Cities-by-Region).
+  // Optional parent filter (Regions-by-Country, Cities-by-Region) and, above it,
+  // the narrowing-only grandparent that keeps its option list short (Cities get a
+  // Country picker so the Region list isn't every region on earth).
   Object? _filterValue;
   List<CrudOption>? _filterOptions;
+  Object? _grandparentValue;
+  List<CrudOption>? _grandparentOptions;
 
   ReferenceEntityConfig<T> get _config => widget.config;
 
@@ -44,17 +48,30 @@ class _ReferenceCrudScreenState<T> extends State<ReferenceCrudScreen<T>> {
     super.initState();
     _load();
     _loadFilterOptions();
+    _loadGrandparentOptions();
   }
 
   Future<void> _loadFilterOptions() async {
     final filter = _config.filter;
     if (filter == null) return;
     try {
-      final options = await filter.optionsLoader();
+      final options = await filter.optionsLoader(_grandparentValue);
       if (!mounted) return;
       setState(() => _filterOptions = options);
     } catch (_) {
       // A failed filter load just leaves the dropdown empty; the table still works.
+    }
+  }
+
+  Future<void> _loadGrandparentOptions() async {
+    final level = _config.filter?.grandparent;
+    if (level == null) return;
+    try {
+      final options = await level.optionsLoader();
+      if (!mounted) return;
+      setState(() => _grandparentOptions = options);
+    } catch (_) {
+      // As above — the table stays usable without the narrowing dropdown.
     }
   }
 
@@ -114,6 +131,19 @@ class _ReferenceCrudScreenState<T> extends State<ReferenceCrudScreen<T>> {
       _filterValue = value;
       _page = 1;
     });
+    _load();
+  }
+
+  /// Picking (or clearing) the narrowing level drops the parent selection — it may
+  /// no longer be in the reloaded list — and reloads the table unfiltered.
+  void _onGrandparentChanged(Object? value) {
+    setState(() {
+      _grandparentValue = value;
+      _filterValue = null;
+      _filterOptions = null;
+      _page = 1;
+    });
+    _loadFilterOptions();
     _load();
   }
 
@@ -246,27 +276,66 @@ class _ReferenceCrudScreenState<T> extends State<ReferenceCrudScreen<T>> {
   Widget? _buildFilter() {
     final filter = _config.filter;
     if (filter == null) return null;
+
+    final parent = _filterDropdown(
+      // Re-keyed per grandparent so the field is rebuilt from scratch when the
+      // level above changes: a FormField only reads initialValue once, so without
+      // this it would keep a selection the reloaded options no longer contain —
+      // which DropdownButton asserts on.
+      key: ValueKey('filter-$_grandparentValue'),
+      label: filter.label,
+      value: _filterValue,
+      options: _filterOptions,
+      onChanged: _onFilterChanged,
+    );
+
+    final level = filter.grandparent;
+    if (level == null) return parent;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _filterDropdown(
+          label: level.label,
+          value: _grandparentValue,
+          options: _grandparentOptions,
+          onChanged: _onGrandparentChanged,
+        ),
+        const SizedBox(width: TravleTokens.space12),
+        parent,
+      ],
+    );
+  }
+
+  Widget _filterDropdown({
+    required String label,
+    required Object? value,
+    required List<CrudOption>? options,
+    required ValueChanged<Object?> onChanged,
+    Key? key,
+  }) {
     return SizedBox(
       width: 240,
       child: DropdownButtonFormField<Object?>(
-        initialValue: _filterValue,
+        key: key,
+        initialValue: value,
         isExpanded: true,
         decoration: InputDecoration(
           isDense: true,
-          labelText: filter.label,
+          labelText: label,
         ),
         items: [
           DropdownMenuItem<Object?>(
             value: null,
-            child: Text('All ${filter.label.toLowerCase()}s'),
+            child: Text('All ${label.toLowerCase()}s'),
           ),
-          for (final option in _filterOptions ?? const <CrudOption>[])
+          for (final option in options ?? const <CrudOption>[])
             DropdownMenuItem<Object?>(
               value: option.value,
               child: Text(option.label, overflow: TextOverflow.ellipsis),
             ),
         ],
-        onChanged: _onFilterChanged,
+        onChanged: onChanged,
       ),
     );
   }

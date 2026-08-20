@@ -66,7 +66,6 @@ class AccountScreen extends StatelessWidget {
   Future<void> _openEdit(BuildContext context, UserResponse user) {
     return showDialog<void>(
       context: context,
-      barrierDismissible: false,
       builder: (_) => _EditAccountDialog(user: user),
     );
   }
@@ -74,7 +73,6 @@ class AccountScreen extends StatelessWidget {
   Future<void> _openChangePassword(BuildContext context) {
     return showDialog<void>(
       context: context,
-      barrierDismissible: false,
       builder: (_) => const _ChangePasswordDialog(),
     );
   }
@@ -302,7 +300,14 @@ class _EditAccountDialogState extends State<_EditAccountDialog> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PopScope(
+        // Closable by Cancel, Escape, or the barrier — but never mid-save, when
+        // tearing the form down would strand the request that is already away.
+        canPop: !_busy,
+        child: _buildDialog(context),
+      );
+
+  Widget _buildDialog(BuildContext context) {
     return AlertDialog(
       titlePadding: const EdgeInsets.fromLTRB(
         TravleTokens.space24,
@@ -571,7 +576,14 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PopScope(
+        // Closable by Cancel, Escape, or the barrier — but never mid-save, when
+        // tearing the form down would strand the request that is already away.
+        canPop: !_busy,
+        child: _buildDialog(context),
+      );
+
+  Widget _buildDialog(BuildContext context) {
     final theme = Theme.of(context);
     return AlertDialog(
       titlePadding: const EdgeInsets.fromLTRB(

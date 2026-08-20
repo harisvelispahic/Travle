@@ -221,7 +221,7 @@ So when a traveler is about to book Schedule #2 (Capacity 15, SeatsTaken 0), the
 | 2 | **Pending** | Payment succeeded; waiting for the organizer to confirm. |
 | 3 | **Confirmed** | Organizer accepted. The booking is locked in. |
 | 4 | **Completed** | The departure's end time passed; auto-completed by the scheduler. |
-| 5 | **Cancelled** | Called off (by the traveler, or organizer reject/slot-cancel). Usually triggers a refund. |
+| 5 | **Cancelled** | Called off (by the traveler, or an organizer reject / per-booking cancel / slot-cancel). Usually triggers a refund. |
 | 6 | **Expired** | The 15-min hold lapsed without payment; seats released. |
 
 > These Ids/names are **load-bearing** — the filtered unique index and the state machine match on them, so they're never renumbered or renamed.
@@ -236,7 +236,7 @@ stateDiagram-v2
     Pending --> Confirmed : organizer confirms<br/>(notification)
     Pending --> Cancelled : user cancels (tiered refund)<br/>OR organizer rejects (100% refund + reason)<br/>OR organizer suspended (100% refund)
     Confirmed --> Completed : scheduler, after the slot's end time
-    Confirmed --> Cancelled : user cancels (tiered refund)<br/>OR organizer cancels the slot (100% refund)<br/>OR organizer suspended (100% refund)
+    Confirmed --> Cancelled : user cancels (tiered refund)<br/>OR organizer cancels this booking (100% refund + reason)<br/>OR organizer cancels the slot (100% refund)<br/>OR organizer suspended (100% refund)
     Expired --> [*]
     Completed --> [*]
     Cancelled --> [*]
@@ -252,6 +252,7 @@ This is the **"reserve, then pay, then confirm"** flow you were asking about:
 2. **Pay.** The traveler pays via the in-app Stripe PaymentSheet. **The client never decides success** — only Stripe's signature-verified webhook does. When the webhook confirms, the booking moves **PaymentInProgress → Pending**.
 3. **(If they don't pay)** the scheduler flips the stale hold to **Expired** and gives the seats back — no human involved.
 4. **Confirm.** The organizer reviews pending bookings and **confirms** (→ Confirmed) or **rejects with a reason** (→ Cancelled + 100% refund). Confirmed bookings later auto-**Complete** after the departure ends.
+5. **(Or the organizer changes their mind.)** A *confirmed* booking can still be called off per-booking — `POST /Bookings/{id}/OrganizerCancel`, reason mandatory, → Cancelled with the seats released and a **100% refund** whatever the notice period. This is the single-party counterpart of retiring the whole slot; a booking that hasn't been confirmed yet uses **Reject** instead, so the two verbs never overlap.
 
 ### The three server-side safety rules (Phase 5)
 
@@ -266,7 +267,7 @@ These are all enforced in the backend, never merely in the UI:
 ### Refunds (Phase 6, computed on the *charged* amount)
 
 - **User cancels:** the global tier ladder applies — **>72h before start = 100%**, 24–72h = 50%, 1–24h = 25%, **<1h = 0%**.
-- **Organizer rejects a booking, cancels a whole slot, or is suspended:** always **100%** back. (Suspending an organizer pulls their tours from sale, so every paid booking on them is cancelled and fully refunded — see `notifications-and-signalr.md` §12, 2026-08-17.)
+- **Organizer rejects a booking, cancels a confirmed booking, cancels a whole slot, or is suspended:** always **100%** back — the tier ladder is only ever applied to a traveler-initiated cancellation. (Suspending an organizer pulls their tours from sale, so every paid booking on them is cancelled and fully refunded — see `notifications-and-signalr.md` §12, 2026-08-17.)
 - Refunds run through the Stripe Refund API against the amount actually charged (from the `Payment` row), and each refund snapshots the percentage tier it used. A rare Stripe **failure** leaves the refund *owed* — an admin is alerted and can retry it from the payments screen (`payments-and-stripe.md`).
 
 ---
@@ -352,7 +353,7 @@ public enum BookingStatusCode
 - The factory switches on the enum: `GetState((BookingStatusCode)booking.StatusId)`.
 - **Guarding against "enum misuse":** the worry with an int/enum status is that a careless dev writes `booking.StatusId = 3` somewhere random and bypasses the machine. We neutralize that by encapsulation — **`BaseBookingState.MarkStatus(booking, next)` is the *single* writer of `StatusId`** (it also stamps `StatusChangedAt`). Nothing else assigns the field; a Phase-11 grep for `StatusId\s*=` outside the `BookingStateMachine/` folder enforces it. No schema change was needed for any of this — the machine rides entirely on the existing `StatusId` column.
 
-Allowed actions are an enum too — `BookingAction { Pay, Confirm, Reject, Cancel }` — and each state reports the set it permits (§11). They're serialized to the client as the **enum names** (`["Confirm","Reject","Cancel"]`), consistent with how every other DTO exposes an enum.
+Allowed actions are an enum too — `BookingAction { Pay, Confirm, Reject, Cancel, CancelByOrganizer }` — and each state reports the set it permits (§11). They're serialized to the client as the **enum names** (`["Confirm","Reject","Cancel"]`), consistent with how every other DTO exposes an enum. `Cancel` and `CancelByOrganizer` are deliberately separate entries on `Confirmed`: same destination state, different actor *and* different refund maths (tiered vs always 100%), so the desktop gates its "Cancel booking" button on the state machine rather than on a hardcoded status name.
 
 ## 11. The states, one by one
 
@@ -387,10 +388,10 @@ This is "reserve" step, and it's the only transition with real algorithmic weigh
 |---|---|---|
 | **PaymentInProgress** | `MarkPaidAsync` → Pending (Stripe webhook, P6) · `ExpireAsync` → Expired (releases seats) · `CancelForSlotAsync` | `[Pay]` |
 | **Pending** | `ConfirmAsync` → Confirmed · `RejectAsync` → Cancelled (releases seats, reason, 100%) · `CancelAsync` (user) → Cancelled · `CancelForSlotAsync` | `[Confirm, Reject, Cancel]` |
-| **Confirmed** | `CompleteAsync` → Completed (scheduler) · `CancelAsync` (user) → Cancelled · `CancelForSlotAsync` | `[Cancel]` |
+| **Confirmed** | `CompleteAsync` → Completed (scheduler) · `CancelAsync` (user) → Cancelled · `CancelByOrganizerAsync` → Cancelled (releases seats, reason, 100%) · `CancelForSlotAsync` | `[Cancel, CancelByOrganizer]` |
 | **Completed / Cancelled / Expired** | none — terminal (everything throws) | `[]` |
 
-Seat bookkeeping is precise: seats are **claimed** at creation and **released** only on Expire / Reject / user-Cancel (via `ReleaseSeatsAsync`). Confirm and Complete **keep** the seat (it's consumed for a real departure). Slot-cancel doesn't decrement — the whole slot is being retired.
+Seat bookkeeping is precise: seats are **claimed** at creation and **released** only on Expire / Reject / user-Cancel / organizer-Cancel (via `ReleaseSeatsAsync`). Confirm and Complete **keep** the seat (it's consumed for a real departure). Slot-cancel doesn't decrement — the whole slot is being retired.
 
 > **Design note that matters for the UI:** `AllowedActions` is **state-derived, not role-filtered**. A traveler viewing their own *Pending* booking still sees `[Confirm, Reject, Cancel]` — the list says "what's legal in this state," and each app intersects it with "what this role can do" (the mobile app shows only `Cancel`/`Pay`; the desktop organizer shows `Confirm`/`Reject`).
 
@@ -434,6 +435,7 @@ Standalone controller (no base CRUD), coarse policy per endpoint, fine ownership
 | `POST` | `/Bookings/{id}/Confirm` | Organizer | Pending → Confirmed |
 | `POST` | `/Bookings/{id}/Reject` | Organizer | Pending → Cancelled (+reason) |
 | `POST` | `/Bookings/{id}/Cancel` | Authenticated | user cancels own (owner/admin) |
+| `POST` | `/Bookings/{id}/OrganizerCancel` | Organizer | Confirmed → Cancelled (+reason, 100% refund) |
 
 There is deliberately **no `PUT` and no `DELETE`** — bookings are status-machine-only and never hard-deleted.
 

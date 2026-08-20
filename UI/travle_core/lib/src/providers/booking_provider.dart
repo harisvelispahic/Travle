@@ -53,6 +53,13 @@ class BookingProvider extends BaseProvider<BookingResponse> {
     return fromJson(json as Map<String, dynamic>);
   }
 
+  /// Organizer calls off a confirmed booking on their tour, with a mandatory
+  /// reason (`POST /Bookings/{id}/OrganizerCancel`). Always a 100% refund.
+  Future<BookingResponse> organizerCancel(int id, String reason) async {
+    final json = await postAction('$id/OrganizerCancel', {'reason': reason});
+    return fromJson(json as Map<String, dynamic>);
+  }
+
   SearchResult<BookingResponse> _pageOf(Map<String, dynamic> json) =>
       SearchResult<BookingResponse>()
         ..totalCount = json['totalCount'] as int?

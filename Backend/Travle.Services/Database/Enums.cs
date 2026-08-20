@@ -47,7 +47,13 @@ namespace Travle.Services.Database
         /// <summary>Organizer rejects a paid booking with a reason (Pending → Cancelled, 100% refund).</summary>
         Reject = 2,
         /// <summary>Traveler cancels their own booking (Pending/Confirmed → Cancelled, tiered refund).</summary>
-        Cancel = 3
+        Cancel = 3,
+        /// <summary>
+        /// Organizer calls off a single confirmed booking with a reason (Confirmed → Cancelled, 100% refund).
+        /// Distinct from <see cref="Cancel"/> so the desktop can gate the organizer's button on the state
+        /// machine rather than on a hardcoded status name; a Pending booking uses <see cref="Reject"/> instead.
+        /// </summary>
+        CancelByOrganizer = 4
     }
 
     /// <summary>Decision lifecycle of a <see cref="RoleApplication"/>.</summary>

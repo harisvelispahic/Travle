@@ -5,15 +5,16 @@ import 'package:travle_ui/travle_ui.dart';
 
 import '../util/booking_display.dart';
 import '../widgets/booking_review_card.dart';
+import '../widgets/pager_bar.dart';
 
 /// Whether the list shows upcoming departures or past ones — each with the order
 /// that reads best: soonest-first for upcoming, most-recent-first for past.
 enum _Timeframe { upcoming, past }
 
-/// The organizer's bookings across all their tours (`GET /Bookings/my-tours`).
-/// Filter by status and split into upcoming / past departures; confirm a booking
-/// that is awaiting confirmation, or reject it with a mandatory reason (both go
-/// through the backend booking state machine).
+/// The organizer's bookings across all their tours (`GET /Bookings/my-tours`),
+/// paginated. Filter by status and split into upcoming / past departures; confirm
+/// a booking that is awaiting confirmation, reject it with a mandatory reason, or
+/// call off an already-confirmed one (all through the backend state machine).
 class OrganizerBookingsScreen extends StatefulWidget {
   const OrganizerBookingsScreen({super.key});
 
@@ -23,8 +24,12 @@ class OrganizerBookingsScreen extends StatefulWidget {
 }
 
 class _OrganizerBookingsScreenState extends State<OrganizerBookingsScreen> {
+  static const _pageSize = 20;
+
   int? _statusId; // null = all statuses
   _Timeframe _timeframe = _Timeframe.upcoming;
+  int _page = 1;
+  int? _totalCount;
   bool _loading = true;
   String? _error;
   List<BookingResponse> _items = [];
@@ -33,6 +38,12 @@ class _OrganizerBookingsScreenState extends State<OrganizerBookingsScreen> {
   @override
   void initState() {
     super.initState();
+    _load();
+  }
+
+  /// Reloads from page 1 — for anything that changes *which* bookings match.
+  void _reload() {
+    _page = 1;
     _load();
   }
 
@@ -48,7 +59,9 @@ class _OrganizerBookingsScreenState extends State<OrganizerBookingsScreen> {
       final upcoming = _timeframe == _Timeframe.upcoming;
       final result = await context.read<BookingProvider>().forMyTours(
         filter: {
-          'pageSize': 50,
+          'page': _page,
+          'pageSize': _pageSize,
+          'includeTotalCount': true,
           if (_statusId != null) 'statusId': _statusId,
           if (upcoming) 'fromDate': now else 'toDate': now,
           'sortBy': upcoming ? 'TourSchedule.StartsAt' : 'TourSchedule.StartsAt desc',
@@ -57,6 +70,7 @@ class _OrganizerBookingsScreenState extends State<OrganizerBookingsScreen> {
       if (!mounted) return;
       setState(() {
         _items = result.items;
+        _totalCount = result.totalCount;
         _loading = false;
       });
     } on ApiClientException catch (e) {
@@ -66,6 +80,11 @@ class _OrganizerBookingsScreenState extends State<OrganizerBookingsScreen> {
         _loading = false;
       });
     }
+  }
+
+  void _goToPage(int page) {
+    setState(() => _page = page);
+    _load();
   }
 
   Future<void> _confirm(BookingResponse booking) async {
@@ -85,11 +104,36 @@ class _OrganizerBookingsScreenState extends State<OrganizerBookingsScreen> {
   }
 
   Future<void> _reject(BookingResponse booking) async {
-    final reason = await _promptReason();
+    final reason = await showReasonDialog(
+      context,
+      title: 'Reject booking',
+      label: 'Reason (sent to the traveler)',
+      confirmLabel: 'Reject',
+    );
     if (reason == null) return;
     await _runAction(booking.id, () async {
       await context.read<BookingProvider>().reject(booking.id, reason);
       return 'Booking rejected — a full refund is owed.';
+    });
+  }
+
+  /// Calls off an already-confirmed booking. Unlike a traveler's cancellation this
+  /// always refunds in full whatever the notice period, so the dialog says so.
+  Future<void> _cancel(BookingResponse booking) async {
+    final reason = await showReasonDialog(
+      context,
+      title: 'Cancel booking',
+      label: 'Reason (sent to the traveler)',
+      confirmLabel: 'Cancel booking',
+      message: 'Cancelling ${booking.travelerName}\'s confirmed booking of '
+          '${booking.numberOfPeople} '
+          '${booking.numberOfPeople == 1 ? 'seat' : 'seats'} on '
+          '"${booking.tourName}" refunds them in full and frees the seats.',
+    );
+    if (reason == null) return;
+    await _runAction(booking.id, () async {
+      await context.read<BookingProvider>().organizerCancel(booking.id, reason);
+      return 'Booking cancelled — the traveler is being refunded in full.';
     });
   }
 
@@ -106,55 +150,6 @@ class _OrganizerBookingsScreenState extends State<OrganizerBookingsScreen> {
     } finally {
       if (mounted) setState(() => _acting.remove(id));
     }
-  }
-
-  Future<String?> _promptReason() {
-    final controller = TextEditingController();
-    String? errorText;
-    return showDialog<String>(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setLocal) {
-            return AlertDialog(
-              title: const Text('Reject booking'),
-              content: TextField(
-                controller: controller,
-                autofocus: true,
-                minLines: 2,
-                maxLines: 4,
-                maxLength: 500,
-                decoration: InputDecoration(
-                  labelText: 'Reason (sent to the traveler)',
-                  errorText: errorText,
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.error,
-                    foregroundColor: Theme.of(context).colorScheme.onError,
-                  ),
-                  onPressed: () {
-                    final text = controller.text.trim();
-                    if (text.isEmpty) {
-                      setLocal(() => errorText = 'A reason is required');
-                      return;
-                    }
-                    Navigator.of(context).pop(text);
-                  },
-                  child: const Text('Reject'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    ).whenComplete(controller.dispose);
   }
 
   @override
@@ -184,7 +179,7 @@ class _OrganizerBookingsScreenState extends State<OrganizerBookingsScreen> {
                     ? null
                     : (selection) {
                         setState(() => _timeframe = selection.first);
-                        _load();
+                        _reload();
                       },
               ),
               const SizedBox(width: TravleTokens.space16),
@@ -193,7 +188,7 @@ class _OrganizerBookingsScreenState extends State<OrganizerBookingsScreen> {
                 enabled: !_loading,
                 onChanged: (v) {
                   setState(() => _statusId = v);
-                  _load();
+                  _reload();
                 },
               ),
               const Spacer(),
@@ -206,6 +201,15 @@ class _OrganizerBookingsScreenState extends State<OrganizerBookingsScreen> {
           ),
           const SizedBox(height: TravleTokens.space16),
           Expanded(child: _buildBody(Theme.of(context))),
+          const Divider(height: 1),
+          PagerBar(
+            page: _page,
+            pageSize: _pageSize,
+            itemCount: _items.length,
+            totalCount: _totalCount,
+            loading: _loading,
+            onPageChanged: _goToPage,
+          ),
         ],
       ),
     );
@@ -242,6 +246,7 @@ class _OrganizerBookingsScreenState extends State<OrganizerBookingsScreen> {
         busy: _acting.contains(_items[i].id),
         onConfirm: () => _confirm(_items[i]),
         onReject: () => _reject(_items[i]),
+        onCancel: () => _cancel(_items[i]),
       ),
     );
   }

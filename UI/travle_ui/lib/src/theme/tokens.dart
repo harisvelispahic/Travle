@@ -29,6 +29,12 @@ class TravleTokens {
   static const Color neutral = Color(0xFF6B7280);
   static const Color onNeutral = Color(0xFFFFFFFF);
 
+  /// A finished-and-archived state (a completed booking): bright cyan, so it reads
+  /// as "done" rather than "good" (success) or "inert" (neutral). Far too light for
+  /// a white on-color — it takes black, the only pure-black text in the palette.
+  static const Color completed = Color(0xFF5AFFFF);
+  static const Color onCompleted = Color(0xFF000000);
+
   // Spacing scale (4 / 8 / 12 / 16 / 24 / 32).
   static const double space4 = 4;
   static const double space8 = 8;

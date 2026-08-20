@@ -6,10 +6,13 @@ import '../util/booking_display.dart';
 import '../util/formatting.dart';
 
 /// One booking in the management lists — the traveler, the tour + departure,
-/// party size and total, the status, and any decision/cancellation audit. When
-/// [onConfirm]/[onReject] are provided (the organizer view) and the booking is
-/// still awaiting confirmation, it renders Confirm / Reject actions; otherwise it
-/// is read-only (the admin all-bookings view).
+/// party size and total, the status, and any decision/cancellation audit.
+///
+/// The organizer view passes the action callbacks and the card renders whichever
+/// the booking's own state allows: Confirm / Reject while it awaits confirmation,
+/// "Cancel booking" once it is confirmed. Which buttons appear is driven by the
+/// server's `allowedActions` (the state machine), never by a local status guess.
+/// With no callbacks it is read-only — the admin all-bookings view.
 class BookingReviewCard extends StatelessWidget {
   const BookingReviewCard({
     super.key,
@@ -17,6 +20,7 @@ class BookingReviewCard extends StatelessWidget {
     this.busy = false,
     this.onConfirm,
     this.onReject,
+    this.onCancel,
   });
 
   final BookingResponse booking;
@@ -24,7 +28,15 @@ class BookingReviewCard extends StatelessWidget {
   final VoidCallback? onConfirm;
   final VoidCallback? onReject;
 
-  bool get _showActions => booking.isPending && onConfirm != null && onReject != null;
+  /// Organizer calls this confirmed booking off (always a 100% refund).
+  final VoidCallback? onCancel;
+
+  bool get _showDecision =>
+      booking.isPending && onConfirm != null && onReject != null;
+
+  bool get _showCancel => booking.canOrganizerCancel && onCancel != null;
+
+  bool get _showActions => _showDecision || _showCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -116,20 +128,31 @@ class BookingReviewCard extends StatelessWidget {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       ),
                     ),
-                  OutlinedButton.icon(
-                    onPressed: busy ? null : onReject,
-                    icon: const Icon(Icons.close),
-                    label: const Text('Reject'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: theme.colorScheme.error,
+                  if (_showDecision) ...[
+                    OutlinedButton.icon(
+                      onPressed: busy ? null : onReject,
+                      icon: const Icon(Icons.close),
+                      label: const Text('Reject'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: theme.colorScheme.error,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: TravleTokens.space12),
-                  FilledButton.icon(
-                    onPressed: busy ? null : onConfirm,
-                    icon: const Icon(Icons.check),
-                    label: const Text('Confirm'),
-                  ),
+                    const SizedBox(width: TravleTokens.space12),
+                    FilledButton.icon(
+                      onPressed: busy ? null : onConfirm,
+                      icon: const Icon(Icons.check),
+                      label: const Text('Confirm'),
+                    ),
+                  ],
+                  if (_showCancel)
+                    OutlinedButton.icon(
+                      onPressed: busy ? null : onCancel,
+                      icon: const Icon(Icons.event_busy_outlined),
+                      label: const Text('Cancel booking'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: theme.colorScheme.error,
+                      ),
+                    ),
                 ],
               ),
             ],

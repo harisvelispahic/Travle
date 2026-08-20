@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:travle_ui/travle_ui.dart';
 
+import 'pager_bar.dart';
+
 /// One column of a [SortSpec] chain: an entity property path plus a direction.
 /// The chain is serialized to the backend `SortBy` (a `System.Linq.Dynamic.Core`
 /// ordering expression), e.g. `Name asc, Country.Name desc`.
@@ -345,46 +347,14 @@ class _PaginatedSearchTableState<T> extends State<PaginatedSearchTable<T>> {
     );
   }
 
-  Widget _buildPager(BuildContext context) {
-    final theme = Theme.of(context);
-    final total = widget.totalCount;
-    final hasPrev = widget.page > 1;
-    final bool hasNext = total != null
-        ? widget.page * widget.pageSize < total
-        : widget.rows.length == widget.pageSize;
-
-    String label;
-    if (total != null) {
-      final totalPages = total == 0 ? 1 : ((total + widget.pageSize - 1) ~/ widget.pageSize);
-      label = 'Page ${widget.page} of $totalPages · $total total';
-    } else {
-      label = 'Page ${widget.page}';
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: TravleTokens.space8),
-      child: Row(
-        children: [
-          Text(label, style: theme.textTheme.bodySmall),
-          const Spacer(),
-          IconButton(
-            tooltip: 'Previous page',
-            onPressed: hasPrev && !widget.loading
-                ? () => widget.onPageChanged(widget.page - 1)
-                : null,
-            icon: const Icon(Icons.chevron_left),
-          ),
-          IconButton(
-            tooltip: 'Next page',
-            onPressed: hasNext && !widget.loading
-                ? () => widget.onPageChanged(widget.page + 1)
-                : null,
-            icon: const Icon(Icons.chevron_right),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _buildPager(BuildContext context) => PagerBar(
+        page: widget.page,
+        pageSize: widget.pageSize,
+        itemCount: widget.rows.length,
+        totalCount: widget.totalCount,
+        loading: widget.loading,
+        onPageChanged: widget.onPageChanged,
+      );
 }
 
 class _SortState {

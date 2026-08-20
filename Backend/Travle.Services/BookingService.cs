@@ -40,6 +40,7 @@ namespace Travle.Services
         private readonly ITimeZoneService _timeZones;
         private readonly IValidator<BookingRejectRequest> _rejectValidator;
         private readonly IValidator<BookingCancelRequest> _cancelValidator;
+        private readonly IValidator<BookingOrganizerCancelRequest> _organizerCancelValidator;
 
         public BookingService(
             TravleDbContext dbContext,
@@ -51,7 +52,8 @@ namespace Travle.Services
             INotificationDispatcher notifications,
             ITimeZoneService timeZones,
             IValidator<BookingRejectRequest> rejectValidator,
-            IValidator<BookingCancelRequest> cancelValidator)
+            IValidator<BookingCancelRequest> cancelValidator,
+            IValidator<BookingOrganizerCancelRequest> organizerCancelValidator)
             : base(mapper, dbContext)
         {
             _authorization = authorization;
@@ -62,6 +64,7 @@ namespace Travle.Services
             _timeZones = timeZones;
             _rejectValidator = rejectValidator;
             _cancelValidator = cancelValidator;
+            _organizerCancelValidator = organizerCancelValidator;
         }
 
         // --- reads -----------------------------------------------------------------------------------
@@ -196,6 +199,25 @@ namespace Travle.Services
             // Organizer rejection ⇒ 100% refund. Issued after the Cancelled transition has committed, so the
             // Stripe call never runs inside a DB transaction (idempotent — a retry won't double-refund).
             await _refunds.RefundForBookingAsync(id, organizerId, $"Organizer rejected the booking: {reason}", forcedPercentage: 100);
+            return response;
+        }
+
+        public async Task<BookingResponse> CancelByOrganizerAsync(int id, BookingOrganizerCancelRequest request)
+        {
+            var organizerId = _authorization.RequireUserId();
+            _authorization.EnsureInRole(RoleNames.Organizer);
+            await _organizerCancelValidator.ValidateAndThrowAsync(request);
+
+            var booking = await LoadForTransitionAsync(id);
+            await EnsureOrganizerOwnsBookingTourAsync(id, organizerId);
+
+            var reason = request.Reason.Trim();
+            var state = _states.GetState((BookingStatusCode)booking.StatusId);
+            var response = await state.CancelByOrganizerAsync(booking, organizerId, reason);
+
+            // Organizer-initiated ⇒ 100% refund whatever the notice period (00 §1.4); the tier ladder is only
+            // for traveler cancellations. Issued post-commit so Stripe never runs inside a DB transaction.
+            await _refunds.RefundForBookingAsync(id, organizerId, $"Organizer cancelled the booking: {reason}", forcedPercentage: 100);
             return response;
         }
 

@@ -10,7 +10,6 @@ import 'package:travle_ui/travle_ui.dart';
 Future<bool?> showCreateUserDialog(BuildContext context) {
   return showDialog<bool>(
     context: context,
-    barrierDismissible: false,
     builder: (_) => const _CreateUserDialog(),
   );
 }
@@ -113,7 +112,14 @@ class _CreateUserDialogState extends State<_CreateUserDialog> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PopScope(
+        // Closable by Cancel, Escape, or the barrier — but never mid-save, when
+        // tearing the form down would strand the request that is already away.
+        canPop: !_busy,
+        child: _buildDialog(context),
+      );
+
+  Widget _buildDialog(BuildContext context) {
     final theme = Theme.of(context);
     return AlertDialog(
       titlePadding: const EdgeInsets.fromLTRB(

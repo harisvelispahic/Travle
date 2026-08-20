@@ -32,6 +32,13 @@ namespace Travle.Services
         Task<BookingResponse> CancelAsync(int id, BookingCancelRequest request);
 
         /// <summary>
+        /// Organizer calls off one confirmed booking on their tour with a reason (Confirmed → Cancelled,
+        /// always a 100% refund). The per-booking counterpart of retiring a whole schedule; a booking still
+        /// awaiting confirmation is refused here — that one is <see cref="RejectAsync"/>.
+        /// </summary>
+        Task<BookingResponse> CancelByOrganizerAsync(int id, BookingOrganizerCancelRequest request);
+
+        /// <summary>
         /// Transitions every still-active booking on a cancelled slot to Cancelled (100% refund owed).
         /// Called by <c>TourService.CancelScheduleAsync</c> inside the slot-cancel transaction.
         /// </summary>

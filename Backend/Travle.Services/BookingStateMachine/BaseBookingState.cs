@@ -71,6 +71,9 @@ namespace Travle.Services.BookingStateMachine
         public virtual Task<BookingResponse> CancelAsync(Booking booking, int cancellingUserId, string? reason)
             => throw Illegal("cancelled");
 
+        public virtual Task<BookingResponse> CancelByOrganizerAsync(Booking booking, int organizerUserId, string reason)
+            => throw Illegal("cancelled");
+
         public virtual Task<BookingResponse> CompleteAsync(Booking booking)
             => throw Illegal("completed");
 

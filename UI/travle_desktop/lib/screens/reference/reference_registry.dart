@@ -137,7 +137,7 @@ ReferenceEntityConfig<RegionResponse> _region() =>
       filter: ReferenceFilter(
         queryKey: 'countryId',
         label: 'Country',
-        optionsLoader: _loadCountries,
+        optionsLoader: (_) => _loadCountries(),
       ),
       formFields: [
         const CrudField(
@@ -171,10 +171,16 @@ ReferenceEntityConfig<CityResponse> _city() => ReferenceEntityConfig<CityRespons
         TableColumnSpec(
             label: 'Added', sortKey: 'CreatedAt', flex: 2, cell: (c) => _date(c.createdAt)),
       ],
+      // Country narrows the Region list the same way the form below does — without
+      // it a single page of regions covers only a fraction of the seeded world.
       filter: ReferenceFilter(
         queryKey: 'regionId',
         label: 'Region',
-        optionsLoader: () => _loadRegions(),
+        optionsLoader: (countryId) => _loadRegions(countryId: countryId as int?),
+        grandparent: ReferenceFilterLevel(
+          label: 'Country',
+          optionsLoader: _loadCountries,
+        ),
       ),
       formFields: [
         const CrudField(

@@ -137,54 +137,12 @@ class _UserDetailDialogState extends State<_UserDetailDialog> {
     await _run(() => provider.revokeRole(_user.id, role.id), 'Role removed.');
   }
 
-  Future<String?> _promptReason() {
-    final controller = TextEditingController();
-    String? errorText;
-    return showDialog<String>(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setLocal) {
-            return AlertDialog(
-              title: const Text('Suspend user'),
-              content: TextField(
-                controller: controller,
-                autofocus: true,
-                minLines: 2,
-                maxLines: 4,
-                maxLength: 500,
-                decoration: InputDecoration(
-                  labelText: 'Reason (emailed to the user)',
-                  errorText: errorText,
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.error,
-                    foregroundColor: Theme.of(context).colorScheme.onError,
-                  ),
-                  onPressed: () {
-                    final text = controller.text.trim();
-                    if (text.isEmpty) {
-                      setLocal(() => errorText = 'A reason is required');
-                      return;
-                    }
-                    Navigator.of(context).pop(text);
-                  },
-                  child: const Text('Suspend'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    ).whenComplete(controller.dispose);
-  }
+  Future<String?> _promptReason() => showReasonDialog(
+        context,
+        title: 'Suspend user',
+        label: 'Reason (emailed to the user)',
+        confirmLabel: 'Suspend',
+      );
 
   @override
   Widget build(BuildContext context) {

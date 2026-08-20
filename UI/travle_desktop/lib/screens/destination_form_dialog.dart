@@ -14,7 +14,6 @@ Future<bool?> showDestinationFormDialog(
 }) {
   return showDialog<bool>(
     context: context,
-    barrierDismissible: false,
     builder: (_) => DestinationFormDialog(existing: existing),
   );
 }
@@ -58,7 +57,6 @@ class _DestinationFormDialogState extends State<DestinationFormDialog> {
   final _entranceFee = TextEditingController();
 
   List<DestinationCategoryResponse> _categories = [];
-  List<CityResponse> _cities = [];
   List<TagResponse> _tags = [];
 
   int? _categoryId;
@@ -109,14 +107,12 @@ class _DestinationFormDialogState extends State<DestinationFormDialog> {
       _loadError = null;
     });
     final categoryProvider = context.read<DestinationCategoryProvider>();
-    final cityProvider = context.read<CityProvider>();
     final tagProvider = context.read<TagProvider>();
     final destinationProvider = context.read<DestinationProvider>();
     final existing = widget.existing;
     try {
       final results = await Future.wait([
         categoryProvider.get(filter: {'pageSize': 100, 'sortBy': 'Name'}),
-        cityProvider.get(filter: {'pageSize': 100, 'sortBy': 'Name'}),
         tagProvider.get(filter: {'pageSize': 100, 'sortBy': 'Name'}),
       ]);
 
@@ -136,8 +132,7 @@ class _DestinationFormDialogState extends State<DestinationFormDialog> {
       setState(() {
         _categories =
             (results[0] as SearchResult<DestinationCategoryResponse>).items;
-        _cities = (results[1] as SearchResult<CityResponse>).items;
-        _tags = (results[2] as SearchResult<TagResponse>).items;
+        _tags = (results[1] as SearchResult<TagResponse>).items;
         _images
           ..clear()
           ..addAll(images);
@@ -282,7 +277,14 @@ class _DestinationFormDialogState extends State<DestinationFormDialog> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PopScope(
+        // Closable by Cancel, Escape, or the barrier — but never mid-save, when
+        // tearing the form down would strand the request that is already away.
+        canPop: !_submitting,
+        child: _buildDialog(context),
+      );
+
+  Widget _buildDialog(BuildContext context) {
     final theme = Theme.of(context);
     return Dialog(
       child: ConstrainedBox(
@@ -391,7 +393,7 @@ class _DestinationFormDialogState extends State<DestinationFormDialog> {
             const SizedBox(height: TravleTokens.space16),
             _buildCategoryDropdown(),
             const SizedBox(height: TravleTokens.space16),
-            _buildCityDropdown(),
+            _buildCityCascade(),
             const SizedBox(height: TravleTokens.space16),
             TravleTextField(
               controller: _description,
@@ -456,24 +458,14 @@ class _DestinationFormDialogState extends State<DestinationFormDialog> {
     );
   }
 
-  Widget _buildCityDropdown() {
-    return DropdownButtonFormField<int>(
-      isExpanded: true,
-      initialValue: _cityId,
-      decoration: const InputDecoration(
-        labelText: 'City',
-        hintText: 'Select a city',
-        prefixIcon: Icon(Icons.location_city_outlined),
-      ),
-      items: [
-        for (final c in _cities)
-          DropdownMenuItem(
-            value: c.id,
-            child: Text(c.regionName == null ? c.name : '${c.name} — ${c.regionName}'),
-          ),
-      ],
-      onChanged: _submitting ? null : (id) => setState(() => _cityId = id),
-      validator: (v) => v == null ? 'Please select a city' : null,
+  /// Country → Region → City. A flat city list can't work here: the reference
+  /// geography holds hundreds of cities across ~200 countries, so one page of
+  /// options both buries and hides most of them.
+  Widget _buildCityCascade() {
+    return LocationCascadeField(
+      initialCityId: widget.existing?.cityId,
+      enabled: !_submitting,
+      onChanged: (cityId) => _cityId = cityId,
     );
   }
 

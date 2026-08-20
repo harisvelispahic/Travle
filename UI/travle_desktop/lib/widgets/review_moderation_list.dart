@@ -169,50 +169,12 @@ class _ReviewModerationListState extends State<ReviewModerationList> {
     }
   }
 
-  Future<String?> _promptReason() {
-    final controller = TextEditingController();
-    String? errorText;
-    return showDialog<String>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setLocal) => AlertDialog(
-          title: const Text('Remove review'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            minLines: 2,
-            maxLines: 4,
-            maxLength: 500,
-            decoration: InputDecoration(
-              labelText: 'Reason (sent to the author)',
-              errorText: errorText,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error,
-                foregroundColor: Theme.of(context).colorScheme.onError,
-              ),
-              onPressed: () {
-                final text = controller.text.trim();
-                if (text.isEmpty) {
-                  setLocal(() => errorText = 'A reason is required');
-                  return;
-                }
-                Navigator.of(context).pop(text);
-              },
-              child: const Text('Remove'),
-            ),
-          ],
-        ),
-      ),
-    ).whenComplete(controller.dispose);
-  }
+  Future<String?> _promptReason() => showReasonDialog(
+        context,
+        title: 'Remove review',
+        label: 'Reason (sent to the author)',
+        confirmLabel: 'Remove',
+      );
 
   @override
   Widget build(BuildContext context) {

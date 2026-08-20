@@ -70,4 +70,10 @@ public class BookingsController : ControllerBase
     [HttpPost("{id}/Cancel")]
     public async Task<ActionResult<BookingResponse>> Cancel(int id, [FromBody] BookingCancelRequest request)
         => Ok(await _service.CancelAsync(id, request));
+
+    /// <summary>Organizer calls off a confirmed booking on their tour with a reason (always a 100% refund).</summary>
+    [Authorize(Policy = AuthPolicies.OrganizerOnly)]
+    [HttpPost("{id}/OrganizerCancel")]
+    public async Task<ActionResult<BookingResponse>> CancelByOrganizer(int id, [FromBody] BookingOrganizerCancelRequest request)
+        => Ok(await _service.CancelByOrganizerAsync(id, request));
 }

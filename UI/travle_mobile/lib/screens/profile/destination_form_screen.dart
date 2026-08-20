@@ -6,9 +6,9 @@ import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
 /// Submit a new destination or edit an existing one (curator/organizer). Fields:
-/// name, category, description, tags, images, and location. Editing an existing
-/// destination sends it back for moderation (warned up front). Coordinates are
-/// entered manually for now — a map picker replaces the [_LocationSection] later.
+/// name, category, description, tags, images, the Country → Region → City place,
+/// and the exact map location. Editing an existing destination sends it back for
+/// moderation (warned up front).
 class DestinationFormScreen extends StatefulWidget {
   const DestinationFormScreen({super.key, this.existing});
 
@@ -49,7 +49,6 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
   final _entranceFee = TextEditingController();
 
   List<DestinationCategoryResponse> _categories = [];
-  List<CityResponse> _cities = [];
   List<TagResponse> _tags = [];
 
   int? _categoryId;
@@ -102,7 +101,6 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
     });
 
     final categoryProvider = context.read<DestinationCategoryProvider>();
-    final cityProvider = context.read<CityProvider>();
     final tagProvider = context.read<TagProvider>();
     final destinationProvider = context.read<DestinationProvider>();
     final existing = widget.existing;
@@ -111,7 +109,6 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
       // Independent loads in parallel (constraint A.2).
       final results = await Future.wait([
         categoryProvider.get(filter: {'pageSize': 100, 'sortBy': 'Name'}),
-        cityProvider.get(filter: {'pageSize': 100, 'sortBy': 'Name'}),
         tagProvider.get(filter: {'pageSize': 100, 'sortBy': 'Name'}),
       ]);
 
@@ -132,8 +129,7 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
       setState(() {
         _categories =
             (results[0] as SearchResult<DestinationCategoryResponse>).items;
-        _cities = (results[1] as SearchResult<CityResponse>).items;
-        _tags = (results[2] as SearchResult<TagResponse>).items;
+        _tags = (results[1] as SearchResult<TagResponse>).items;
         _images
           ..clear()
           ..addAll(images);
@@ -362,7 +358,7 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
                     const SizedBox(height: TravleTokens.space16),
                     _buildCategoryDropdown(),
                     const SizedBox(height: TravleTokens.space16),
-                    _buildCityDropdown(),
+                    _buildCityCascade(),
                     const SizedBox(height: TravleTokens.space16),
                     TravleTextField(
                       controller: _description,
@@ -454,24 +450,14 @@ class _DestinationFormScreenState extends State<DestinationFormScreen> {
     );
   }
 
-  Widget _buildCityDropdown() {
-    return DropdownButtonFormField<int>(
-      isExpanded: true,
-      initialValue: _cityId,
-      decoration: const InputDecoration(
-        labelText: 'City',
-        hintText: 'Select a city',
-        prefixIcon: Icon(Icons.location_city_outlined),
-      ),
-      items: [
-        for (final c in _cities)
-          DropdownMenuItem(
-            value: c.id,
-            child: Text(c.regionName == null ? c.name : '${c.name} — ${c.regionName}'),
-          ),
-      ],
-      onChanged: _busy ? null : (id) => setState(() => _cityId = id),
-      validator: (v) => v == null ? 'Please select a city' : null,
+  /// Country → Region → City. A flat city list can't work here: the reference
+  /// geography holds hundreds of cities across ~200 countries, so one page of
+  /// options both buries and hides most of them.
+  Widget _buildCityCascade() {
+    return LocationCascadeField(
+      initialCityId: widget.existing?.cityId,
+      enabled: !_busy,
+      onChanged: (cityId) => _cityId = cityId,
     );
   }
 

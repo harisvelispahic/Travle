@@ -102,7 +102,6 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
 
   // Returns the (possibly empty) reason when confirmed, or null when dismissed.
   Future<String?> _promptCancel(BookingResponse booking) {
-    final controller = TextEditingController();
     final pct = booking.cancellationRefundPercentage;
     final refundLine = pct == null
         ? 'A refund will be calculated from the cancellation policy.'
@@ -112,45 +111,14 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             : 'This cancellation is not eligible for a refund '
                 '(less than 1 hour before departure).';
 
-    return showDialog<String>(
-      context: context,
-      builder: (context) {
-        final scheme = Theme.of(context).colorScheme;
-        return AlertDialog(
-          title: const Text('Cancel booking'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(refundLine),
-              const SizedBox(height: TravleTokens.space16),
-              TextField(
-                controller: controller,
-                maxLines: 2,
-                maxLength: 500,
-                decoration: const InputDecoration(
-                  labelText: 'Reason (optional)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Keep booking'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: scheme.error,
-                foregroundColor: scheme.onError,
-              ),
-              onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-              child: const Text('Cancel booking'),
-            ),
-          ],
-        );
-      },
+    return showReasonDialog(
+      context,
+      title: 'Cancel booking',
+      message: refundLine,
+      label: 'Reason (optional)',
+      isRequired: false,
+      cancelLabel: 'Keep booking',
+      confirmLabel: 'Cancel booking',
     );
   }
 

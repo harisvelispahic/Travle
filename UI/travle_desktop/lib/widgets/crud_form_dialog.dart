@@ -87,7 +87,6 @@ Future<bool?> showCrudFormDialog(
 }) {
   return showDialog<bool>(
     context: context,
-    barrierDismissible: false,
     builder: (_) => CrudFormDialog(
       title: title,
       fields: fields,
@@ -138,6 +137,10 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
   final Map<String, List<CrudOption>?> _options = {};
   final Map<String, bool> _optionsLoading = {};
 
+  /// Why a dropdown's options failed to load, keyed by field id — shown under the
+  /// (necessarily disabled) control instead of leaving it inexplicably greyed out.
+  final Map<String, String> _optionErrors = {};
+
   /// Image fields: the new pick to send (null = keep existing), the bytes shown
   /// in the preview, the original existing preview (to revert a cleared pick),
   /// and any pick error (wrong type / too large).
@@ -152,6 +155,13 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
   @override
   void initState() {
     super.initState();
+    // Two passes on purpose. Option loaders are handed a snapshot of *every*
+    // field's current value (_currentValues), so every controller has to exist
+    // before the first load fires — seeding and loading in one pass made a
+    // dropdown that sits above a text field read a controller that wasn't built
+    // yet, and the resulting null-assert was swallowed into "no options", which
+    // renders as a permanently greyed-out dropdown (the City form's Country and
+    // Region, both above its Time zone field).
     for (final field in widget.fields) {
       final initial = widget.initialValues[field.id];
       switch (field.kind) {
@@ -168,10 +178,8 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
           _focusNodes[field.id] = FocusNode();
         case CrudFieldKind.dropdown:
           _dropdownValues[field.id] = initial;
-          // Set the flag directly (we're pre-first-build; setState would throw),
-          // then kick off the async load which setStates its result.
+          // Set the flag directly (we're pre-first-build; setState would throw).
           _optionsLoading[field.id] = true;
-          _loadOptions(field);
         case CrudFieldKind.image:
           // The initial value is the existing thumbnail base64 — decoded once for
           // the preview, but never resent unless the user picks a replacement.
@@ -180,6 +188,12 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
           _imagePreviews[field.id] = existing;
           _imageOriginals[field.id] = existing;
           _imageErrors[field.id] = null;
+      }
+    }
+
+    for (final field in widget.fields) {
+      if (field.kind == CrudFieldKind.dropdown) {
+        _loadOptions(field);
       }
     }
   }
@@ -206,6 +220,7 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
       if (!mounted) return;
       setState(() {
         _options[field.id] = options;
+        _optionErrors.remove(field.id);
         _optionsLoading[field.id] = false;
         // Drop a stale selection that isn't among the freshly loaded options.
         final selected = _dropdownValues[field.id];
@@ -213,13 +228,23 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
           _dropdownValues[field.id] = null;
         }
       });
+    } on ApiClientException catch (e) {
+      _failOptions(field, e.message);
     } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _options[field.id] = <CrudOption>[];
-        _optionsLoading[field.id] = false;
-      });
+      // Never leave a dropdown silently empty — an empty item list renders as a
+      // disabled control, so say why and offer a retry (UI rule: a disabled
+      // control always carries its reason).
+      _failOptions(field, 'Could not load the options.');
     }
+  }
+
+  void _failOptions(CrudField field, String message) {
+    if (!mounted) return;
+    setState(() {
+      _options[field.id] = <CrudOption>[];
+      _optionErrors[field.id] = message;
+      _optionsLoading[field.id] = false;
+    });
   }
 
   /// A snapshot of every field's current value (used by dependent option loaders).
@@ -230,9 +255,9 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
         case CrudFieldKind.text:
         case CrudFieldKind.multiline:
         case CrudFieldKind.timezone:
-          values[field.id] = _controllers[field.id]!.text.trim();
+          values[field.id] = _controllers[field.id]?.text.trim() ?? '';
         case CrudFieldKind.integer:
-          values[field.id] = _parseInt(_controllers[field.id]!.text);
+          values[field.id] = _parseInt(_controllers[field.id]?.text ?? '');
         case CrudFieldKind.dropdown:
           values[field.id] = _dropdownValues[field.id];
         case CrudFieldKind.image:
@@ -287,65 +312,70 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Dialog(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: Padding(
-          padding: const EdgeInsets.all(TravleTokens.space24),
-          child: Form(
-            key: _formKey,
-            autovalidateMode: AutovalidateMode.onUnfocus,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(widget.title,
-                          style: theme.textTheme.titleLarge),
-                    ),
-                    IconButton(
-                      tooltip: 'Close',
-                      icon: const Icon(Icons.close),
-                      onPressed:
-                          _submitting ? null : () => Navigator.of(context).pop(),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: TravleTokens.space16),
-                for (final field in widget.fields) ...[
-                  _buildField(field),
+    return PopScope(
+      // Closable by Cancel, Escape, or the barrier — but never mid-save, when
+      // tearing the form down would strand the request that is already away.
+      canPop: !_submitting,
+      child: Dialog(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Padding(
+            padding: const EdgeInsets.all(TravleTokens.space24),
+            child: Form(
+              key: _formKey,
+              autovalidateMode: AutovalidateMode.onUnfocus,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(widget.title,
+                            style: theme.textTheme.titleLarge),
+                      ),
+                      IconButton(
+                        tooltip: 'Close',
+                        icon: const Icon(Icons.close),
+                        onPressed:
+                            _submitting ? null : () => Navigator.of(context).pop(),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: TravleTokens.space16),
-                ],
-                if (_submitError != null) ...[
-                  _ErrorBanner(message: _submitError!),
-                  const SizedBox(height: TravleTokens.space16),
-                ],
-                const SizedBox(height: TravleTokens.space8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed:
-                          _submitting ? null : () => Navigator.of(context).pop(),
-                      child: const Text('Cancel'),
-                    ),
-                    const SizedBox(width: TravleTokens.space12),
-                    FilledButton(
-                      onPressed: _submitting ? null : _submit,
-                      child: _submitting
-                          ? const SizedBox(
-                              height: 18,
-                              width: 18,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Text(widget.saveLabel),
-                    ),
+                  for (final field in widget.fields) ...[
+                    _buildField(field),
+                    const SizedBox(height: TravleTokens.space16),
                   ],
-                ),
-              ],
+                  if (_submitError != null) ...[
+                    _ErrorBanner(message: _submitError!),
+                    const SizedBox(height: TravleTokens.space16),
+                  ],
+                  const SizedBox(height: TravleTokens.space8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed:
+                            _submitting ? null : () => Navigator.of(context).pop(),
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: TravleTokens.space12),
+                      FilledButton(
+                        onPressed: _submitting ? null : _submit,
+                        child: _submitting
+                            ? const SizedBox(
+                                height: 18,
+                                width: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : Text(widget.saveLabel),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -620,7 +650,7 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
       );
     }
 
-    return DropdownButtonFormField<Object>(
+    final dropdown = DropdownButtonFormField<Object>(
       initialValue: _dropdownValues[field.id],
       isExpanded: true,
       decoration: InputDecoration(
@@ -641,6 +671,41 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
         return null;
       },
       onChanged: (value) => _onDropdownChanged(field, value),
+    );
+
+    final loadError = _optionErrors[field.id];
+    if (loadError == null) return dropdown;
+
+    // With no options the control renders itself disabled, so state the cause and
+    // offer the retry rather than leaving a dead grey box. (The decoration's own
+    // errorText can't carry this — DropdownButtonFormField overwrites it with the
+    // validator's result on every build.)
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        dropdown,
+        const SizedBox(height: TravleTokens.space4),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                loadError,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.error),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () {
+                setState(() => _optionsLoading[field.id] = true);
+                _loadOptions(field);
+              },
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Retry'),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

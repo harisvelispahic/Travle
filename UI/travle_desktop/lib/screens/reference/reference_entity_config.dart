@@ -4,14 +4,15 @@ import 'package:travle_core/travle_core.dart';
 import '../../widgets/crud_form_dialog.dart';
 import '../../widgets/paginated_search_table.dart';
 
-/// A single-level parent filter shown above a reference table (e.g. filter
-/// Regions by Country, Cities by Region). The chosen option's value is added to
-/// the list query under [queryKey].
+/// A parent filter shown above a reference table (e.g. filter Regions by Country,
+/// Cities by Region). The chosen option's value is added to the list query under
+/// [queryKey].
 class ReferenceFilter {
   const ReferenceFilter({
     required this.queryKey,
     required this.label,
     required this.optionsLoader,
+    this.grandparent,
   });
 
   /// Query parameter the selected value is sent as (e.g. `countryId`).
@@ -20,7 +21,21 @@ class ReferenceFilter {
   /// Label for the "All …" dropdown (e.g. `Country`).
   final String label;
 
-  /// Loads the selectable parent options.
+  /// Loads the selectable parent options, narrowed by the [grandparent]'s current
+  /// selection when there is one (null = unnarrowed).
+  final Future<List<CrudOption>> Function(Object? grandparentValue) optionsLoader;
+
+  /// Optional level above this one, rendered to its left. Picking it reloads this
+  /// filter's options and clears its selection; its own value is never sent to the
+  /// API — it exists only to keep this list short (Cities: Country ⇒ Region).
+  final ReferenceFilterLevel? grandparent;
+}
+
+/// The narrowing-only level above a [ReferenceFilter].
+class ReferenceFilterLevel {
+  const ReferenceFilterLevel({required this.label, required this.optionsLoader});
+
+  final String label;
   final Future<List<CrudOption>> Function() optionsLoader;
 }
 

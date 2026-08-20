@@ -102,7 +102,8 @@ class BookingResponse {
   /// The id of this booking's tour review if one exists, else null.
   final int? reviewId;
 
-  /// The transitions currently allowed (enum names: `Pay`/`Confirm`/`Reject`/`Cancel`).
+  /// The transitions currently allowed (enum names: `Pay`/`Confirm`/`Reject`/
+  /// `Cancel`/`CancelByOrganizer`).
   final List<String> allowedActions;
 
   /// Refund % the traveler would get if they cancelled now (detail read, own booking).
@@ -125,6 +126,11 @@ class BookingResponse {
   /// Whether the traveler-side actions apply in the current state.
   bool get canPay => allowedActions.contains('Pay');
   bool get canCancel => allowedActions.contains('Cancel');
+
+  /// Whether the organizer may call this booking off outright (Confirmed only —
+  /// a booking still awaiting confirmation is rejected instead). Always a 100%
+  /// refund, so it is deliberately separate from the traveler's tiered [canCancel].
+  bool get canOrganizerCancel => allowedActions.contains('CancelByOrganizer');
 
   factory BookingResponse.fromJson(Map<String, dynamic> json) =>
       _$BookingResponseFromJson(json);

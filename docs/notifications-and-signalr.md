@@ -219,6 +219,7 @@ events that also enqueue a worker email (spec §5). "State" is relative to the s
 | Payment declined (card failed) | `BookingExpired`¹ | ✓ | – | **ripple** |
 | Booking auto-completed (leave a review) | `BookingCompleted` | ✓ | – | wired |
 | Own booking cancelled (confirmation) | `BookingCancelled` | ✓ | – | **ripple** |
+| Organizer cancelled this confirmed booking | `BookingCancelled`³ | ✓ | ✓ | wired (+email) |
 | Organizer cancelled the slot | `ScheduleCancelled` | ✓ | ✓ | wired (+email) |
 | Organizer **suspended** → booked tour cancelled | `ScheduleCancelled`² | ✓ | ✓ | **ripple (+email)** |
 | A tour you booked was updated (itinerary/name) | `TourUpdated` | ✓ | – | **ripple** |
@@ -228,6 +229,10 @@ events that also enqueue a worker email (spec §5). "State" is relative to the s
 | 24-hour pre-tour reminder | `BookingReminder` | ✓ | ✓ | wired (+email) |
 | Role application approved/rejected | `RoleApplication…` | ✓ | ✓ | wired (+email) |
 | Own review removed by admin | `ReviewRemoved` | ✓ | – | wired |
+
+³ Same type as a traveler's own cancellation, with organizer-specific copy ("Booking cancelled by the
+organizer", the reason, and a promised full refund) and emailed — unlike the self-cancel confirmation,
+this is news the traveler did not cause.
 
 ¹ Same type as a lapsed hold, but a distinct title/body ("Payment failed", not "hold expired") — a card
 decline immediately expires the hold, and the message says so. ² Reuses `ScheduleCancelled` because the

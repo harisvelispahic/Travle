@@ -387,42 +387,13 @@ class _ReasonedButton extends StatelessWidget {
 
 /// Prompts for a mandatory cancellation reason. Returns the trimmed reason, or
 /// null if cancelled.
-Future<String?> _promptReason(BuildContext context) {
-  final controller = TextEditingController();
-  final formKey = GlobalKey<FormState>();
-  return showDialog<String>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Cancel schedule'),
-      content: Form(
-        key: formKey,
-        child: TravleTextField(
-          controller: controller,
-          label: 'Reason',
-          hint: 'Why is this slot being cancelled?',
-          minLines: 2,
-          maxLines: 4,
-          maxLength: 500,
-          validator: (v) => Validators.required(v, field: 'A reason'),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Back'),
-        ),
-        FilledButton(
-          onPressed: () {
-            if (formKey.currentState!.validate()) {
-              Navigator.of(context).pop(controller.text.trim());
-            }
-          },
-          child: const Text('Cancel schedule'),
-        ),
-      ],
-    ),
-  );
-}
+Future<String?> _promptReason(BuildContext context) => showReasonDialog(
+      context,
+      title: 'Cancel schedule',
+      label: 'Reason',
+      confirmLabel: 'Cancel schedule',
+      requiredError: 'A reason is required',
+    );
 
 /// A small form to add a new schedule slot: a date, a start time, and an optional
 /// per-slot capacity. The end time is derived from the tour's duration (shown as

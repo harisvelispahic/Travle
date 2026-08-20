@@ -7,7 +7,7 @@ StatusTone bookingStatusTone(String status) => switch (status) {
       'PaymentInProgress' => StatusTone.warning,
       'Cancelled' => StatusTone.danger,
       'Expired' => StatusTone.neutral,
-      'Completed' => StatusTone.neutral,
+      'Completed' => StatusTone.completed,
       _ => StatusTone.neutral,
     };
 
