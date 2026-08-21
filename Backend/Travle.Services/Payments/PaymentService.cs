@@ -195,10 +195,14 @@ namespace Travle.Services.Payments
                 return;
             }
 
-            // Idempotency: only a still-Pending payment reacts to a succeeded event. A replay finds it
-            // already terminal — Succeeded (promoted) or Refunded (an orphaned-success auto-refund, below) —
-            // and no-ops, so a replay never re-promotes the booking nor clobbers the recorded refund.
-            if (payment.Status != PaymentStatus.Pending)
+            // Idempotency: only an OPEN attempt reacts to a succeeded event, and Failed counts as open.
+            // Retrying a declined card inside the PaymentSheet re-confirms the SAME intent, so Stripe sends
+            // payment_failed and afterwards succeeded for it; ignoring the second event would strand a real
+            // charge on a booking that never gets promoted (and the orphaned-success branch below would
+            // never be reached either). A replay finds the row already terminal — Succeeded (promoted) or
+            // Refunded (an orphaned-success auto-refund, below) — and no-ops, so a replay never
+            // re-promotes the booking nor clobbers the recorded refund.
+            if (payment.Status is not (PaymentStatus.Pending or PaymentStatus.Failed))
             {
                 _logger.LogDebug("Stripe webhook {EventId}: payment {PaymentId} already {Status}; skipping.",
                     evt.Id, payment.Id, payment.Status);

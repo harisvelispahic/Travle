@@ -262,6 +262,27 @@ in the DB / the dashboard). The webhook then promotes the booking to `Pending` a
 > **Do not** test with `stripe trigger payment_intent.succeeded` — it creates a *new, unrelated* intent, so
 > the handler finds no matching `Payment` row and no-ops. Always confirm the real intent.
 
+#### Replaying a real event at the API (webhook debugging)
+
+When a payment succeeded at Stripe but the booking did not move, the question is always *"did our handler
+run, and what did it decide?"*. You can re-deliver the exact event yourself — no card, no sheet, no CLI
+session — because the endpoint only requires a valid signature, and the signing secret is in `.env`:
+
+1. Find the event: `GET https://api.stripe.com/v1/events?limit=40` (HTTP basic auth, username = the test
+   secret key, empty password) and match on `data.object.id` = the intent id. This also shows exactly which
+   events Stripe generated and when — e.g. a decline-then-retry produces `payment_intent.payment_failed`
+   followed by `payment_intent.succeeded` **for the same intent**.
+2. `POST` that event's raw JSON to `/Payments/Webhook` with a header
+   `Stripe-Signature: t={unixNow},v1={HMAC_SHA256(webhookSecret, "{unixNow}.{rawJson}")}`. Use a *fresh*
+   timestamp — `EventUtility.ConstructEvent` rejects anything older than its 300-second tolerance.
+3. Watch the `Payments`/`Bookings` rows. A `200` with **no** row change means a handler guard returned
+   early (the log line says which), not a delivery problem.
+
+Every handler is idempotent, so replaying a real event is safe: it either completes the transition that was
+missed or no-ops. Note `stripe listen` does **not** retry a failed forward — an event the API rejects or
+mishandles is simply gone, which is why replaying it by hand is the only way to recover a stuck booking in
+development. A scratch script for this lives in the session scratchpad; it is 30 lines of `hmac` + `curl`.
+
 **Two `.env` config traps** that both surface as "it silently used the wrong value":
 > A local `dotnet run` / VS launch binds the **`Section__Key`** names in the bottom "Local runs" block of
 > `.env` (`Payments__StripeSecretKey`, `Payments__StripeWebhookSecret`), **not** the plain `STRIPE_*` vars up
@@ -532,7 +553,17 @@ booking moved to **Expired** (with a "Payment failed"-flavoured `BookingExpired`
 
 **Test:** book a tour, pay with `4000 0000 0000 0002` (generic decline) → the booking is still
 `PaymentInProgress` with its countdown running and a *Payment failed* notification; pay again with
-`4242 4242 4242 4242` → Pending.
+`4242 4242 4242 4242` → Pending. Test it **both** ways: closing the sheet and tapping *Pay* again (which
+goes through `CreateIntentAsync` and reopens the row), and retrying **inside** the open sheet (which does
+not — it re-confirms the same intent, and only the `Pending or Failed` guard saves it).
+
+**Follow-up, same day:** the `Pending or Failed` guard was missed in the first commit — the other three
+edits landed, that one silently did not. The symptom was exactly the case it exists for: an in-sheet retry
+succeeded at Stripe (charge captured) while the `Payment` row stayed `Failed` and the booking stayed
+`PaymentInProgress`; tapping *Pay* again then returned `409 This booking has already been paid`, because
+`CreateIntentAsync` reads the intent back from Stripe and finds it `succeeded`. Diagnosed by listing the
+intent's events at Stripe (`payment_failed` 18:04:46, `succeeded` 18:05:00 — both generated) and replaying
+the `succeeded` event at the API, which returned `200` and changed nothing (see §6.3).
 
 ### Idempotency keys survive a database re-seed ✅ (done, 2026-08-21)
 
