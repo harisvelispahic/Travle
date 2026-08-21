@@ -283,11 +283,20 @@ missed or no-ops. Note `stripe listen` does **not** retry a failed forward — a
 mishandles is simply gone, which is why replaying it by hand is the only way to recover a stuck booking in
 development. A scratch script for this lives in the session scratchpad; it is 30 lines of `hmac` + `curl`.
 
-**Two `.env` config traps** that both surface as "it silently used the wrong value":
-> A local `dotnet run` / VS launch binds the **`Section__Key`** names in the bottom "Local runs" block of
-> `.env` (`Payments__StripeSecretKey`, `Payments__StripeWebhookSecret`), **not** the plain `STRIPE_*` vars up
-> top (those are only for docker-compose interpolation). Paste real secrets into **both**, and restart the
-> API after editing `.env`.
+**`.env` naming — one name per secret (since 2026-08-21)**
+
+> Paste each Stripe key **once**, into the plain `STRIPE_*` vars at the top of `.env`. Both hosts then read
+> it: docker-compose interpolates those vars into the container as `Payments__*`, and a local `dotnet run`
+> gets them through `EnvironmentConfigurationAliases.Apply()` (called in `Program.cs` right after the
+> `.env` is loaded), which copies each plain name onto the `Section__Key` name configuration binds — only
+> when that key has no value, so compose always wins.
+>
+> This replaced a duplicated "Local runs" block where every secret was written twice under two names; the
+> copies drifted (the SMTP credentials sat out of sync for weeks) and pasting a real key into only the top
+> half left a local run on `sk_test_replace_me` — the original "it silently used the wrong value" trap.
+> Only genuinely host-specific values still live in the bottom block: the connection string (`localhost,1435`
+> vs the `travle-sqlserver` service name). **Restart the API after editing `.env`** — it is read once, at
+> startup.
 
 ---
 

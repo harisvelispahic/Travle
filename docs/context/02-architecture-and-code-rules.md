@@ -86,7 +86,9 @@ One `IEntityTypeConfiguration<T>` per entity (inheriting `BaseEntityConfiguratio
 
 ## 5. Configuration management
 
-`.env` (+ committed `.env.example`) → compose env vars → options classes bound once at startup; env read in constructors only. Keys: `CONNECTION_STRING`, `JWT_*`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RABBITMQ_*`, `SMTP_*`, `API_BASE_URL`, `PLATFORM_FEE_PERCENTAGE`. Nothing secret in appsettings.json. Flutter: `String.fromEnvironment('API_BASE_URL')` + `--dart-define`.
+`.env` (+ committed `.env.example`) → compose env vars → options classes bound once at startup; env read in constructors only. Keys: `CONNECTION_STRING`, `JWT_*`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RABBITMQ_*`, `SMTP_*`, `API_BASE_URL`, `PLATFORM_FEE_PERCENTAGE`, `PLATFORM_TIMEZONE`. Nothing secret in appsettings.json.
+
+**One name per secret (2026-08-21).** Two readers consume `.env` and they read different names: docker-compose uses the **plain** names to interpolate `${VAR}` into each container's `environment:` block (as `Payments__StripeSecretKey`, `Smtp__Password`, …), while a local `dotnet run` has no compose — DotNetEnv loads the file into the process environment and .NET configuration binds only the `Section__Key` names. That once forced every secret to be written twice, and the two copies drifted. `Travle.Model/Configuration/EnvironmentConfigurationAliases.Apply()` — called by both `Program.cs` files immediately after the `.env` load and before the host builder — copies each plain name onto its configuration key **only when that key is unset**, so containers and explicit overrides are unaffected. Values that legitimately differ per host (the connection string; the RabbitMQ host, which already defaults to localhost in `appsettings.json`) are deliberately **not** aliased and stay explicit local overrides, so a local run can never silently inherit a container-only hostname. Flutter: `String.fromEnvironment('API_BASE_URL')` + `--dart-define`.
 
 ## 6. API conventions
 

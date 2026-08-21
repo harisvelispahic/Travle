@@ -208,7 +208,9 @@ exists for password reset, adding "send an email when a booking is confirmed" is
 - Retry with exponential backoff, manual ack, logging on every failure (§A.1 — never die silently).
 
 **Config**
-- Un-comment and fill the `SMTP_*` keys in `.env` / `.env.example`; map `Smtp__*` into the worker in
+- Fill the `SMTP_*` keys in `.env` / `.env.example` **once** — compose maps them into the worker as
+  `Smtp__*`, and local runs get them through `EnvironmentConfigurationAliases` (see
+  `02-architecture-and-code-rules.md` §config). Map `Smtp__*` into the worker in
   compose; add `RabbitMq__*` to the API service.
 
 **Scheduler cleanup (later)**

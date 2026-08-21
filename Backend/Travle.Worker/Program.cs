@@ -1,3 +1,4 @@
+using Travle.Model.Configuration;
 using Travle.Model.Messaging;
 using Travle.Worker.Email;
 
@@ -13,6 +14,10 @@ for (var dir = new DirectoryInfo(Directory.GetCurrentDirectory()); dir is not nu
         break;
     }
 }
+
+// Same aliasing the API does: the plain .env names feed the Section__Key names configuration binds, so
+// the worker's SMTP credentials come from one place. No-op in a container (compose sets them directly).
+EnvironmentConfigurationAliases.Apply();
 
 var builder = Host.CreateApplicationBuilder(args);
 

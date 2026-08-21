@@ -55,6 +55,8 @@ Sweep `01-course-constraints.md` section by section: endpoint authorization matr
 **DoD:** every checklist box ticks or has a written justified exception.
 
 ## Phase 13 — Packaging & submission
+**Demo-prep note:** seed dates are static, so the 24-hour `BookingReminder` window may catch nothing on the
+day — widen `BookingReminder__WindowHours` (`.env`) before demonstrating the reminder email/notification.
 README (run steps + credentials table); `.env-tajne.zip` swap; `flutter clean` + release builds (APK @10.0.2.2 verified via fresh AVD install; Windows exe @localhost); `fit-build-20gg-mm-dd.zip`; enable release immutability → draft → verify → publish; DL: exact tag + password. Cold-machine test: clone → compose up → run builds → exercise every core flow.
 **DoD:** a stranger runs everything from the README alone; nothing touched after the deadline.
 

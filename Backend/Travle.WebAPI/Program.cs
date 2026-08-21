@@ -1,3 +1,4 @@
+using Travle.Model.Configuration;
 using Travle.Model.Constants;
 using Travle.Model.Messaging;
 using Travle.Model.Requests;
@@ -50,6 +51,11 @@ for (var dir = new DirectoryInfo(Directory.GetCurrentDirectory()); dir is not nu
         break;
     }
 }
+
+// Point the plain .env names (STRIPE_SECRET_KEY, …) at the Section__Key names configuration binds, so a
+// secret is written once instead of once per naming style. Compose already sets the Section__Key names
+// directly, so this is a no-op in a container. Must run before the builder reads the environment.
+EnvironmentConfigurationAliases.Apply();
 
 var builder = WebApplication.CreateBuilder(args);
 
