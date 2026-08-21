@@ -6,6 +6,7 @@ using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
 using Travle.Services.BookingStateMachine;
 using Travle.Services.Database;
+using Travle.Services.Notifications;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -26,6 +27,7 @@ namespace Travle.Services.Payments
         private readonly TravleDbContext _dbContext;
         private readonly IStripeService _stripe;
         private readonly IRefundService _refunds;
+        private readonly INotificationDispatcher _notifications;
         private readonly IAppAuthorizationService _authorization;
         private readonly IValidator<PaymentIntentCreateRequest> _createValidator;
         private readonly BaseBookingState _states;
@@ -36,6 +38,7 @@ namespace Travle.Services.Payments
             TravleDbContext dbContext,
             IStripeService stripe,
             IRefundService refunds,
+            INotificationDispatcher notifications,
             IAppAuthorizationService authorization,
             IValidator<PaymentIntentCreateRequest> createValidator,
             BaseBookingState states,
@@ -45,6 +48,7 @@ namespace Travle.Services.Payments
             _dbContext = dbContext;
             _stripe = stripe;
             _refunds = refunds;
+            _notifications = notifications;
             _authorization = authorization;
             _createValidator = createValidator;
             _states = states;
@@ -93,8 +97,13 @@ namespace Travle.Services.Payments
 
             var currency = _options.Currency;
 
-            // Reuse an already-open intent so tapping Pay again within the hold does not create a duplicate.
-            var openPayment = booking.Payments.FirstOrDefault(p => p.Status == PaymentStatus.Pending);
+            // Reuse the latest retryable intent so tapping Pay again within the hold does not create a
+            // duplicate. A Failed row counts as retryable: a declined card leaves the intent at
+            // requires_payment_method, which Stripe intends to be re-confirmed with another card.
+            var openPayment = booking.Payments
+                .Where(p => p.Status is PaymentStatus.Pending or PaymentStatus.Failed)
+                .OrderByDescending(p => p.Id)
+                .FirstOrDefault();
             if (openPayment is not null)
             {
                 var existing = await _stripe.GetPaymentIntentAsync(openPayment.StripePaymentIntentId, cancellationToken);
@@ -104,10 +113,20 @@ namespace Travle.Services.Payments
                         // Charged already, but the webhook hasn't promoted the booking yet — let the client refresh.
                         throw new ConflictException("This booking has already been paid.");
                     case "canceled":
-                        // No longer usable: retire this row and fall through to create a fresh intent.
+                        // No longer usable: retire this row and fall through to create a fresh intent
+                        // (the edit rides the SaveChanges that persists the new Payment below).
                         openPayment.Status = PaymentStatus.Failed;
                         break;
                     default:
+                        // Handing the intent back reopens the attempt, so a previously declined row returns
+                        // to Pending — that keeps "Pending = an attempt is in flight", which is what makes
+                        // the webhook handlers replay-safe (they act only on a Pending row).
+                        if (openPayment.Status == PaymentStatus.Failed)
+                        {
+                            openPayment.Status = PaymentStatus.Pending;
+                            await _dbContext.SaveChangesAsync(cancellationToken);
+                        }
+
                         return BuildResponse(booking, openPayment, existing.ClientSecret);
                 }
             }
@@ -219,9 +238,10 @@ namespace Travle.Services.Payments
                 return;
             }
 
-            // Only a still-Pending payment reacts to a failure event. A payment already terminal — Succeeded,
-            // Failed, or Refunded (an orphaned-success auto-refund) — is left untouched: a late failure event
-            // for a since-succeeded intent is nonsensical and must never clobber the recorded outcome.
+            // Only an in-flight attempt reacts to a failure event. A row already Failed (a replayed event, or
+            // a second decline on an attempt the traveler has not reopened), Succeeded, or Refunded is left
+            // untouched: a late failure event for a since-succeeded intent is nonsensical and must never
+            // clobber the recorded outcome, and a replay must not notify twice.
             if (payment.Status != PaymentStatus.Pending)
             {
                 return;
@@ -231,17 +251,32 @@ namespace Travle.Services.Payments
             _logger.LogInformation("Stripe webhook {EventId}: payment {PaymentId} failed ({Reason}).",
                 evt.Id, payment.Id, evt.FailureMessage ?? "no reason given");
 
+            // A declined card fails the ATTEMPT, never the booking. The seats are already held for 15
+            // minutes, so the booking stays PaymentInProgress and the traveler can try another card until
+            // that hold runs out; only the lifecycle sweep ever expires it. Stripe leaves the intent at
+            // requires_payment_method, so the next CreateIntent hands the same one straight back.
             if (payment.Booking.StatusId == (int)BookingStatusCode.PaymentInProgress)
             {
-                // Release the held seats immediately rather than waiting out the 15-minute hold (the
-                // lifecycle diagram's "payment failed → Expired"). Expire's SaveChanges persists the edit
-                // above; paymentFailed:true makes the notification read as a decline, not a timeout.
-                await _states.GetState(BookingStatusCode.PaymentInProgress).ExpireAsync(payment.Booking, paymentFailed: true);
+                _notifications.Enqueue(payment.Booking.UserId, NotificationType.PaymentFailed,
+                    "Payment failed",
+                    $"{DescribeFailure(evt)} No money was taken. Your seats are still held, so you can open the booking and try another card before the payment hold runs out.",
+                    payment.BookingId);
             }
-            else
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        // Stripe's own decline message ("Your card was declined.") is written for the cardholder, so it is
+        // passed through when the event carries one; otherwise neutral copy stands in.
+        private static string DescribeFailure(StripeWebhookEvent evt)
+        {
+            var message = evt.FailureMessage?.Trim();
+            if (string.IsNullOrEmpty(message))
             {
-                await _dbContext.SaveChangesAsync(cancellationToken);
+                return "Your payment could not be completed.";
             }
+
+            return message.EndsWith('.') ? message : message + ".";
         }
 
         // Loads the tracked Payment (with its Booking) for the intent the event refers to. A missing intent

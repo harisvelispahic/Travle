@@ -29,6 +29,7 @@ class NotificationDetailScreen extends StatefulWidget {
     'BookingReminder',
     'BookingCompleted',
     'PaymentSucceeded',
+    'PaymentFailed',
     'RefundIssued',
     'ScheduleCancelled',
   };

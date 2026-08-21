@@ -158,10 +158,15 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         _busy = false;
         _confirmingPayment = false;
       });
-      // A user-cancelled sheet is not an error; anything else is surfaced.
+      // A user-cancelled sheet is not an error; anything else is surfaced. A decline
+      // fails only this attempt — the booking keeps its 15-minute hold, so the Pay
+      // button stays and another card can be tried until the countdown runs out.
       if (e.error.code != stripe.FailureCode.Canceled) {
         AppSnackbars.error(
-            context, e.error.localizedMessage ?? 'Payment failed. Please try again.');
+            context,
+            '${e.error.localizedMessage ?? 'Payment failed.'} Your seats are still '
+            'held — you can try another card.');
+        await _refreshQuietly();
       }
     } on ApiClientException catch (e) {
       if (!mounted) return;
@@ -170,6 +175,20 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         _confirmingPayment = false;
       });
       AppSnackbars.error(context, e.message);
+    }
+  }
+
+  // Re-reads the booking without flashing the loading state — used after a declined
+  // card, where the screen is already populated and only the hold or the allowed
+  // actions may have moved on.
+  Future<void> _refreshQuietly() async {
+    try {
+      final booking =
+          await context.read<BookingProvider>().getDetail(widget.bookingId);
+      if (!mounted) return;
+      setState(() => _booking = booking);
+    } on ApiClientException {
+      // Non-fatal: what is already on screen stays.
     }
   }
 

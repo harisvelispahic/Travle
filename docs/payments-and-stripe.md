@@ -113,12 +113,19 @@ data and needs real organizer onboarding. We deliberately don't build it.
 
 ### 3.4 Idempotency (no double effects)
 
-- **Create-intent** reuses an already-open PaymentIntent for a booking instead of creating a second one
-  (tapping *Pay* twice within the hold returns the same client secret). A Stripe *idempotency key*
-  (`pi-booking-{id}-{attempt}`) is the backstop against a near-simultaneous duplicate create. A booking
-  that already has a **succeeded** payment is refused (`409 Conflict`).
+- **Create-intent** reuses the booking's latest **retryable** PaymentIntent instead of creating a second
+  one: tapping *Pay* twice within the hold — or paying again after a decline — returns the same client
+  secret (a declined intent sits at `requires_payment_method`, which is precisely what Stripe intends you
+  to re-confirm with another card). Reusing a previously-failed attempt flips its `Payment` row back to
+  `Pending`, keeping the invariant *"Pending = an attempt is in flight"* that the webhook guards rely on.
+  A Stripe *idempotency key* (`pi-booking-{id}-{attempt}`) is the backstop against a near-simultaneous
+  duplicate create. A booking that already has a **succeeded** payment is refused (`409 Conflict`).
 - **Webhook** (6b) is idempotent on the `Payment`/booking state: a replayed `payment_intent.succeeded`
-  finds the payment already `Succeeded` / the booking already `Pending` and no-ops. (An optional
+  finds the payment already `Succeeded` / the booking already `Pending` and no-ops, and a replayed
+  `payment_intent.payment_failed` finds the row already `Failed`, so it neither re-notifies nor re-acts.
+  A `succeeded` event **is** honoured on a `Failed` row, because retrying a declined card *inside* the
+  sheet reuses the same intent — Stripe then sends `payment_failed` and afterwards `succeeded` for it, and
+  dropping the second event would strand a real charge on a booking that never gets promoted. (An optional
   processed-event ledger is a possible future hardening; not needed for the DoD.)
 
 ### 3.5 Refunds are a **post-commit** side-effect
@@ -177,6 +184,11 @@ confirm card ──────────────────────�
                              • state machine: PaymentInProgress → Pending
 refresh booking ──────────▶  booking is now Pending (IsPaid = true) → hide Pay button
 ```
+
+A **declined card** does not end the booking. The webhook marks that `Payment` row `Failed`, raises a
+`PaymentFailed` notification and stops there: the booking stays `PaymentInProgress` with its `ExpiresAt`
+untouched, so the traveler can tap *Pay* again with another card until the 15 minutes run out. Only the
+lifecycle sweep (hold + 90-second grace) ever moves a booking to `Expired`.
 
 Later transitions (organizer confirm → Confirmed; cancel/reject/slot-cancel → Cancelled + refund;
 scheduler auto-Complete) are the Phase 5 state machine; 6c adds the refund side-effect to the
@@ -308,8 +320,9 @@ path would have.
   - `payment_intent.succeeded` → `Payment.Succeeded` + `SucceededAt`, then state machine `MarkPaidAsync`
     (PaymentInProgress → Pending, clears the hold). **Idempotent:** a replay finds the payment already
     `Succeeded` and no-ops.
-  - `payment_intent.payment_failed` → `Payment.Failed` + `ExpireAsync` (releases the held seats now rather
-    than waiting out the hold). Never overrides an already-succeeded payment.
+  - `payment_intent.payment_failed` → `Payment.Failed`. *(As first built this also ran `ExpireAsync`, which
+    ended the booking on a single decline; superseded — see the 2026-08-21 entry at the end of §9. The
+    booking now keeps its hold.)* Never overrides an already-succeeded payment.
   - Unknown intent / unhandled type / missing intent id → logged, returns 200 (so Stripe doesn't retry an
     unactionable event forever).
 - `PaymentInProgressBookingState.MarkPaidAsync` now adds the **PaymentSucceeded** notification (the state
@@ -475,6 +488,37 @@ the grader relies on. Synthetic bookkeeping is the correct model for demo data. 
 
 ---
 
+### A declined card no longer expires the booking ✅ (done, 2026-08-21)
+
+**Symptom.** One mistyped or declined card ended the whole booking. `HandlePaymentFailedAsync` called
+`ExpireAsync(paymentFailed: true)` on a `PaymentInProgress` booking, so the seats were released and the
+booking moved to **Expired** (with a "Payment failed"-flavoured `BookingExpired` notification) — while the
+15-minute hold that exists precisely so a card can be retried was still running.
+
+**Now** a decline fails the *attempt*, never the booking:
+
+- `HandlePaymentFailedAsync` sets `Payment.Failed`, enqueues the new **`PaymentFailed`** notification
+  (type 30; in-app only — the traveler is standing in the app and the sheet already showed the decline —
+  and the text passes Stripe's own cardholder-facing message through when the event carries one), and
+  returns. The booking keeps its status and its `ExpiresAt`. Expiring a hold is now solely
+  `BookingLifecycleWorker`'s job (hold + 90 s grace), so `ExpireAsync` lost its `paymentFailed` parameter
+  and its decline copy.
+- `CreateIntentAsync` treats a `Failed` row as **retryable**: it reuses that intent rather than minting a
+  second one, and flips the row back to `Pending` so the replay guards keep holding.
+- `HandlePaymentSucceededAsync` now accepts `Pending` **or** `Failed`. Retrying a declined card inside the
+  sheet re-confirms the *same* intent, so Stripe sends `payment_failed` and then `succeeded` for it; under
+  the old `!= Pending` guard that success was silently dropped — money captured, booking never promoted,
+  and not even the orphaned-success auto-refund could catch it. Terminal rows (`Succeeded`, `Refunded`,
+  `PartiallyRefunded`) still no-op.
+- **Mobile:** the decline snackbar now reads *"…Your seats are still held — you can try another card"* and
+  the screen quietly re-reads the booking; the *Pay* button stays because `canPay` is still true.
+
+**Test:** book a tour, pay with `4000 0000 0000 0002` (generic decline) → the booking is still
+`PaymentInProgress` with its countdown running and a *Payment failed* notification; pay again with
+`4242 4242 4242 4242` → Pending.
+
+---
+
 ## 10. Definition-of-done checklist (Phase 6, from the roadmap)
 
 Legend: ✅ built + verified live · 🟢 built, quick manual re-check advised before defense.
@@ -485,5 +529,7 @@ Legend: ✅ built + verified live · 🟢 built, quick manual re-check advised b
 - [x] Second payment attempt on an already-paid booking is blocked — 🟢 (`409 Conflict`; re-tap a paid booking).
 - [x] Replayed webhook = no double effects — 🟢 (idempotent on `Payment.Status`; re-send an event via `stripe`).
 - [x] Refund lands in the Stripe test dashboard at the right tier — 🟢 (cancel a paid booking, confirm in the dashboard).
+- [x] A declined card fails only that attempt; the booking keeps its hold and can be re-paid — 🟢 (decline
+  with `4000 0000 0000 0002`, then pay with `4242 4242 4242 4242`).
 
 Everything is implemented; the three 🟢 items are worth a 60-second manual re-confirmation before the defense.

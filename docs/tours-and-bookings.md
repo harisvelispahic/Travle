@@ -232,7 +232,7 @@ So when a traveler is about to book Schedule #2 (Capacity 15, SeatsTaken 0), the
 stateDiagram-v2
     [*] --> PaymentInProgress : traveler checks out<br/>(seats held, ExpiresAt = now+15min)
     PaymentInProgress --> Pending   : Stripe webhook<br/>payment_intent.succeeded
-    PaymentInProgress --> Expired   : 15 min elapse / payment fails<br/>(seats released)
+    PaymentInProgress --> Expired   : 15 min hold lapses<br/>(seats released)
     Pending --> Confirmed : organizer confirms<br/>(notification)
     Pending --> Cancelled : user cancels (tiered refund)<br/>OR organizer rejects (100% refund + reason)<br/>OR organizer suspended (100% refund)
     Confirmed --> Completed : scheduler, after the slot's end time
@@ -386,7 +386,7 @@ This is "reserve" step, and it's the only transition with real algorithmic weigh
 
 | State | Legal transitions (methods) | Allowed actions reported |
 |---|---|---|
-| **PaymentInProgress** | `MarkPaidAsync` → Pending (Stripe webhook, P6) · `ExpireAsync` → Expired (releases seats) · `CancelForSlotAsync` | `[Pay]` |
+| **PaymentInProgress** | `MarkPaidAsync` → Pending (Stripe webhook, P6) · `ExpireAsync` → Expired (the lifecycle sweep only — a declined card fails the payment attempt and leaves the hold running) · `CancelForSlotAsync` | `[Pay]` |
 | **Pending** | `ConfirmAsync` → Confirmed · `RejectAsync` → Cancelled (releases seats, reason, 100%) · `CancelAsync` (user) → Cancelled · `CancelForSlotAsync` | `[Confirm, Reject, Cancel]` |
 | **Confirmed** | `CompleteAsync` → Completed (scheduler) · `CancelAsync` (user) → Cancelled · `CancelByOrganizerAsync` → Cancelled (releases seats, reason, 100%) · `CancelForSlotAsync` | `[Cancel, CancelByOrganizer]` |
 | **Completed / Cancelled / Expired** | none — terminal (everything throws) | `[]` |

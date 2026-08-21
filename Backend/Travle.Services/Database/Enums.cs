@@ -148,7 +148,13 @@ namespace Travle.Services.Database
         /// Admin: an automatic refund failed on Stripe and is owed to a traveler; it needs a manual retry
         /// from the payments screen.
         /// </summary>
-        RefundFailed = 29
+        RefundFailed = 29,
+
+        /// <summary>
+        /// Traveler: a card was declined, so that payment attempt failed. The booking itself survives —
+        /// the seats stay held for the rest of the 15-minute window so another card can be tried.
+        /// </summary>
+        PaymentFailed = 30
     }
 
     /// <summary>

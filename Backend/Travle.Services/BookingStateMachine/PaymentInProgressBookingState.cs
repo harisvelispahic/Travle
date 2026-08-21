@@ -7,8 +7,9 @@ namespace Travle.Services.BookingStateMachine
 {
     /// <summary>
     /// A booking holding seats while payment completes. It can move forward to Pending when the Stripe
-    /// webhook confirms payment (Phase 6), or lapse to Expired when the 15-minute hold runs out (or
-    /// payment fails) — the latter driven by the lifecycle scheduler.
+    /// webhook confirms payment (Phase 6), or lapse to Expired when the 15-minute hold runs out — the
+    /// latter driven by the lifecycle scheduler. A declined card is <b>not</b> a way out of this state:
+    /// it fails only that payment attempt, leaving the hold running so another card can be tried.
     /// </summary>
     public class PaymentInProgressBookingState : BaseBookingState
     {
@@ -44,18 +45,17 @@ namespace Travle.Services.BookingStateMachine
             return await BuildResponseAsync(booking.Id);
         }
 
-        public override async Task<BookingResponse> ExpireAsync(Booking booking, bool paymentFailed = false)
+        public override async Task<BookingResponse> ExpireAsync(Booking booking)
             => await InTransactionAsync(async () =>
             {
-                // The hold lapsed or the payment was declined: release the seats and record the expiry. The
-                // message distinguishes the two so a card decline doesn't read as "you ran out of time".
+                // The 15-minute hold lapsed with no completed payment: release the seats and record the
+                // expiry. Only the lifecycle sweep reaches this — a declined card fails the payment attempt
+                // and leaves the hold running (PaymentService.HandlePaymentFailedAsync).
                 await ReleaseSeatsAsync(booking.TourScheduleId, booking.NumberOfPeople);
                 MarkStatus(booking, BookingStatusCode.Expired);
                 AddNotification(booking.UserId, NotificationType.BookingExpired,
-                    paymentFailed ? "Payment failed" : "Booking expired",
-                    paymentFailed
-                        ? "Your payment could not be completed, so the booking was released and the seats freed. You can book again to try a different card."
-                        : "Your booking hold expired before payment was completed, and the seats were released.",
+                    "Booking expired",
+                    "Your booking hold expired before payment was completed, and the seats were released.",
                     booking.Id);
                 await DbContext.SaveChangesAsync();
                 return await BuildResponseAsync(booking.Id);

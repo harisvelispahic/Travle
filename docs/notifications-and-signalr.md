@@ -216,7 +216,7 @@ events that also enqueue a worker email (spec §5). "State" is relative to the s
 | Organizer confirmed the booking | `BookingConfirmed` | ✓ | ✓ | wired (+email) |
 | Organizer rejected the booking | `BookingRejected` | ✓ | ✓ | wired (+email) |
 | 15-minute hold expired | `BookingExpired` | ✓ | – | wired |
-| Payment declined (card failed) | `BookingExpired`¹ | ✓ | – | **ripple** |
+| Payment declined (card failed) | `PaymentFailed`¹ | ✓ | – | **ripple** |
 | Booking auto-completed (leave a review) | `BookingCompleted` | ✓ | – | wired |
 | Own booking cancelled (confirmation) | `BookingCancelled` | ✓ | – | **ripple** |
 | Organizer cancelled this confirmed booking | `BookingCancelled`³ | ✓ | ✓ | wired (+email) |
@@ -234,8 +234,10 @@ events that also enqueue a worker email (spec §5). "State" is relative to the s
 organizer", the reason, and a promised full refund) and emailed — unlike the self-cancel confirmation,
 this is news the traveler did not cause.
 
-¹ Same type as a lapsed hold, but a distinct title/body ("Payment failed", not "hold expired") — a card
-decline immediately expires the hold, and the message says so. ² Reuses `ScheduleCancelled` because the
+¹ Its own type since 2026-08-21, because a decline and a lapsed hold are different outcomes: a declined
+card fails only that payment attempt, so the booking keeps its seats and the rest of its 15-minute hold and
+the message says "try another card". (It reused `BookingExpired` while a decline really did expire the
+booking — see the payments doc, §9.) ² Reuses `ScheduleCancelled` because the
 traveler's outcome is identical (their booked tour won't run, full refund).
 
 ### Curator (mobile)
@@ -511,7 +513,8 @@ no per-record pages). Everything else — the core, the bell, the centre, the de
     `PaginatedSearchTable` gained a generic optional row-action; the admin payments screen shows the retry button
     only on owed rows.
   - **Wording/coverage nits.** A card decline reuses `BookingExpired` but with a distinct "Payment failed"
-    title/body (`ExpireAsync(booking, paymentFailed:true)`); a traveler's own cancellation now always gets a
+    title/body (`ExpireAsync(booking, paymentFailed:true)`) — *superseded on 2026-08-21: a decline no longer
+    expires the booking and has its own `PaymentFailed` type*; a traveler's own cancellation now always gets a
     `BookingCancelled` confirmation (previously the 0% refund tier left no trace).
   - **Policy: tour deactivation** unchanged in behaviour (upcoming bookings are still honored) — only the
     desktop confirm dialog now spells that out ("hidden from new bookings… cancel schedules one-by-one for a
@@ -532,6 +535,18 @@ no per-record pages). Everything else — the core, the bell, the centre, the de
     booking) hit Stripe with fabricated `pi_seed…` intents → a flood of "No such payment_intent" errors + the
     (correct) `RefundFailed`/retry path firing on un-refundable demo data. `RefundService` now skips Stripe for
     synthetic payments and records the refund as bookkeeping only. Details in `payments-and-stripe.md`.
+
+- **2026-08-21** — **`PaymentFailed` (type 30) — a declined card stops expiring the booking.**
+  `PaymentService.HandlePaymentFailedAsync` no longer calls `ExpireAsync`: it marks the `Payment` row
+  `Failed` and enqueues `PaymentFailed` to the traveler ("…your seats are still held, try another card"),
+  in-app only — they are in the app paying, and emailing a decline they just watched happen is noise. The
+  booking keeps its hold, so `ExpireAsync` shed its `paymentFailed` parameter and its decline copy, and the
+  only path to `Expired` is the lifecycle sweep again. `PaymentService` gained `INotificationDispatcher`
+  (the webhook is an MVC action, so the global `NotificationFlushFilter` delivers the push after the
+  commit). Clients: `PaymentFailed` added to both `notification_display.dart`s (negative flag +
+  `credit_card_off_outlined`) and to the mobile detail screen's booking deep-link set, so the notification
+  opens the booking that can still be paid. Full rationale — including why a `succeeded` event must now be
+  honoured on a `Failed` row — in `payments-and-stripe.md` §9.
 
 ---
 

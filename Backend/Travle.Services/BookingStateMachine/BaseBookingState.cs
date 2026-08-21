@@ -77,7 +77,7 @@ namespace Travle.Services.BookingStateMachine
         public virtual Task<BookingResponse> CompleteAsync(Booking booking)
             => throw Illegal("completed");
 
-        public virtual Task<BookingResponse> ExpireAsync(Booking booking, bool paymentFailed = false)
+        public virtual Task<BookingResponse> ExpireAsync(Booking booking)
             => throw Illegal("expired");
 
         public virtual Task<BookingResponse> CancelForSlotAsync(Booking booking, int organizerUserId, string reason)

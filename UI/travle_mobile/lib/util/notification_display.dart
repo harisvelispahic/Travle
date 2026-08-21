@@ -13,6 +13,7 @@ bool notificationIsNegative(String type) => const {
       'BookingRejected',
       'BookingCancelled',
       'BookingExpired',
+      'PaymentFailed',
       'ScheduleCancelled',
       'DestinationRejected',
       'DestinationUnavailable',
@@ -40,6 +41,8 @@ IconData notificationIcon(String type) {
       return Icons.event_available_outlined;
     case 'PaymentSucceeded':
       return Icons.payments_outlined;
+    case 'PaymentFailed':
+      return Icons.credit_card_off_outlined;
     case 'RefundIssued':
       return Icons.currency_exchange;
     case 'DestinationApproved':
