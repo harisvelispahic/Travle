@@ -10,6 +10,9 @@ namespace Travle.Services.Database.Configurations
             base.Configure(builder);
 
             builder.Property(b => b.TotalAmount).HasPrecision(18, 2);
+            builder.Property(b => b.PaymentIdempotencyToken)
+                .IsRequired()
+                .HasMaxLength(32);
             builder.Property(b => b.RejectionReason).HasMaxLength(500);
             builder.Property(b => b.CancellationReason).HasMaxLength(500);
 
@@ -37,6 +40,9 @@ namespace Travle.Services.Database.Configurations
                 .WithMany()
                 .HasForeignKey(b => b.CancelledByUserId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // One booking, one idempotency seed — the uniqueness is the whole point of the column.
+            builder.HasIndex(b => b.PaymentIdempotencyToken).IsUnique();
 
             // Filtered unique index kills duplicate active bookings under races (03 §5).
             // StatusIds 1/2/3 = PaymentInProgress/Pending/Confirmed (seeded deterministically).

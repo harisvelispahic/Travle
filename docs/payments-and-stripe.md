@@ -118,8 +118,20 @@ data and needs real organizer onboarding. We deliberately don't build it.
   secret (a declined intent sits at `requires_payment_method`, which is precisely what Stripe intends you
   to re-confirm with another card). Reusing a previously-failed attempt flips its `Payment` row back to
   `Pending`, keeping the invariant *"Pending = an attempt is in flight"* that the webhook guards rely on.
-  A Stripe *idempotency key* (`pi-booking-{id}-{attempt}`) is the backstop against a near-simultaneous
-  duplicate create. A booking that already has a **succeeded** payment is refused (`409 Conflict`).
+  A Stripe *idempotency key* (`pi-{booking.PaymentIdempotencyToken}-{attempt}`) is the backstop against a
+  near-simultaneous duplicate create — two racing calls compute the same key, so Stripe returns one intent
+  to both instead of creating two. A booking that already has a **succeeded** payment is refused
+  (`409 Conflict`).
+
+  The key is seeded by the booking's random `PaymentIdempotencyToken`, **not** its id. Stripe remembers a
+  key for **24 hours together with the parameters it first carried**, and a database re-seed recycles
+  booking ids: the id that yesterday asked for 180 KM belongs to an unrelated 95 KM booking today, and the
+  old id-based key `pi-booking-2018-0` would come back with a different amount → Stripe rejects it
+  (`402`, "Keys for idempotent requests can only be used with the same parameters…"). A key must be
+  *identical* for two calls that mean the same attempt and *different* for calls that don't, so it has to
+  be seeded by something unique to the attempt and unreproducible by a re-seed — hence a GUID minted when
+  the booking is created. Refund keys (`refund-{token}-{paymentId}`) are seeded the same way, for the same
+  reason.
 - **Webhook** (6b) is idempotent on the `Payment`/booking state: a replayed `payment_intent.succeeded`
   finds the payment already `Succeeded` / the booking already `Pending` and no-ops, and a replayed
   `payment_intent.payment_failed` finds the row already `Failed`, so it neither re-notifies nor re-acts.
@@ -260,6 +272,11 @@ in the DB / the dashboard). The webhook then promotes the booking to `Pending` a
 
 ## 7. Data model
 
+- **`Booking.PaymentIdempotencyToken`** (`Travle.Services/Database/Booking.cs`) — a 32-character GUID
+  (`Guid.NewGuid().ToString("N")`) minted by the property initializer when the booking is created, unique
+  index. It never leaves the server and appears in no DTO; its only job is to seed the Stripe idempotency
+  keys of this booking's payment and refund calls (§3.4). Migration
+  `20260821164253_AddBookingPaymentIdempotencyToken` adds it and backfills existing rows with `NEWID()`.
 - **`Payment`** (`Travle.Services/Database/Payment.cs`) — one per charge attempt on a booking. Financial
   record, never deleted. `StripePaymentIntentId` (unique index = double-charge guard), `Amount`,
   `Currency`, `PlatformFeePercentage`/`PlatformFeeAmount` (snapshot), `Status`
@@ -516,6 +533,39 @@ booking moved to **Expired** (with a "Payment failed"-flavoured `BookingExpired`
 **Test:** book a tour, pay with `4000 0000 0000 0002` (generic decline) → the booking is still
 `PaymentInProgress` with its countdown running and a *Payment failed* notification; pay again with
 `4242 4242 4242 4242` → Pending.
+
+### Idempotency keys survive a database re-seed ✅ (done, 2026-08-21)
+
+**Symptom.** After re-seeding the dev database, paying certain bookings failed with `402` —
+*"Keys for idempotent requests can only be used with the same parameters they were first used with. Try
+using a key other than 'pi-booking-2018-0'"* — surfacing as a `PaymentException` from
+`POST /Payments/CreateIntent`. It looked random (other bookings paid fine) and "fixed itself" after a day.
+
+**Cause.** `pi-booking-{booking.Id}-{payments.Count}` is built entirely from values a re-seed resets. The
+seeder wipes and refills the tables, identity columns restart, and booking id 2018 comes back as a
+*different* booking with a different `TotalAmount` — but with zero payment rows, so its first Pay tap
+recomputes the byte-identical key `pi-booking-2018-0`. Stripe keeps each key for 24 hours *with the
+parameters it first saw* and refuses a reuse whose parameters differ (that guarantee is the whole point of
+idempotency keys). Nothing local clears Stripe's memory: restarting the API does nothing, and the "fix"
+was either paying a booking whose id had never been used or simply waiting out the 24 hours.
+`refund-payment-{id}` had exactly the same flaw, one step further down the flow.
+
+**Fix.** New `Booking.PaymentIdempotencyToken` — a 32-char GUID minted in the entity initializer when the
+booking is created (the same `Guid.NewGuid().ToString("N")` pattern as `User.SecurityStamp`), required,
+unique index, server-only. Keys become `pi-{token}-{attempt}` and `refund-{token}-{paymentId}`.
+
+It sits on the **booking** rather than being minted per call on purpose: an idempotency key must be
+*identical* for two calls that mean the same attempt (that is what collapses a double-tapped *Pay* into one
+intent) and *different* for calls that don't. A GUID generated inside `CreateIntentAsync` would satisfy
+the second and break the first — two racing calls would create two intents, two `Payment` rows and, if
+both sheets were confirmed, two charges to unwind. A token persisted *before* the attempt keeps the key
+deterministic while making it unreproducible by any re-seed.
+
+Migration `20260821164253_AddBookingPaymentIdempotencyToken`: add the column, backfill existing rows with
+`LOWER(REPLACE(CONVERT(nvarchar(36), NEWID()), '-', ''))` (evaluated per row, matching `ToString("N")`),
+then create the unique index — in that order, or the index would trip over the shared `""` default.
+Verified on a throwaway database (full chain applies) and on the dev database (2019 bookings, 2019
+distinct tokens, none empty). No DTO, client or UI change.
 
 ---
 

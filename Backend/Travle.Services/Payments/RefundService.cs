@@ -147,10 +147,12 @@ namespace Travle.Services.Payments
                     {
                         // The idempotency key is derived from the payment, so even if this succeeds on Stripe but
                         // the SaveChanges below fails, a later retry returns the SAME refund (never a double refund).
+                        // It is seeded by the booking's random token for the same reason the intent key is (a
+                        // re-seed recycles payment ids; Stripe remembers a key for 24 hours).
                         var refund = await _stripe.CreateRefundAsync(
                             payment.StripePaymentIntentId,
                             PaymentMath.ToMinorUnits(amount),
-                            $"refund-payment-{payment.Id}",
+                            $"refund-{payment.Booking.PaymentIdempotencyToken}-{payment.Id}",
                             cancellationToken);
                         stripeRefundId = refund.Id;
                     }

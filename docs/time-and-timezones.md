@@ -241,9 +241,11 @@ has no zone to misbind, so it's correct regardless of client or server zone.
   **lenient** (roll forward), matching the Flutter client's own `DateTime` normalisation. See §3.
 - **Confirmed correct (no change):** a fixed-duration slot spanning a DST transition shows a wall-clock
   span ±1 h (§3, "Duration across a DST boundary"); a 0% refund writes a silent `Refund` row (§9).
-- **Noted (out of scope):** a Stripe idempotency-key collision surfaced during re-seed testing — the key
-  `pi-booking-{id}-{paymentCount}` is deterministic from booking id, so it clashes with Stripe's 24 h
-  memory of the same key + a different amount after a DB re-seed. Unrelated to time; tracked separately.
+- **Noted (out of scope, since FIXED):** a Stripe idempotency-key collision surfaced during re-seed
+  testing — the key `pi-booking-{id}-{paymentCount}` was deterministic from the booking id, so it clashed
+  with Stripe's 24 h memory of the same key + a different amount after a DB re-seed. Unrelated to time;
+  fixed on 2026-08-21 by seeding the key from a random `Booking.PaymentIdempotencyToken`
+  (`payments-and-stripe.md` §3.4).
 - **Added:** a searchable IANA **time-zone picker** for the desktop City form (new
   `CrudFieldKind.timezone` → `RawAutocomplete` over `allTimeZoneIds()` from the bundled tz database, with
   client-side validation that a non-empty value is a real id). `TravleTextField` gained a `focusNode`

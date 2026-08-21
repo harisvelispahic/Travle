@@ -30,6 +30,16 @@ namespace Travle.Services.Database
 
         public DateTime? ExpiresAt { get; set; }
 
+        /// <summary>
+        /// Random per-booking seed for the Stripe idempotency keys of this booking's payment attempts
+        /// (and their refunds). Idempotency keys must be identical for two calls that mean the same
+        /// attempt and different for calls that don't — so the key cannot be built from the booking id
+        /// alone: a database re-seed hands that id to an unrelated booking with a different amount, and
+        /// Stripe (which remembers a key for 24 hours together with the parameters it first saw) rejects
+        /// the mismatch. This token is minted once, here, and never reused.
+        /// </summary>
+        public string PaymentIdempotencyToken { get; set; } = Guid.NewGuid().ToString("N");
+
         public ICollection<Payment> Payments { get; set; } = new List<Payment>();
     }
 }

@@ -142,8 +142,11 @@ namespace Travle.Services.Payments
             };
 
             // Stable per attempt: a duplicate simultaneous create returns the same intent; a fresh attempt
-            // (after a canceled intent) gets a new key because the payment-row count has grown.
-            var idempotencyKey = $"pi-booking-{booking.Id}-{booking.Payments.Count}";
+            // (after a canceled intent) gets a new key because the payment-row count has grown. The seed is
+            // the booking's random PaymentIdempotencyToken rather than its id, because ids are recycled by a
+            // database re-seed while Stripe remembers a key (and the amount it first carried) for 24 hours —
+            // a recycled id would collide with the previous occupant's key and be rejected.
+            var idempotencyKey = $"pi-{booking.PaymentIdempotencyToken}-{booking.Payments.Count}";
 
             var intent = await _stripe.CreatePaymentIntentAsync(
                 amountMinorUnits, currency, metadata, idempotencyKey, cancellationToken);

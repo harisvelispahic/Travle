@@ -17,7 +17,7 @@ All entities inherit `BaseEntity { Id, CreatedAt (UTC), ModifiedAt? }` (timestam
 | 5 | **DestinationImages** | DestinationId FK, ImageData, ThumbnailData, ContentType, SortOrder | thumbnails ~15–30 KB for lists |
 | 6 | **Tours** | OrganizerId FK, Name, Description, DurationMinutes, PricePerPerson decimal(18,2), Capacity, TourTypeId FK, IsActive | no refund-policy FK — policy is global |
 | 7 | **TourSchedules** | TourId FK, StartsAt/EndsAt (UTC), Capacity, SeatsTaken, Status (Active/Cancelled), CancelledReason?, CancelledAt? | seats math here |
-| 8 | **Bookings** | UserId FK, TourScheduleId FK, NumberOfPeople, TotalAmount, StatusId FK, StatusChangedAt, ConfirmedByUserId?, RejectionReason?, CancelledByUserId?, CancellationReason?, ExpiresAt? (**+15 min** for PaymentInProgress) | state machine only |
+| 8 | **Bookings** | UserId FK, TourScheduleId FK, NumberOfPeople, TotalAmount, StatusId FK, StatusChangedAt, ConfirmedByUserId?, RejectionReason?, CancelledByUserId?, CancellationReason?, ExpiresAt? (**+15 min** for PaymentInProgress), PaymentIdempotencyToken (GUID, unique — seeds Stripe idempotency keys) | state machine only |
 | 9 | **Payments** | BookingId FK, StripePaymentIntentId (uq), Amount, Currency, PlatformFeePercentage, PlatformFeeAmount, Status, SucceededAt? | fee snapshot from config |
 | 10 | **Refunds** | PaymentId FK, StripeRefundId, Amount, PercentageApplied, Reason, InitiatedByUserId FK | actual-amount based |
 | 11 | **DestinationReviews** | DestinationId FK, UserId FK, Rating 1–5, Comment, IsRemoved, RemovedByUserId?, RemovalReason? | open to registered users |

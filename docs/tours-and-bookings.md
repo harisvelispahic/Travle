@@ -99,13 +99,15 @@ Booking
 ├─ StatusChangedAt
 ├─ ConfirmedByUserId?, RejectionReason?           (organizer decision audit)
 ├─ CancelledByUserId?, CancellationReason?        (cancellation audit)
-└─ ExpiresAt?                      (set +15 min while PaymentInProgress; the seat "hold")
+├─ ExpiresAt?                      (set +15 min while PaymentInProgress; the seat "hold")
+└─ PaymentIdempotencyToken         (random GUID; seeds this booking's Stripe idempotency keys)
 ```
 
 - A booking points at a **schedule**, not a tour. To know *which tour* a booking is for, you follow `Booking → TourSchedule → Tour`.
 - **`TotalAmount` is never trusted from the client.** The server multiplies the tour's `PricePerPerson` by `NumberOfPeople` at creation time and snapshots the result, so later price edits don't change existing bookings.
 - **The status is the whole story of the booking** and is only ever changed by the centralized state machine (§6). Bookings are **never hard-deleted** — even `Expired` and `Cancelled` rows are kept as audit evidence.
 - **`ExpiresAt`** is the reservation's 15-minute grace period: while a booking is `PaymentInProgress`, it holds its seats until this instant; if payment doesn't complete, a scheduler expires it and releases the seats.
+- **`PaymentIdempotencyToken`** is a random 32-character GUID minted with the booking and never shown to anyone. Every Stripe call this booking causes (payment intents, refunds) derives its idempotency key from it, so the keys stay stable across retries but can never be reproduced by a database re-seed — see `payments-and-stripe.md` §3.4.
 
 ### 2.5 The supporting cast (brief — full detail in later phases)
 
