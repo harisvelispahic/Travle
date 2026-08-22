@@ -327,7 +327,7 @@ class _ReferenceCrudScreenState<T> extends State<ReferenceCrudScreen<T>> {
         items: [
           DropdownMenuItem<Object?>(
             value: null,
-            child: Text('All ${label.toLowerCase()}s'),
+            child: Text('All ${_pluralOf(label.toLowerCase())}'),
           ),
           for (final option in options ?? const <CrudOption>[])
             DropdownMenuItem<Object?>(
@@ -339,4 +339,24 @@ class _ReferenceCrudScreenState<T> extends State<ReferenceCrudScreen<T>> {
       ),
     );
   }
+}
+
+/// English plural of a filter's label, for the "All …" option: naively appending
+/// an "s" turned Country into "All countrys". Covers the labels this screen can
+/// be given (Country ⇒ countries, Region ⇒ regions, Category ⇒ categories).
+String _pluralOf(String noun) {
+  const vowels = 'aeiou';
+  if (noun.length > 1 &&
+      noun.endsWith('y') &&
+      !vowels.contains(noun[noun.length - 2])) {
+    return '${noun.substring(0, noun.length - 1)}ies';
+  }
+  if (noun.endsWith('s') ||
+      noun.endsWith('x') ||
+      noun.endsWith('z') ||
+      noun.endsWith('ch') ||
+      noun.endsWith('sh')) {
+    return '${noun}es';
+  }
+  return '${noun}s';
 }

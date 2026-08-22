@@ -180,12 +180,19 @@ class _DestinationsModerationScreenState
                   decoration: InputDecoration(
                     isDense: true,
                     hintText: 'Search name or description',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _search.text.isEmpty
-                        ? null
-                        : IconButton(
+                    // Trailing controls, in reading order: clear (only once
+                    // something is typed), then the magnifier. Every other
+                    // desktop list searches as you type; this one queries on
+                    // demand, so the magnifier is the visible trigger — Enter
+                    // still works.
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_search.text.isNotEmpty)
+                          IconButton(
                             icon: const Icon(Icons.clear),
                             tooltip: 'Clear',
+                            visualDensity: VisualDensity.compact,
                             onPressed: _loading
                                 ? null
                                 : () {
@@ -193,6 +200,14 @@ class _DestinationsModerationScreenState
                                     _reload();
                                   },
                           ),
+                        IconButton(
+                          icon: const Icon(Icons.search),
+                          tooltip: 'Search',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: _loading ? null : _reload,
+                        ),
+                      ],
+                    ),
                   ),
                   onChanged: (_) => setState(() {}), // toggle the clear button
                   onSubmitted: (_) => _reload(),
