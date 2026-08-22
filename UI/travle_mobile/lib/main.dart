@@ -5,6 +5,7 @@ import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
 
 import 'app/auth_gate.dart';
+import 'app/notification_toast_host.dart';
 
 void main() => runTravleApp(() {
       WidgetsFlutterBinding.ensureInitialized();
@@ -21,6 +22,12 @@ void main() => runTravleApp(() {
 
 class TravleMobileApp extends StatelessWidget {
   const TravleMobileApp({super.key});
+
+  /// The app's navigator, held here so the toast host — which is mounted *above*
+  /// the navigator, and therefore has none in its own ancestry — can open a
+  /// tapped notification's detail screen.
+  static final GlobalKey<NavigatorState> _navigatorKey =
+      GlobalKey<NavigatorState>();
 
   @override
   Widget build(BuildContext context) {
@@ -54,6 +61,14 @@ class TravleMobileApp extends StatelessWidget {
         title: 'Travle',
         debugShowCheckedModeBanner: false,
         theme: buildTravleTheme(),
+        navigatorKey: _navigatorKey,
+        // Live notification toasts are mounted here rather than in a screen or
+        // the shell: `builder` wraps the navigator, so they float over every
+        // route and dialog instead of being buried by the next push.
+        builder: (context, child) => NotificationToastHost(
+          navigatorKey: _navigatorKey,
+          child: child ?? const SizedBox.shrink(),
+        ),
         home: const AuthGate(),
       ),
     );

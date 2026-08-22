@@ -329,15 +329,26 @@ exposes a broadcast **`pushes`** stream so an app can react to individual push t
   time, and the read state. Opening it marks the notification read; when it carries a `relatedEntityId` of
   a navigable type, a **"View booking" / "View destination"** button deep-links there. All notification
   navigation lives here.
-- **`layouts/bottom_nav_shell.dart`** — besides hosting the bell, it subscribes to the provider's
-  `pushes`. On a `RoleApplicationApproved` push that granted a **mobile** role the current token lacks
-  (Curator — which unlocks submitting destinations), it force-logs-out via a "sign in again" dialog, so the
-  next sign-in issues a JWT carrying the role and the app's permissions update. Becoming an **Organizer** (a
-  desktop role) grants nothing on mobile, so it's ignored. The role check is `AuthProvider.newlyGrantedRoles()`,
-  which diffs `/Access/Me`'s live DB roles against the token's. This is the SignalR-triggered resolution of
-  the long-deferred "force re-login after a live role grant" item — impossible before the hub existed
-  (approving a role revokes refresh tokens, but the stateless access token stayed valid for up to its
-  lifetime, so the new role only appeared after natural expiry).
+- **`app/auth_gate.dart`** — subscribes to the provider's `pushes` and owns the **session-affecting**
+  ones (`sessionAffectingNotificationTypes`: suspension, a role grant/revoke, an approved application, a
+  password change). Those roll the account's security stamp server-side, so the token in hand is already
+  dead: the gate attempts a silent refresh and, when that fails, ends the session with a friendly reason.
+  This is the SignalR-triggered resolution of the long-deferred "force re-login after a live role grant"
+  item — impossible before the hub existed (approving a role revokes refresh tokens, but the stateless
+  access token stayed valid until natural expiry). Full mechanism in `auth-token-invalidation.md`; it
+  superseded the original Phase 9 wiring, which lived in `bottom_nav_shell.dart` and diffed `/Access/Me`'s
+  live DB roles against the token's.
+- **`app/notification_toast_host.dart`** + **`widgets/notification_toast.dart`** — the live **toast** layer
+  (2026-08-22). The host listens to the same `pushes` stream, skips the session-affecting types the gate
+  owns, and drops a card in at the top of the screen for everything else: a queue of 3, auto-dismissed
+  after 5 s, swipe-up or ✕ to dismiss, tap → that notification's detail screen. It is mounted from
+  **`MaterialApp.builder`**, not from a screen or the shell, because `builder` wraps the navigator: the
+  toast then paints above every route and dialog. Mobile — unlike desktop — spends most of its time on
+  *pushed* routes, so the desktop's shell-hosted model would bury the toast under whatever screen the user
+  opened. Because the host sits above the navigator it has no `Navigator` ancestor, hence the app's
+  `navigatorKey`, and no `Overlay` either — a toast must therefore stay clear of `Tooltip`, dropdown
+  menus and selectable text fields. The one thing it cannot cover is what Flutter doesn't draw: the native
+  Stripe PaymentSheet and system dialogs.
 - **`util/notification_display.dart`** — shared presentation helpers keyed on the backend type name:
   `notificationIcon`, `notificationIsNegative` (error vs primary color), `notificationTypeLabel`
   (`"BookingConfirmed"` → `"Booking Confirmed"`), and the time formatters (both reinterpret the server's
@@ -482,8 +493,8 @@ no per-record pages). Everything else — the core, the bell, the centre, the de
   `NotificationProvider.pushes`: it keeps a small queue (max 4), auto-dismisses each after 6 s, stacks them
   top-right over the content, and a tap opens that notification's detail (with the same `onNavigateToSection`
   deep-link). No backend change; the DB row + bell badge stay the durable record, the toast is purely the
-  live nudge. (Mobile deliberately keeps no toast — its live nudge is the badge; only the management app
-  asked for toasts.) Desktop force-reauth on a live *desktop* role grant is still not wired (mobile-only for
+  live nudge. (Mobile deliberately kept no toast at this point — its live nudge was the badge; only the
+  management app had asked for toasts. Reversed 2026-08-22, see below.) Desktop force-reauth on a live *desktop* role grant is still not wired (mobile-only for
   now) — noted for later, not part of S1.
 - **2026-08-17** — **Ripple-events hardening pass (backend + both Flutter clients, all analyzer/compile
   clean).** Closed the cross-role notification gaps found in the 2026-08-16 audit, plus two policy/feature
@@ -547,6 +558,26 @@ no per-record pages). Everything else — the core, the bell, the centre, the de
   `credit_card_off_outlined`) and to the mobile detail screen's booking deep-link set, so the notification
   opens the booking that can still be paid. Full rationale — including why a `succeeded` event must now be
   honoured on a `Failed` row — in `payments-and-stripe.md` §9.
+
+- **2026-08-22** — **Mobile live toasts (analyzer clean, device-verified same day).** Mobile now gets the transient nudge desktop got
+  in S1, reversing the 2026-08-11 "mobile keeps no toast" note: the badge alone made a live push easy to
+  miss while the user was reading a destination or paying. New `travle_mobile/widgets/notification_toast.dart`
+  (a full-width card mirroring the centre row's icon/colour/title/body, drop-in + fade, swipe-up or ✕ to
+  dismiss) and `travle_mobile/app/notification_toast_host.dart` (queue max 3, 5 s auto-dismiss, tap → the
+  notification's detail). **The placement is the whole point:** the host wraps the app from
+  `MaterialApp.builder`, above the navigator, so it paints over every route, dialog and bottom sheet — the
+  desktop's shell-hosted toasts sit *inside* the shell and would be covered by any pushed route, which on
+  mobile is nearly always the case. It skips `sessionAffectingNotificationTypes` (the `AuthGate` answers
+  those with a refresh / re-login dialog), so no event is surfaced twice. `main.dart` gained a
+  `navigatorKey` — the host has no `Navigator` ancestor of its own. No backend, core or shell change; the
+  row + bell badge remain the durable record. **Known limits:** a toast cannot cover the native Stripe
+  PaymentSheet or system dialogs (not Flutter-drawn), and it is not suppressed while the notification
+  centre itself is open (same as desktop). **Gotcha found on the device:** living above the navigator also
+  means living above the app's **`Overlay`**, so the card must not use any widget that needs one — the ✕
+  button's `tooltip:` threw *"No Overlay widget found"*, and the substituted `RenderErrorBox` (100000px
+  wide by default) then overflowed the card's `Row` by 99708px. Tooltip dropped for an `Icon.semanticLabel`
+  (a phone has no hover anyway); both files carry the warning. Also purges the queue on sign-out — the host
+  never unmounts, so a card from the ended session would otherwise linger over the login screen.
 
 ---
 

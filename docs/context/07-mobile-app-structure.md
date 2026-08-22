@@ -59,7 +59,7 @@ Header: avatar, name, email. Items:
 - **Log out** — confirmation → Logout endpoint (server revokes refresh tokens) → Login.
 
 ### 9. Notifications (🔔)
-List: unread bold with dot, title, text, relative time; tap = mark read (+ navigate to the related entity when applicable); "Mark all as read". Live inserts via SignalR while the app is open; badge updates everywhere.
+List: unread bold with dot, title, text, relative time; tap = mark read (+ navigate to the related entity when applicable); "Mark all as read". Live inserts via SignalR while the app is open; badge updates everywhere. A live push also drops a transient **toast** at the top of the screen (tap = open that notification, swipe up or ✕ = dismiss); it is mounted above the navigator, so it shows over whatever screen the user is on.
 
 ## Stretch: Map screen (post-Phase-11, defined in 00 §3.1)
 A dedicated screen (opened from Search or a 5th tab) rendering Approved destinations as tappable markers on an interactive map (flutter_map + OpenStreetMap), fed by a light bbox-filtered endpoint; marker tap → mini card → details.
