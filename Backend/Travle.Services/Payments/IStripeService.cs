@@ -71,7 +71,9 @@ namespace Travle.Services.Payments
         string Id,
         StripeWebhookEventType Type,
         string? PaymentIntentId,
-        string? FailureMessage);
+        string? FailureMessage,
+        long? AmountReceivedMinorUnits,
+        string? Currency);
 
     /// <summary>
     /// The Travle-shaped subset of a Stripe PaymentIntent the app cares about. <see cref="ClientSecret"/>

@@ -28,6 +28,16 @@ class AdminBookingsScreen extends StatefulWidget {
 class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
   static const _pageSize = 20;
 
+  // The four filters have to share one row at the minimum window width (1200 px):
+  //   1200 - 248 (side nav) - 32 (padding) - 60 (refresh button) = 860 px,
+  // minus 3 x 12 px of Wrap spacing = 824 px of control. 280 + 170 + 170 + 190 = 810
+  // leaves a little headroom. Period is a dropdown rather than a SegmentedButton for
+  // the same reason: the segmented version alone measured 334 px, which no amount of
+  // trimming elsewhere could absorb — and it matches the other three filters.
+  static const _searchWidth = 280.0;
+  static const _filterWidth = 170.0;
+  static const _organizerWidth = 190.0;
+
   /// Organizers are a small, stable set; one page of 100 covers the platform.
   static const _organizerPageSize = 100;
 
@@ -150,7 +160,7 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     SizedBox(
-                      width: 280,
+                      width: _searchWidth,
                       child: TextField(
                         controller: _searchController,
                         onChanged: _onSearchChanged,
@@ -173,29 +183,31 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
                         ),
                       ),
                     ),
-                    SegmentedButton<_Timeframe>(
-                      segments: const [
-                        ButtonSegment(
-                          value: _Timeframe.upcoming,
-                          label: Text('Upcoming'),
-                          icon: Icon(Icons.event_available_outlined),
-                        ),
-                        ButtonSegment(
-                          value: _Timeframe.past,
-                          label: Text('Past'),
-                          icon: Icon(Icons.history),
-                        ),
-                      ],
-                      selected: {_timeframe},
-                      onSelectionChanged: _loading
-                          ? null
-                          : (selection) {
-                              setState(() => _timeframe = selection.first);
-                              _reload();
-                            },
+                    SizedBox(
+                      width: _filterWidth,
+                      child: DropdownButtonFormField<_Timeframe>(
+                        isExpanded: true,
+                        initialValue: _timeframe,
+                        decoration: const InputDecoration(
+                            isDense: true, labelText: 'Period'),
+                        onChanged: _loading
+                            ? null
+                            : (v) {
+                                if (v == null) return;
+                                setState(() => _timeframe = v);
+                                _reload();
+                              },
+                        items: const [
+                          DropdownMenuItem(
+                              value: _Timeframe.upcoming,
+                              child: Text('Upcoming')),
+                          DropdownMenuItem(
+                              value: _Timeframe.past, child: Text('Past')),
+                        ],
+                      ),
                     ),
                     SizedBox(
-                      width: 190,
+                      width: _filterWidth,
                       child: DropdownButtonFormField<int?>(
                         isExpanded: true,
                         initialValue: _statusId,
@@ -215,7 +227,7 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
                       ),
                     ),
                     SizedBox(
-                      width: 220,
+                      width: _organizerWidth,
                       child: DropdownButtonFormField<int?>(
                         isExpanded: true,
                         initialValue: _organizerId,

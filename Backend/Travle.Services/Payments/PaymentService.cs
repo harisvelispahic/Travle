@@ -212,7 +212,14 @@ namespace Travle.Services.Payments
             payment.Status = PaymentStatus.Succeeded;
             payment.SucceededAt = DateTime.UtcNow;
 
-            if (payment.Booking.StatusId == (int)BookingStatusCode.PaymentInProgress)
+            // Never promote a booking on a charge that does not match what this row says was owed. The
+            // intent was minted server-side with our amount and currency, and the row is looked up BY that
+            // intent id, so a mismatch should be impossible — which is exactly why it is worth asserting:
+            // if it ever happens, the safe outcome is to bank the money truthfully and give it straight
+            // back, not to hand out a seat against an amount we did not price.
+            var captured = MatchesRecordedCharge(payment, evt);
+
+            if (captured && payment.Booking.StatusId == (int)BookingStatusCode.PaymentInProgress)
             {
                 // The state machine owns the transition (and the PaymentSucceeded notification); its
                 // SaveChanges also persists the Payment edit above (same DbContext scope).
@@ -220,21 +227,56 @@ namespace Travle.Services.Payments
             }
             else
             {
-                // Rare race: the charge landed after the booking left PaymentInProgress — the 15-minute hold
-                // expired (seats released, possibly resold) or the organizer cancelled the slot. The money was
-                // really captured, so record it truthfully, then auto-refund it in full: a traveler must never
-                // be charged for a booking they cannot get. The refund runs post-commit (Stripe is never called
-                // inside a DB transaction) and is idempotent, so a webhook replay is safe. The booking is not
+                // Two ways to land here, both ending the same way — bank the charge, then give it back in
+                // full. (1) The common race: the charge landed after the booking left PaymentInProgress — the
+                // 15-minute hold expired (seats released, possibly resold) or the organizer cancelled the
+                // slot. (2) The amount/currency guard above rejected the charge. Either way the money was
+                // really captured, so record it truthfully and auto-refund: a traveler must never be charged
+                // for a booking they cannot get. The refund runs post-commit (Stripe is never called inside a
+                // DB transaction) and is idempotent, so a webhook replay is safe. The booking is not
                 // resurrected — its seats may already be resold; the traveler is simply made whole.
                 _logger.LogWarning(
-                    "Stripe webhook {EventId}: payment {PaymentId} succeeded but booking {BookingId} is in status {StatusId}; recording the charge and auto-refunding it in full.",
-                    evt.Id, payment.Id, payment.BookingId, payment.Booking.StatusId);
+                    "Stripe webhook {EventId}: payment {PaymentId} succeeded but it cannot be applied "
+                    + "(amountMatches={Matches}, booking {BookingId} status {StatusId}); recording the charge and auto-refunding it in full.",
+                    evt.Id, payment.Id, captured, payment.BookingId, payment.Booking.StatusId);
                 await _dbContext.SaveChangesAsync(cancellationToken);
                 await _refunds.RefundOrphanedPaymentAsync(
                     payment.Id,
                     "Payment captured after the booking was no longer active; automatic full refund.",
                     cancellationToken);
             }
+        }
+
+        // Confirms the charge Stripe reports is the one this row priced: same minor-unit amount, same
+        // currency. Events that carry neither figure (an older API version, a trimmed test payload) are
+        // accepted — the intent id already ties the event to this row, and refusing on a missing optional
+        // field would strand real charges.
+        private bool MatchesRecordedCharge(Payment payment, StripeWebhookEvent evt)
+        {
+            if (evt.AmountReceivedMinorUnits is not long received)
+            {
+                return true;
+            }
+
+            var expected = PaymentMath.ToMinorUnits(payment.Amount);
+            if (received != expected)
+            {
+                _logger.LogError(
+                    "Stripe webhook {EventId}: payment {PaymentId} captured {Received} minor units but the recorded amount is {Expected}.",
+                    evt.Id, payment.Id, received, expected);
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(evt.Currency)
+                && !string.Equals(evt.Currency, payment.Currency, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogError(
+                    "Stripe webhook {EventId}: payment {PaymentId} captured in '{Received}' but the recorded currency is '{Expected}'.",
+                    evt.Id, payment.Id, evt.Currency, payment.Currency);
+                return false;
+            }
+
+            return true;
         }
 
         private async Task HandlePaymentFailedAsync(StripeWebhookEvent evt, CancellationToken cancellationToken)

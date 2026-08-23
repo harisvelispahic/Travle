@@ -63,6 +63,7 @@ export 'src/models/user_register_request.dart';
 export 'src/models/user_response.dart';
 export 'src/models/user_update_request.dart';
 export 'src/network/api_error.dart';
+export 'src/network/http_transport.dart';
 export 'src/network/search_result.dart';
 export 'src/network/base_search_object.dart';
 export 'src/network/base_provider.dart';

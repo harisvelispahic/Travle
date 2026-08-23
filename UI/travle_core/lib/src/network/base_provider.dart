@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../app_config.dart';
 import '../auth/auth_provider.dart';
 import 'api_error.dart';
+import 'http_transport.dart';
 import 'search_result.dart';
 
 /// Generic API data-access base — the client analogue of the backend
@@ -162,11 +163,14 @@ abstract class BaseProvider<T> with ChangeNotifier {
   /// "session expired" error). The retried 401 still falls through to
   /// [validateResponse] for the immediate caller.
   Future<http.Response> _send(Future<http.Response> Function() request) async {
-    var response = await request();
+    // HttpTransport turns a request that never reaches the server (API down,
+    // wrong port, no network, timeout) into a presentable ApiClientException,
+    // so callers only ever have one exception type to catch.
+    var response = await HttpTransport.guard(request);
     if (response.statusCode == 401 && AuthProvider.instance != null) {
       final refreshed = await AuthProvider.instance!.tryRefresh();
       if (refreshed) {
-        response = await request();
+        response = await HttpTransport.guard(request);
       } else {
         unawaited(AuthProvider.onSessionEnded
             ?.call('Your session has ended. Please sign in again.'));

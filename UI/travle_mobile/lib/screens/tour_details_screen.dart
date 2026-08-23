@@ -36,6 +36,9 @@ class TourDetailsScreen extends StatefulWidget {
 class _TourDetailsScreenState extends State<TourDetailsScreen> {
   TourResponse? _tour;
   bool _loading = true;
+
+  /// True while a booking create is in flight — disables every Book button.
+  bool _booking = false;
   bool _isFavorite = false;
   bool _favoriteBusy = false;
   String? _error;
@@ -81,7 +84,7 @@ class _TourDetailsScreenState extends State<TourDetailsScreen> {
 
   Future<void> _book(TourScheduleResponse schedule) async {
     final tour = _tour;
-    if (tour == null) return;
+    if (tour == null || _booking) return;
 
     final people = await showModalBottomSheet<int>(
       context: context,
@@ -94,6 +97,11 @@ class _TourDetailsScreenState extends State<TourDetailsScreen> {
     );
     if (people == null || !mounted) return;
 
+    // Lock every Book button for the round trip: without it a second tap starts a
+    // second hold. The backend refuses the duplicate (active-booking guard + the
+    // filtered unique index), but the traveler would see a needless error instead
+    // of nothing happening.
+    setState(() => _booking = true);
     try {
       final booking = await context.read<BookingProvider>().create(
             BookingInsertRequest(
@@ -114,6 +122,8 @@ class _TourDetailsScreenState extends State<TourDetailsScreen> {
     } on ApiClientException catch (e) {
       if (!mounted) return;
       AppSnackbars.error(context, e.message);
+    } finally {
+      if (mounted) setState(() => _booking = false);
     }
   }
 
@@ -244,6 +254,7 @@ class _TourDetailsScreenState extends State<TourDetailsScreen> {
         _Departures(
           schedules: tour.schedules ?? const [],
           onBook: _book,
+          booking: _booking,
           canBook: tour.isActive,
         ),
         const SizedBox(height: TravleTokens.space24),
@@ -572,6 +583,7 @@ class _Departures extends StatelessWidget {
     required this.schedules,
     required this.onBook,
     required this.canBook,
+    required this.booking,
   });
 
   final List<TourScheduleResponse> schedules;
@@ -579,6 +591,9 @@ class _Departures extends StatelessWidget {
 
   /// False when the tour is inactive — the slots are shown but not bookable.
   final bool canBook;
+
+  /// True while a create is in flight; every Book button is disabled meanwhile.
+  final bool booking;
 
   @override
   Widget build(BuildContext context) {
@@ -628,7 +643,7 @@ class _Departures extends StatelessWidget {
                     Align(
                       alignment: Alignment.centerRight,
                       child: FilledButton.icon(
-                        onPressed: () => onBook(s),
+                        onPressed: booking ? null : () => onBook(s),
                         icon: const Icon(Icons.add_circle_outline, size: 18),
                         label: const Text('Book'),
                       ),

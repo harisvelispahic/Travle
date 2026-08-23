@@ -115,8 +115,15 @@ namespace Travle.Services.Payments
             };
 
             var intent = stripeEvent.Data.Object as PaymentIntent;
+            // AmountReceived / Currency travel with the event so the handler can confirm that what Stripe
+            // actually captured is what this Payment row recorded, before any booking is promoted.
             return new StripeWebhookEvent(
-                stripeEvent.Id, type, intent?.Id, intent?.LastPaymentError?.Message);
+                stripeEvent.Id,
+                type,
+                intent?.Id,
+                intent?.LastPaymentError?.Message,
+                intent?.AmountReceived,
+                intent?.Currency);
         }
 
         public async Task<StripeRefundResult> CreateRefundAsync(

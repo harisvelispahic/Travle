@@ -12,6 +12,7 @@ import '../models/reset_password_request.dart';
 import '../models/user_register_request.dart';
 import '../models/user_response.dart';
 import '../network/api_error.dart';
+import '../network/http_transport.dart';
 import 'app_role.dart';
 
 /// Owns the authenticated session: tokens, the decoded JWT, the user's roles,
@@ -129,13 +130,13 @@ class AuthProvider extends ChangeNotifier {
     final token = _accessToken;
     if (token == null) return null;
     try {
-      final response = await http.get(
+      final response = await HttpTransport.guard(() => http.get(
         Uri.parse('${AppConfig.baseUrl}Access/Me'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-      );
+      ));
       if (_isSuccess(response)) {
         return UserResponse.fromJson(
             jsonDecode(response.body) as Map<String, dynamic>);
@@ -147,11 +148,11 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> login(String username, String password) async {
-    final response = await http.post(
+    final response = await HttpTransport.guard(() => http.post(
       Uri.parse('${AppConfig.baseUrl}Access/Login'),
       headers: const {'Content-Type': 'application/json'},
       body: jsonEncode({'username': username, 'password': password}),
-    );
+    ));
     if (_isSuccess(response)) {
       _applySession(jsonDecode(response.body) as Map<String, dynamic>);
       await _resolveSession();
@@ -172,11 +173,11 @@ class AuthProvider extends ChangeNotifier {
   /// Registers a new account (server assigns the Traveler role) and signs in
   /// immediately, so onboarding routing kicks in right after.
   Future<void> register(UserRegisterRequest request) async {
-    final response = await http.post(
+    final response = await HttpTransport.guard(() => http.post(
       Uri.parse('${AppConfig.baseUrl}Access/Register'),
       headers: const {'Content-Type': 'application/json'},
       body: jsonEncode(request.toJson()),
-    );
+    ));
     if (!_isSuccess(response)) {
       throw ApiClientException(
         ApiErrorParser.messageFromBody(response.body) ??
@@ -187,11 +188,11 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> forgotPassword(String email) async {
-    final response = await http.post(
+    final response = await HttpTransport.guard(() => http.post(
       Uri.parse('${AppConfig.baseUrl}Access/ForgotPassword'),
       headers: const {'Content-Type': 'application/json'},
       body: jsonEncode(ForgotPasswordRequest(email: email).toJson()),
-    );
+    ));
     if (!_isSuccess(response)) {
       throw ApiClientException(
         ApiErrorParser.messageFromBody(response.body) ??
@@ -201,11 +202,11 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> resetPassword(ResetPasswordRequest request) async {
-    final response = await http.post(
+    final response = await HttpTransport.guard(() => http.post(
       Uri.parse('${AppConfig.baseUrl}Access/ResetPassword'),
       headers: const {'Content-Type': 'application/json'},
       body: jsonEncode(request.toJson()),
-    );
+    ));
     if (!_isSuccess(response)) {
       throw ApiClientException(
         ApiErrorParser.messageFromBody(response.body) ??
@@ -231,11 +232,11 @@ class AuthProvider extends ChangeNotifier {
     final refreshToken = _refreshToken;
     if (refreshToken == null) return false;
     try {
-      final response = await http.post(
+      final response = await HttpTransport.guard(() => http.post(
         Uri.parse('${AppConfig.baseUrl}Access/RefreshToken'),
         headers: const {'Content-Type': 'application/json'},
         body: jsonEncode({'refreshToken': refreshToken}),
-      );
+      ));
       if (_isSuccess(response)) {
         _applySession(jsonDecode(response.body) as Map<String, dynamic>);
         return true;
