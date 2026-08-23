@@ -2,26 +2,41 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "mobile • physical device (localhost + adb reverse)",
+      "name": "mobile • Android emulator (10.0.2.2 → docker 5121)",
       "cwd": "UI/travle_mobile",
       "request": "launch",
       "type": "dart",
       "toolArgs": ["--dart-define-from-file=env.json"]
     },
     {
-      "name": "mobile • Android emulator (10.0.2.2)",
+      "name": "mobile • physical device (adb reverse → docker 5121)",
       "cwd": "UI/travle_mobile",
       "request": "launch",
       "type": "dart",
-      "toolArgs": ["--dart-define-from-file=env.emulator.json"]
+      "toolArgs": ["--dart-define-from-file=env.device.json"]
     },
     {
-      "name": "desktop • Windows (localhost)",
+      "name": "mobile • physical device (adb reverse → dotnet run 5126)",
+      "cwd": "UI/travle_mobile",
+      "request": "launch",
+      "type": "dart",
+      "toolArgs": ["--dart-define-from-file=env.local.json"]
+    },
+    {
+      "name": "desktop • Windows (docker 5121)",
       "cwd": "UI/travle_desktop",
       "request": "launch",
       "type": "dart",
       "deviceId": "windows",
       "toolArgs": ["--dart-define-from-file=env.json"]
+    },
+    {
+      "name": "desktop • Windows (dotnet run 5126)",
+      "cwd": "UI/travle_desktop",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "windows",
+      "toolArgs": ["--dart-define-from-file=env.local.json"]
     }
   ]
 }

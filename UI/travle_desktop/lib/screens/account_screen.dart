@@ -296,8 +296,7 @@ class _EditAccountDialogState extends State<_EditAccountDialog> {
               prefixIcon: Icons.phone_outlined,
               keyboardType: TextInputType.phone,
               textInputAction: TextInputAction.done,
-              validator: (v) =>
-                  Validators.maxLength(v, 20, field: 'Phone number'),
+              validator: Validators.phone,
             ),
             const SizedBox(height: TravleTokens.space24),
             Text('Home city', style: theme.textTheme.titleSmall),

@@ -14,6 +14,8 @@ DestinationCategoryResponse _$DestinationCategoryResponseFromJson(
   description: json['description'] as String?,
   imageThumbnail: json['imageThumbnail'] as String?,
   createdAt: DateTime.parse(json['createdAt'] as String),
+  usageCount: (json['usageCount'] as num?)?.toInt() ?? 0,
+  deleteBlockedReason: json['deleteBlockedReason'] as String?,
   modifiedAt: json['modifiedAt'] == null
       ? null
       : DateTime.parse(json['modifiedAt'] as String),
@@ -26,6 +28,8 @@ Map<String, dynamic> _$DestinationCategoryResponseToJson(
   'name': instance.name,
   'description': instance.description,
   'imageThumbnail': instance.imageThumbnail,
+  'usageCount': instance.usageCount,
+  'deleteBlockedReason': instance.deleteBlockedReason,
   'createdAt': instance.createdAt.toIso8601String(),
   'modifiedAt': instance.modifiedAt?.toIso8601String(),
 };

@@ -68,6 +68,13 @@ namespace Travle.Services.Reports
 
             var totalUsers = await _dbContext.Users.CountAsync(cancellationToken);
 
+            var newUsersThisMonth = await _dbContext.Users.CountAsync(
+                u => u.CreatedAt >= monthStart && u.CreatedAt < monthEnd, cancellationToken);
+
+            // Every booking that got past the transient payment hold — the same set the chart counts.
+            var totalBookings = await _dbContext.Bookings.CountAsync(
+                b => ChartStatusIds.Contains(b.StatusId), cancellationToken);
+
             var activeTours = await _dbContext.Tours.CountAsync(
                 t => t.IsActive
                      && !t.Organizer.IsSuspended
@@ -102,6 +109,8 @@ namespace Travle.Services.Reports
             return new DashboardResponse
             {
                 TotalUsers = totalUsers,
+                NewUsersThisMonth = newUsersThisMonth,
+                TotalBookings = totalBookings,
                 ActiveTours = activeTours,
                 PendingRoleApplications = pendingRoleApplications,
                 PendingDestinations = pendingDestinations,
@@ -407,7 +416,8 @@ namespace Travle.Services.Reports
             var curatorId = _authorization.RequireUserId();
 
             var query = _dbContext.Destinations.AsNoTracking()
-                .Where(d => d.SubmittedByUserId == curatorId);
+                .Where(d => d.SubmittedByUserId == curatorId)
+                .WhereContains(search.Name, d => d.Name);
 
             int? totalCount = null;
             if (search.IncludeTotalCount ?? false)

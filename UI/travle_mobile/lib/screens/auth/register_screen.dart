@@ -162,8 +162,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           keyboardType: TextInputType.phone,
                           textInputAction: TextInputAction.next,
                           autofillHints: const [AutofillHints.telephoneNumber],
-                          validator: (v) =>
-                              Validators.maxLength(v, 20, field: 'Phone number'),
+                          validator: Validators.phone,
                         ),
                         const SizedBox(height: TravleTokens.space24),
 

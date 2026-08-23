@@ -106,8 +106,11 @@ ReferenceEntityConfig<CountryResponse> _country() =>
       idOf: (c) => c.id,
       rowTitle: (c) => c.name,
       emptyMessage: 'No countries yet.',
+      deleteBlockedReason: (c) => c.deleteBlockedReason,
       columns: [
         TableColumnSpec(label: 'Name', sortKey: 'Name', flex: 3, cell: (c) => c.name),
+        TableColumnSpec(
+            label: 'In use', flex: 1, numeric: true, cell: (c) => '${c.usageCount}'),
         TableColumnSpec(
             label: 'Added', sortKey: 'CreatedAt', flex: 2, cell: (c) => _date(c.createdAt)),
       ],
@@ -125,6 +128,7 @@ ReferenceEntityConfig<RegionResponse> _region() =>
       idOf: (r) => r.id,
       rowTitle: (r) => r.name,
       emptyMessage: 'No regions yet.',
+      deleteBlockedReason: (r) => r.deleteBlockedReason,
       columns: [
         TableColumnSpec(label: 'Name', sortKey: 'Name', flex: 3, cell: (r) => r.name),
         TableColumnSpec(
@@ -132,6 +136,8 @@ ReferenceEntityConfig<RegionResponse> _region() =>
             sortKey: 'Country.Name',
             flex: 3,
             cell: (r) => r.countryName ?? '—'),
+        TableColumnSpec(
+            label: 'In use', flex: 1, numeric: true, cell: (r) => '${r.usageCount}'),
         TableColumnSpec(
             label: 'Added', sortKey: 'CreatedAt', flex: 2, cell: (r) => _date(r.createdAt)),
       ],
@@ -160,6 +166,7 @@ ReferenceEntityConfig<CityResponse> _city() => ReferenceEntityConfig<CityRespons
       idOf: (c) => c.id,
       rowTitle: (c) => c.name,
       emptyMessage: 'No cities yet.',
+      deleteBlockedReason: (c) => c.deleteBlockedReason,
       columns: [
         TableColumnSpec(label: 'Name', sortKey: 'Name', flex: 3, cell: (c) => c.name),
         TableColumnSpec(
@@ -169,6 +176,8 @@ ReferenceEntityConfig<CityResponse> _city() => ReferenceEntityConfig<CityRespons
             cell: (c) => c.regionName ?? '—'),
         TableColumnSpec(
             label: 'Time zone', flex: 3, cell: (c) => c.timeZoneId),
+        TableColumnSpec(
+            label: 'In use', flex: 1, numeric: true, cell: (c) => '${c.usageCount}'),
         TableColumnSpec(
             label: 'Added', sortKey: 'CreatedAt', flex: 2, cell: (c) => _date(c.createdAt)),
       ],
@@ -232,6 +241,7 @@ ReferenceEntityConfig<DestinationCategoryResponse> _category() =>
       idOf: (c) => c.id,
       rowTitle: (c) => c.name,
       emptyMessage: 'No categories yet.',
+      deleteBlockedReason: (c) => c.deleteBlockedReason,
       columns: [
         TableColumnSpec(label: 'Name', sortKey: 'Name', flex: 3, cell: (c) => c.name),
         TableColumnSpec(
@@ -241,6 +251,8 @@ ReferenceEntityConfig<DestinationCategoryResponse> _category() =>
             cell: (c) => c.description ?? '—'),
         TableColumnSpec(
             label: 'Image', flex: 1, cell: (c) => c.imageThumbnail == null ? '—' : 'Set'),
+        TableColumnSpec(
+            label: 'In use', flex: 1, numeric: true, cell: (c) => '${c.usageCount}'),
         TableColumnSpec(
             label: 'Added', sortKey: 'CreatedAt', flex: 2, cell: (c) => _date(c.createdAt)),
       ],
@@ -290,6 +302,8 @@ ReferenceEntityConfig<TourTypeResponse> _tourType() =>
       name: (t) => t.name,
       createdAt: (t) => t.createdAt,
       emptyMessage: 'No tour types yet.',
+      usageCount: (t) => t.usageCount,
+      deleteBlockedReason: (t) => t.deleteBlockedReason,
     );
 
 ReferenceEntityConfig<TagResponse> _tag() => _simpleNamed<TagResponse>(
@@ -299,6 +313,8 @@ ReferenceEntityConfig<TagResponse> _tag() => _simpleNamed<TagResponse>(
       name: (t) => t.name,
       createdAt: (t) => t.createdAt,
       emptyMessage: 'No tags yet.',
+      usageCount: (t) => t.usageCount,
+      deleteBlockedReason: (t) => t.deleteBlockedReason,
     );
 
 ReferenceEntityConfig<RefundPolicyTierResponse> _refundTier() =>
@@ -388,6 +404,8 @@ ReferenceEntityConfig<T> _simpleNamed<T>({
   required String Function(T) name,
   required DateTime Function(T) createdAt,
   required String emptyMessage,
+  required int Function(T) usageCount,
+  required String? Function(T) deleteBlockedReason,
 }) {
   return ReferenceEntityConfig<T>(
     title: title,
@@ -395,8 +413,11 @@ ReferenceEntityConfig<T> _simpleNamed<T>({
     idOf: idOf,
     rowTitle: name,
     emptyMessage: emptyMessage,
+    deleteBlockedReason: deleteBlockedReason,
     columns: [
       TableColumnSpec(label: 'Name', sortKey: 'Name', flex: 3, cell: name),
+      TableColumnSpec(
+          label: 'In use', flex: 1, numeric: true, cell: (row) => '${usageCount(row)}'),
       TableColumnSpec(
           label: 'Added', sortKey: 'CreatedAt', flex: 2, cell: (row) => _date(createdAt(row))),
     ],

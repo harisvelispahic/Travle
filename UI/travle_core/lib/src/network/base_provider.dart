@@ -152,10 +152,9 @@ abstract class BaseProvider<T> with ChangeNotifier {
     return response.bodyBytes;
   }
 
-  /// Override in subclasses to build [T] from a decoded JSON object.
-  T fromJson(Map<String, dynamic> json) {
-    throw UnimplementedError('fromJson not implemented for $runtimeType');
-  }
+  /// Builds [T] from a decoded JSON object. Abstract on purpose: every concrete
+  /// provider implements it, so there is no half-finished stub to fall into.
+  T fromJson(Map<String, dynamic> json);
 
   /// Runs [request]; on a 401, silently refreshes the token once and retries.
   /// A failed refresh clears the session and hands off to [AuthProvider.onSessionEnded]

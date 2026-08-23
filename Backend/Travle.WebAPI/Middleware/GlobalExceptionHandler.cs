@@ -8,12 +8,13 @@ namespace Travle.WebAPI.Middleware;
 /// <summary>
 /// Terminal link in the chain (registered last): the catch-all for anything the more specific
 /// handlers did not claim. Every such exception is an <b>unexpected/infrastructure</b> failure,
-/// so it is logged in full (this is the only record of it) and reported to the client as a
-/// generic HTTP 500 with <b>no internal detail</b> — the stack trace is attached only in the
-/// Development environment. This is the layer that guarantees stack traces never leak to
-/// production clients (course constraint §3.4 / §8.1).
+/// so it is logged in full — with the stack trace and the <c>TraceId</c> — and reported to the
+/// client as a generic HTTP 500 carrying <b>no internal detail at all</b>. The response never
+/// includes a stack trace in any environment, development included: a developer reads it from the
+/// log the <c>TraceId</c> points at. This is the layer that guarantees internals never leak to a
+/// client (course constraint §3.4 / §8.1).
 /// </summary>
-public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger, IHostEnvironment environment) : IExceptionHandler
+public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger) : IExceptionHandler
 {
     private const string SafeMessage = "An unexpected error occurred. Please try again later.";
 
@@ -38,8 +39,7 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
         {
             Message = SafeMessage,
             Errors = new Dictionary<string, string[]> { ["server"] = [SafeMessage] },
-            TraceId = traceId,
-            Details = environment.IsDevelopment() ? exception.ToString() : null // stack trace ONLY in Development
+            TraceId = traceId
         };
 
         await ErrorResponseWriter.WriteAsync(httpContext, HttpStatusCode.InternalServerError, body, cancellationToken);

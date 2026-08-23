@@ -60,6 +60,31 @@ namespace Travle.Services
             return trimmed;
         }
 
+        private static string BlockedReason(string name, int destinationCount, int userCount)
+            => $"Cannot delete city '{name}': it is referenced by {destinationCount} destination(s) and "
+               + $"{userCount} user profile(s).";
+
+        // Projected list read: usage = destinations in the city + users who call it home.
+        public override Task<PageResult<CityResponse>> GetAllAsync(CitySearch? search = null)
+            => GetPageAsync(
+                search,
+                c => new CityResponse
+                {
+                    Id = c.Id,
+                    Name = c.Name,
+                    RegionId = c.RegionId,
+                    RegionName = c.Region.Name,
+                    TimeZoneId = c.TimeZoneId,
+                    UsageCount = _dbContext.Destinations.Count(d => d.CityId == c.Id)
+                                 + _dbContext.Users.Count(u => u.CityId == c.Id),
+                    CreatedAt = c.CreatedAt,
+                    ModifiedAt = c.ModifiedAt
+                },
+                row => row.DeleteBlockedReason = row.UsageCount == 0
+                    ? null
+                    : $"Cannot delete city '{row.Name}': it is still referenced by "
+                      + $"{row.UsageCount} other record(s).");
+
         protected override IQueryable<City> ApplyFilters(IQueryable<City> query, CitySearch? search)
         {
             if (search == null)
@@ -76,10 +101,6 @@ namespace Travle.Services
 
             return query;
         }
-
-        // List path: JOIN the parent so Mapster flattens Region.Name -> CityResponse.RegionName.
-        protected override IQueryable<City> ApplyIncludes(IQueryable<City> query, CitySearch? search)
-            => query.Include(c => c.Region);
 
         // Single-entity path (GetById / create / update): load the parent so RegionName is populated.
         protected override Task LoadResponseNavigationsAsync(City entity)
@@ -108,10 +129,13 @@ namespace Travle.Services
         protected override async Task OnBeforeDeleteAsync(City entity)
         {
             int destinationCount = await _dbContext.Destinations.CountAsync(d => d.CityId == entity.Id);
-            if (destinationCount > 0)
+            // Users pick a home city too, and that FK is Restrict — without this check the delete escapes
+            // as a raw DbUpdateException (a bare 500) instead of the required human explanation.
+            int userCount = await _dbContext.Users.CountAsync(u => u.CityId == entity.Id);
+
+            if (destinationCount > 0 || userCount > 0)
             {
-                throw new ConflictException(
-                    $"Cannot delete city '{entity.Name}': it is referenced by {destinationCount} destination(s).");
+                throw new ConflictException(BlockedReason(entity.Name, destinationCount, userCount));
             }
         }
 

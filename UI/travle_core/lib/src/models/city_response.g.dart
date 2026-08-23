@@ -13,6 +13,8 @@ CityResponse _$CityResponseFromJson(Map<String, dynamic> json) => CityResponse(
   createdAt: DateTime.parse(json['createdAt'] as String),
   regionName: json['regionName'] as String?,
   timeZoneId: json['timeZoneId'] as String? ?? 'UTC',
+  usageCount: (json['usageCount'] as num?)?.toInt() ?? 0,
+  deleteBlockedReason: json['deleteBlockedReason'] as String?,
   modifiedAt: json['modifiedAt'] == null
       ? null
       : DateTime.parse(json['modifiedAt'] as String),
@@ -25,6 +27,8 @@ Map<String, dynamic> _$CityResponseToJson(CityResponse instance) =>
       'regionId': instance.regionId,
       'regionName': instance.regionName,
       'timeZoneId': instance.timeZoneId,
+      'usageCount': instance.usageCount,
+      'deleteBlockedReason': instance.deleteBlockedReason,
       'createdAt': instance.createdAt.toIso8601String(),
       'modifiedAt': instance.modifiedAt?.toIso8601String(),
     };

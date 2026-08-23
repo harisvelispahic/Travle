@@ -12,6 +12,8 @@ class RegionResponse {
     required this.countryId,
     required this.createdAt,
     this.countryName,
+    this.usageCount = 0,
+    this.deleteBlockedReason,
     this.modifiedAt,
   });
 
@@ -21,6 +23,15 @@ class RegionResponse {
 
   /// Flattened parent country name (present on detail reads).
   final String? countryName;
+  /// How many other records still reference this row (0 = deletable).
+  @JsonKey(defaultValue: 0)
+  final int usageCount;
+
+  /// Why this row cannot be deleted, or null when it can — rendered as the
+  /// disabled Delete button's tooltip (course UI rule: unavailable actions are
+  /// disabled with the reason shown).
+  final String? deleteBlockedReason;
+
   final DateTime createdAt;
   final DateTime? modifiedAt;
 

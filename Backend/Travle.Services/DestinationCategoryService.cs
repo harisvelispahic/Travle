@@ -42,35 +42,30 @@ namespace Travle.Services
         // The list projection deliberately excludes the heavy full Image bytes — only the small
         // ImageThumbnail rides along (rule 12). This override is needed because the generic base loads whole
         // entities into memory before mapping, which would otherwise drag every category's full blob.
-        public override async Task<PageResult<DestinationCategoryResponse>> GetAllAsync(DestinationCategorySearch? search = null)
-        {
-            IQueryable<DestinationCategory> query = _dbContext.DestinationCategories.AsNoTracking();
-            query = ApplyFilters(query, search);
+        /// <summary>The one sentence used both as the disabled-Delete reason and as the conflict message.</summary>
+        private static string BlockedReason(string name, int destinationCount, int interactionCount)
+            => $"Cannot delete category '{name}': it is referenced by {destinationCount} destination(s) and "
+               + $"{interactionCount} recorded interaction(s).";
 
-            int? totalCount = null;
-            if (search?.IncludeTotalCount ?? false)
-            {
-                totalCount = await query.CountAsync();
-            }
-
-            query = ApplySorting(query, search);
-            query = ApplyPaging(query, search);
-
-            var items = await query
-                .Select(c => new DestinationCategoryResponse
+        public override Task<PageResult<DestinationCategoryResponse>> GetAllAsync(DestinationCategorySearch? search = null)
+            => GetPageAsync(
+                search,
+                c => new DestinationCategoryResponse
                 {
                     Id = c.Id,
                     Name = c.Name,
                     Description = c.Description,
                     // Thumbnail only — the full Image bytes are intentionally never selected here.
                     ImageThumbnail = c.ImageThumbnail,
+                    UsageCount = _dbContext.Destinations.Count(d => d.CategoryId == c.Id)
+                                 + _dbContext.UserInteractions.Count(i => i.CategoryId == c.Id),
                     CreatedAt = c.CreatedAt,
                     ModifiedAt = c.ModifiedAt
-                })
-                .ToListAsync();
-
-            return new PageResult<DestinationCategoryResponse> { Items = items, TotalCount = totalCount };
-        }
+                },
+                row => row.DeleteBlockedReason = row.UsageCount == 0
+                    ? null
+                    : $"Cannot delete category '{row.Name}': it is still referenced by "
+                      + $"{row.UsageCount} other record(s).");
 
         // Name/description are set here; the image is applied in the async OnBefore hooks (validation +
         // thumbnail generation are async and can't run in this synchronous map step). Never let the mapper
@@ -116,8 +111,7 @@ namespace Travle.Services
 
             if (destinationCount > 0 || interactionCount > 0)
             {
-                throw new ConflictException(
-                    $"Cannot delete category '{entity.Name}': it is referenced by {destinationCount} destination(s) and {interactionCount} recorded interaction(s).");
+                throw new ConflictException(BlockedReason(entity.Name, destinationCount, interactionCount));
             }
         }
 

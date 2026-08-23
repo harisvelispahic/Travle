@@ -21,6 +21,23 @@ class Validators {
         : 'Enter a valid email address';
   }
 
+  /// Optional phone number: blank passes, otherwise the value must look like a
+  /// real number. Mirrors the backend `ContactRules.PhonePattern` /
+  /// `ContactRules.PhoneMessage` (course §4 wants a format check plus a message
+  /// that spells the format out) — keep the two in step.
+  static final RegExp _phonePattern = RegExp(r'^\+?[0-9][0-9 \-()/]{5,19}$');
+
+  /// Validates an optional phone number. Pair with [required] when mandatory.
+  static String? phone(String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) return null;
+    if (text.length > 20) return 'Phone number cannot exceed 20 characters';
+    return _phonePattern.hasMatch(text)
+        ? null
+        : "Digits only, optionally starting with '+' — "
+            'e.g. +387 61 234 567 or 061/234-567';
+  }
+
   /// Fails when the trimmed length is below [min].
   static String? minLength(
     String? value,

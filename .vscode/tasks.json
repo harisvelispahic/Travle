@@ -2,13 +2,6 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "adb reverse (dev 5126)",
-      "detail": "Bridge a USB-connected phone's localhost:5126 to the laptop's API (dotnet run).",
-      "type": "shell",
-      "command": "adb reverse tcp:5126 tcp:5126",
-      "problemMatcher": []
-    },
-    {
       "label": "adb reverse (docker 5121)",
       "detail": "Bridge a USB-connected phone's localhost:5121 to the laptop's API (docker compose).",
       "type": "shell",
@@ -16,17 +9,24 @@
       "problemMatcher": []
     },
     {
-      "label": "run mobile over Wi-Fi (dev 5126)",
-      "detail": "Connect the phone over Wi-Fi (adb tcpip), adb reverse, then flutter run. Cable needed only the first time / after a phone reboot.",
+      "label": "adb reverse (dotnet run 5126)",
+      "detail": "Bridge a USB-connected phone's localhost:5126 to the laptop's API (dotnet run).",
       "type": "shell",
-      "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}/UI/run-mobile-wifi.ps1\"",
+      "command": "adb reverse tcp:5126 tcp:5126",
       "problemMatcher": []
     },
     {
       "label": "run mobile over Wi-Fi (docker 5121)",
-      "detail": "Same as above but against the docker-compose API on 5121 (env.docker.json).",
+      "detail": "Connect the phone over Wi-Fi (adb tcpip), adb reverse, then flutter run against the docker-compose API (env.device.json).",
       "type": "shell",
       "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}/UI/run-mobile-wifi.ps1\" -Docker",
+      "problemMatcher": []
+    },
+    {
+      "label": "run mobile over Wi-Fi (dotnet run 5126)",
+      "detail": "Same as above but against a locally run API on 5126 (env.local.json). Cable needed only the first time / after a phone reboot.",
+      "type": "shell",
+      "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}/UI/run-mobile-wifi.ps1\"",
       "problemMatcher": []
     }
   ]

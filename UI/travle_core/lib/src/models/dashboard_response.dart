@@ -12,6 +12,8 @@ part 'dashboard_response.g.dart';
 class DashboardResponse {
   DashboardResponse({
     required this.totalUsers,
+    required this.newUsersThisMonth,
+    required this.totalBookings,
     required this.activeTours,
     required this.pendingRoleApplications,
     required this.pendingDestinations,
@@ -22,6 +24,8 @@ class DashboardResponse {
   });
 
   final int totalUsers;
+  final int newUsersThisMonth;
+  final int totalBookings;
   final int activeTours;
   final int pendingRoleApplications;
   final int pendingDestinations;

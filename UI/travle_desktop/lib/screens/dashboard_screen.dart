@@ -88,50 +88,68 @@ class _MetricsRow extends StatelessWidget {
 
   final DashboardResponse data;
 
+  static const _gap = TravleTokens.space12;
+
   @override
   Widget build(BuildContext context) {
     final pending = data.pendingRoleApplications + data.pendingDestinations;
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: StatTile(
-              label: 'Users',
-              value: data.totalUsers.toString(),
-              icon: Icons.group_outlined,
-            ),
-          ),
-          const SizedBox(width: TravleTokens.space12),
-          Expanded(
-            child: StatTile(
-              label: 'Active tours',
-              value: data.activeTours.toString(),
-              icon: Icons.tour_outlined,
-            ),
-          ),
-          const SizedBox(width: TravleTokens.space12),
-          Expanded(
-            child: StatTile(
-              label: 'Pending requests',
-              value: pending.toString(),
-              sub:
-                  '${data.pendingRoleApplications} applications · '
-                  '${data.pendingDestinations} destinations',
-              icon: Icons.pending_actions_outlined,
-            ),
-          ),
-          const SizedBox(width: TravleTokens.space12),
-          Expanded(
-            child: StatTile(
-              label: 'Revenue this month',
-              value: formatPrice(data.monthlyNetRevenue),
-              icon: Icons.account_balance_wallet_outlined,
-              emphasize: true,
-            ),
-          ),
-        ],
+    final newUsers = data.newUsersThisMonth;
+    final tiles = <Widget>[
+      StatTile(
+        label: 'Users',
+        value: data.totalUsers.toString(),
+        sub: newUsers == 1
+            ? '1 new this month'
+            : '$newUsers new this month',
+        icon: Icons.group_outlined,
       ),
+      StatTile(
+        label: 'Bookings',
+        value: data.totalBookings.toString(),
+        sub: 'all time',
+        icon: Icons.receipt_long_outlined,
+      ),
+      StatTile(
+        label: 'Active tours',
+        value: data.activeTours.toString(),
+        sub: 'with upcoming dates',
+        icon: Icons.tour_outlined,
+      ),
+      StatTile(
+        label: 'Pending requests',
+        value: pending.toString(),
+        sub: '${data.pendingRoleApplications} applications · '
+            '${data.pendingDestinations} destinations',
+        icon: Icons.pending_actions_outlined,
+      ),
+      StatTile(
+        label: 'Revenue this month',
+        value: formatPrice(data.monthlyNetRevenue),
+        sub: 'net of refunds',
+        icon: Icons.account_balance_wallet_outlined,
+        emphasize: true,
+      ),
+    ];
+
+    // Flow the tiles instead of forcing one row: five never fit legibly on a
+    // narrow window, and an ellipsized money figure is worse than a second row.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final perRow = constraints.maxWidth >= 1180
+            ? 5
+            : constraints.maxWidth >= 760
+                ? 3
+                : 2;
+        final width =
+            (constraints.maxWidth - _gap * (perRow - 1)) / perRow;
+        return Wrap(
+          spacing: _gap,
+          runSpacing: _gap,
+          children: [
+            for (final tile in tiles) SizedBox(width: width, child: tile),
+          ],
+        );
+      },
     );
   }
 }

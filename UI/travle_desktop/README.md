@@ -1,17 +1,15 @@
 # travle_desktop
 
-A new Flutter project.
+The Travle **desktop client** (Flutter, Windows) — the administrative app.
 
-## Getting Started
+Administrators moderate destinations, reviews and role applications, manage all
+reference data, oversee every booking and payment, administer users, and generate
+the PDF reports. Organizers manage their tours, departures, bookings and
+statistics.
 
-This project is a starting point for a Flutter application.
+It depends on two path packages in this repo: `travle_core` (models, providers,
+auth, networking) and `travle_ui` (design tokens and shared widgets).
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Run and build instructions — including the `--dart-define=API_BASE_URL=…`
+configuration and the `env*.json` files — are in [`../RUNNING.md`](../RUNNING.md)
+and in the repository [`README.md`](../../README.md).

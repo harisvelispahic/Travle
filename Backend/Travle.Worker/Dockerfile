@@ -3,7 +3,7 @@
 
 FROM mcr.microsoft.com/dotnet/runtime:10.0 AS base
 WORKDIR /app
-ENV DOTNET_ENVIRONMENT=Development
+# DOTNET_ENVIRONMENT is NOT baked in: docker-compose supplies it from .env (course §3.3).
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src

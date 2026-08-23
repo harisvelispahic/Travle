@@ -270,6 +270,7 @@ class _ReferenceCrudScreenState<T> extends State<ReferenceCrudScreen<T>> {
       newLabel: 'New ${_config.title}',
       onEdit: writable ? _edit : null,
       onDelete: writable ? _delete : null,
+      deleteDisabledReason: writable ? _config.deleteBlockedReason : null,
     );
   }
 

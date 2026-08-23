@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
@@ -22,6 +24,10 @@ class _CuratorStatsScreenState extends State<CuratorStatsScreen> {
 
   final ReportProvider _provider = ReportProvider();
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _debounce;
+
+  String _search = '';
 
   CuratorStatsResponse? _headline;
   final List<CuratorDestinationStatRow> _rows = [];
@@ -41,9 +47,21 @@ class _CuratorStatsScreenState extends State<CuratorStatsScreen> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
+    _searchController.dispose();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  // Narrows the breakdown to matching destination names (server-side, accent-aware).
+  void _onSearchChanged(String value) {
+    setState(() {});
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      setState(() => _search = value.trim());
+      _loadBreakdown();
+    });
   }
 
   void _onScroll() {
@@ -57,7 +75,31 @@ class _CuratorStatsScreenState extends State<CuratorStatsScreen> {
         'page': page,
         'pageSize': _pageSize,
         'includeTotalCount': true,
+        if (_search.isNotEmpty) 'name': _search,
       };
+
+  // Reloads only the per-destination breakdown (the headline totals cover the whole
+  // portfolio and never change with the filter).
+  Future<void> _loadBreakdown() async {
+    setState(() => _loadingMore = true);
+    try {
+      final firstPage =
+          await _provider.getCuratorDestinations(filter: _buildFilter(1));
+      if (!mounted) return;
+      setState(() {
+        _rows
+          ..clear()
+          ..addAll(firstPage.items);
+        _totalCount = firstPage.totalCount ?? firstPage.items.length;
+        _page = 1;
+        _loadingMore = false;
+      });
+    } on ApiClientException catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingMore = false);
+      AppSnackbars.error(context, e.message);
+    }
+  }
 
   // Loads the headline and the first page of the breakdown together (initial open
   // and pull-to-refresh). The two calls are independent, so they run concurrently.
@@ -159,6 +201,7 @@ class _CuratorStatsScreenState extends State<CuratorStatsScreen> {
         itemBuilder: (context, i) {
           if (i == 0) return _header(headline);
           if (showEmpty) return _breakdownEmpty();
+
           final rowIndex = i - 1;
           if (rowIndex >= _rows.length) {
             return const Padding(
@@ -185,11 +228,34 @@ class _CuratorStatsScreenState extends State<CuratorStatsScreen> {
         Text('Destination performance', style: theme.textTheme.titleMedium),
         const SizedBox(height: TravleTokens.space4),
         Text(
-          _rows.isEmpty
+          _rows.isEmpty && _search.isEmpty
               ? 'Your submissions and their reach appear here.'
               : 'Ordered by bookings reached',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: TravleTokens.space12),
+        TextField(
+          controller: _searchController,
+          onChanged: _onSearchChanged,
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            isDense: true,
+            prefixIcon: const Icon(Icons.search),
+            hintText: 'Search my destinations',
+            suffixIcon: _searchController.text.isEmpty
+                ? null
+                : IconButton(
+                    icon: const Icon(Icons.close),
+                    tooltip: 'Clear',
+                    onPressed: () {
+                      _searchController.clear();
+                      _debounce?.cancel();
+                      setState(() => _search = '');
+                      _loadBreakdown();
+                    },
+                  ),
           ),
         ),
         const SizedBox(height: TravleTokens.space12),
@@ -262,6 +328,13 @@ class _CuratorStatsScreenState extends State<CuratorStatsScreen> {
   }
 
   Widget _breakdownEmpty() {
+    if (_search.isNotEmpty) {
+      return EmptyState(
+        icon: Icons.search_off,
+        message: 'No matches',
+        hint: 'No destination of yours matches "$_search".',
+      );
+    }
     return EmptyState(
       icon: Icons.travel_explore_outlined,
       message: 'No destinations yet',

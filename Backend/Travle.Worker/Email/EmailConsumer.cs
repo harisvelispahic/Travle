@@ -15,7 +15,7 @@ namespace Travle.Worker.Email
     /// </summary>
     public sealed class EmailConsumer : BackgroundService
     {
-        private const int MaxSendAttempts = 4; // 1s, 2s, 4s backoff between the 4 tries
+        private const int MaxSendAttempts = 5; // exponential backoff between tries: 1s -> 2s -> 4s -> 8s
 
         private readonly RabbitMqOptions _rabbit;
         private readonly IEmailSender _emailSender;

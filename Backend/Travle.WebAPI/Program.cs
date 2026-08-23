@@ -396,12 +396,17 @@ app.UseExceptionHandler();
 
 // Configure the HTTP request pipeline. OpenAPI JSON + Scalar API reference (Scalar reads the
 // document from MapOpenApi; the bearer scheme added by the transformer gives it an auth field).
-app.MapOpenApi();
-app.MapScalarApiReference(options =>
+// Development-only, like every other non-production surface (course §5): the shipped .env runs the
+// stack in Development, so the reviewer still gets the interactive docs at /scalar.
+if (app.Environment.IsDevelopment())
 {
-    options.WithTitle("Travle API")
-           .AddPreferredSecuritySchemes("Bearer");
-});
+    app.MapOpenApi();
+    app.MapScalarApiReference(options =>
+    {
+        options.WithTitle("Travle API")
+               .AddPreferredSecuritySchemes("Bearer");
+    });
+}
 
 app.UseCors(TravleCorsPolicy);
 

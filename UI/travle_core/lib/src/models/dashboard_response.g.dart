@@ -9,6 +9,8 @@ part of 'dashboard_response.dart';
 DashboardResponse _$DashboardResponseFromJson(Map<String, dynamic> json) =>
     DashboardResponse(
       totalUsers: (json['totalUsers'] as num).toInt(),
+      newUsersThisMonth: (json['newUsersThisMonth'] as num).toInt(),
+      totalBookings: (json['totalBookings'] as num).toInt(),
       activeTours: (json['activeTours'] as num).toInt(),
       pendingRoleApplications: (json['pendingRoleApplications'] as num).toInt(),
       pendingDestinations: (json['pendingDestinations'] as num).toInt(),
@@ -25,6 +27,8 @@ DashboardResponse _$DashboardResponseFromJson(Map<String, dynamic> json) =>
 Map<String, dynamic> _$DashboardResponseToJson(DashboardResponse instance) =>
     <String, dynamic>{
       'totalUsers': instance.totalUsers,
+      'newUsersThisMonth': instance.newUsersThisMonth,
+      'totalBookings': instance.totalBookings,
       'activeTours': instance.activeTours,
       'pendingRoleApplications': instance.pendingRoleApplications,
       'pendingDestinations': instance.pendingDestinations,

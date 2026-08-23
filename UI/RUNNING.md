@@ -1,12 +1,17 @@
 # Running the Travle Flutter apps
 
-Both apps read the API base URL from a **build-time** variable `BASE_URL`, supplied
-via `--dart-define`. Nothing is hardcoded (project rule: config comes from the
+Both apps read the API base URL from a **build-time** variable `API_BASE_URL`,
+supplied via `--dart-define` and read with `String.fromEnvironment('API_BASE_URL')`
+(course §3.3). Nothing is hardcoded (project rule: config comes from the
 environment, never source).
+
+```bash
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:5121
+```
 
 ## How configuration is passed
 
-`env*.json` files hold `{ "BASE_URL": "..." }`. They are **not** read
+`env*.json` files hold `{ "API_BASE_URL": "..." }`. They are **not** read
 automatically — a bare `flutter run` or the IDE ▶ button ignores them. You must
 pass one explicitly:
 
@@ -16,7 +21,8 @@ flutter run --dart-define-from-file=env.json
 
 …or use the VS Code launch configs (below), which pass the right file per target.
 If nothing is passed, the built-in default in `travle_core/lib/src/app_config.dart`
-(`http://localhost:5126/`) is used.
+(`http://localhost:5121/`, i.e. the docker-compose API) is used. A trailing slash is
+optional — `AppConfig` normalizes it. `BASE_URL` is still accepted as an alias.
 
 ## API ports differ by how you run the backend
 
@@ -31,20 +37,19 @@ Same machine as the API, so `localhost` just works:
 
 ```bash
 cd UI/travle_desktop
-flutter run -d windows --dart-define-from-file=env.json      # → localhost:5126
+flutter run -d windows --dart-define-from-file=env.json        # → localhost:5121 (docker)
+flutter run -d windows --dart-define-from-file=env.local.json  # → localhost:5126 (dotnet run)
 ```
-
-For Docker, change the port in `env.json` to `5121`.
 
 ## Mobile — the device / emulator switch
 
 Two env files; pick one per run:
 
-| File | BASE_URL | Use when |
+| File | API_BASE_URL | Use when |
 |---|---|---|
-| `env.json` | `http://localhost:5126/` | **Physical phone over USB or Wi-Fi** (with `adb reverse`), dev API — the default |
-| `env.docker.json` | `http://localhost:5121/` | **Physical phone**, `docker compose` API (with `adb reverse`) |
-| `env.emulator.json` | `http://10.0.2.2:5126/` | **Android emulator** (AVD) |
+| `env.json` | `http://10.0.2.2:5121` | **Android emulator** (AVD) against `docker compose` — the release/APK default (course §9.2.1) |
+| `env.device.json` | `http://localhost:5121` | **Physical phone** over USB/Wi-Fi (with `adb reverse`), `docker compose` API |
+| `env.local.json` | `http://localhost:5126` | **Physical phone** over USB/Wi-Fi (with `adb reverse`), `dotnet run` dev API |
 
 `10.0.2.2` is a magic alias that exists **only inside the emulator** — it points at
 the host's loopback. On a real phone it is meaningless, which is why a physical
@@ -63,15 +68,15 @@ to `localhost` (exactly what the desktop app already uses).
 2. Open the tunnel (**re-run after replug / phone reboot / adb restart** — it does
    not survive those, but it does survive app restarts and hot reload):
    ```bash
-   adb reverse tcp:5126 tcp:5126        # Docker: adb reverse tcp:5121 tcp:5121
+   adb reverse tcp:5121 tcp:5121        # dotnet run: adb reverse tcp:5126 tcp:5126
    ```
-   VS Code shortcut: **Terminal → Run Task → "adb reverse (dev 5126)"**.
-3. Run the API normally (`dotnet run`) and the app with `env.json`:
+   VS Code shortcut: **Terminal → Run Task → "adb reverse (docker 5121)"**.
+3. Run the API (`docker compose up`) and the app with `env.device.json`:
    ```bash
    cd UI/travle_mobile
-   flutter run --dart-define-from-file=env.json
+   flutter run --dart-define-from-file=env.device.json
    ```
-4. **Verify** from the phone's browser: `http://localhost:5126/scalar/` should load.
+4. **Verify** from the phone's browser: `http://localhost:5121/scalar` should load.
    If it does, login will work too.
 
 ### Physical phone over Wi-Fi (no cable) — `run-mobile-wifi.ps1`
@@ -79,18 +84,18 @@ to `localhost` (exactly what the desktop app already uses).
 Same setup as USB, minus the cable: the script establishes the adb link over
 Wi-Fi instead. The important part is that **`adb reverse` works over the wireless
 adb transport exactly like over USB**, so the API can stay bound to `localhost`,
-`BASE_URL` stays `http://localhost:5126/`, and no firewall rule or `0.0.0.0` rebind
+`API_BASE_URL` stays `http://localhost:5121`, and no firewall rule or `0.0.0.0` rebind
 is needed. It uses "ADB over TCP/IP" (`adb tcpip 5555`), auto-detects and remembers
 the phone's IP, then runs `adb reverse` + `flutter run` for you.
 
 ```powershell
-UI\run-mobile-wifi.ps1              # dev API on 5126 (env.json)
-UI\run-mobile-wifi.ps1 -Docker      # docker-compose API on 5121 (env.docker.json)
+UI\run-mobile-wifi.ps1              # dev API on 5126 (env.local.json)
+UI\run-mobile-wifi.ps1 -Docker      # docker-compose API on 5121 (env.device.json)
 UI\run-mobile-wifi.ps1 -Ip 192.168.1.42   # skip auto-detect, use this IP
 UI\run-mobile-wifi.ps1 -Reset       # forget the saved IP, redo USB setup
 ```
 
-VS Code shortcut: **Terminal → Run Task → "run mobile over Wi-Fi (dev 5126)"**.
+VS Code shortcut: **Terminal → Run Task → "run mobile over Wi-Fi (docker 5121)"**.
 
 Prerequisites: compilable Flutter code, and the phone on the **same Wi-Fi** as the
 laptop. The one exception is the **first run** (and any run after the phone reboots,
@@ -109,7 +114,7 @@ What it does, in order:
    or Wi-Fi hiccups, which silently wipes the reverse tunnel — the watchdog restores
    it automatically so you never have to run `adb reverse` by hand mid-session. It is
    stopped when `flutter run` exits.
-4. `flutter run -d <phone> --dart-define-from-file=env.json` (or `env.docker.json`).
+4. `flutter run -d <phone> --dart-define-from-file=env.local.json` (or `env.device.json` with `-Docker`).
 
 It does **not** start the backend — run `dotnet run` (or `docker compose up`)
 yourself as usual; the script warns if nothing is listening on the API port yet.
@@ -121,8 +126,17 @@ yourself as usual; the script warns if nothing is listening on the API port yet.
 
 ### Android emulator (AVD)
 
-The emulator reaches the host via `10.0.2.2`, but a `localhost`-bound API will not
-accept that traffic. Bind the API to all interfaces and allow the port:
+Under `docker compose` this needs **no** rebind and no firewall rule — Docker already
+publishes the port on `0.0.0.0`:
+
+```bash
+cd UI/travle_mobile
+flutter run --dart-define-from-file=env.json     # → http://10.0.2.2:5121
+```
+
+Against a locally run API (`dotnet run`), `10.0.2.2` reaches the host but a
+`localhost`-bound Kestrel will not accept that traffic. Bind it to all interfaces and
+allow the port:
 
 ```bash
 dotnet run --project Backend/Travle.WebAPI --urls "http://0.0.0.0:5126"
@@ -135,27 +149,26 @@ is enough). Otherwise add the rule once, in an **elevated** PowerShell:
 New-NetFirewallRule -DisplayName "Travle API 5126" -Direction Inbound -Protocol TCP -LocalPort 5126 -Action Allow
 ```
 
-Then run the app with the emulator config:
+Then point the emulator at that port:
 
 ```bash
 cd UI/travle_mobile
-flutter run --dart-define-from-file=env.emulator.json
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:5126
 ```
-
-Under Docker the emulator uses `http://10.0.2.2:5121/` and needs **no** rebind or
-firewall rule — Docker already publishes the port on `0.0.0.0`.
 
 ## VS Code launch configs (the one-click switch)
 
-`.vscode/launch.json` (repo root) provides three entries in the Run and Debug
+`.vscode/launch.json` (repo root) provides these entries in the Run and Debug
 dropdown:
 
-- **mobile • physical device (localhost + adb reverse)** → `env.json`
-- **mobile • Android emulator (10.0.2.2)** → `env.emulator.json`
-- **desktop • Windows (localhost)** → `env.json`
+- **mobile • Android emulator (10.0.2.2 → docker 5121)** → `env.json`
+- **mobile • physical device (adb reverse → docker 5121)** → `env.device.json`
+- **mobile • physical device (adb reverse → dotnet run 5126)** → `env.local.json`
+- **desktop • Windows (docker 5121)** → `env.json`
+- **desktop • Windows (dotnet run 5126)** → `env.local.json`
 
-Pick one and press ▶. (For the physical-device config, run the `adb reverse` task
-once per session first.)
+Pick one and press ▶. (For the physical-device configs, run the matching `adb reverse`
+task once per session first.)
 
 ## Android manifest (already configured)
 

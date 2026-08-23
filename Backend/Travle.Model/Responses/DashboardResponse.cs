@@ -11,6 +11,15 @@ namespace Travle.Model.Responses
         /// <summary>Total registered user accounts.</summary>
         public int TotalUsers { get; set; }
 
+        /// <summary>Accounts registered in the current calendar month ("new users" on the tile).</summary>
+        public int NewUsersThisMonth { get; set; }
+
+        /// <summary>
+        /// Total bookings ever placed that reached a real state (everything except the transient
+        /// PaymentInProgress hold and expired holds) — the platform's headline volume figure.
+        /// </summary>
+        public int TotalBookings { get; set; }
+
         /// <summary>
         /// Active tours: <c>IsActive</c>, owned by a non-suspended organizer, with at least one future
         /// non-cancelled schedule.

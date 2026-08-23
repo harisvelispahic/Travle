@@ -13,6 +13,8 @@ class DestinationCategoryResponse {
     this.description,
     this.imageThumbnail,
     required this.createdAt,
+    this.usageCount = 0,
+    this.deleteBlockedReason,
     this.modifiedAt,
   });
 
@@ -24,6 +26,15 @@ class DestinationCategoryResponse {
 
   /// Small base64 PNG thumbnail for the onboarding grid / admin list.
   final String? imageThumbnail;
+
+  /// How many other records still reference this row (0 = deletable).
+  @JsonKey(defaultValue: 0)
+  final int usageCount;
+
+  /// Why this row cannot be deleted, or null when it can — rendered as the
+  /// disabled Delete button's tooltip (course UI rule: unavailable actions are
+  /// disabled with the reason shown).
+  final String? deleteBlockedReason;
 
   final DateTime createdAt;
   final DateTime? modifiedAt;

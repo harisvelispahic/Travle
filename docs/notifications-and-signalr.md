@@ -292,7 +292,7 @@ UIs are built on that shared core.
 ### 8.1 Shared core (`travle_core`)
 
 - **`realtime/notification_realtime_service.dart`** — wraps `signalr_netcore`'s `HubConnection` to
-  `{BASE_URL}hubs/notifications`, authenticating with `accessTokenFactory: () => AuthProvider.accessToken`
+  `{API_BASE_URL}hubs/notifications`, authenticating with `accessTokenFactory: () => AuthProvider.accessToken`
   (SignalR appends it as the `access_token` query param, matching the API's bearer wiring). It registers a
   handler for the server's `NotificationReceived` method and calls back into the provider.
   `withAutomaticReconnect` covers transient drops; `connect()` is idempotent so it doubles as a retry.

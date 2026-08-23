@@ -38,6 +38,7 @@ namespace Travle.Services.Validators
 
             RuleFor(x => x.PhoneNumber)
                 .MaximumLength(20).WithMessage("Phone number cannot exceed 20 characters.")
+                .Matches(ContactRules.PhonePattern).WithMessage(ContactRules.PhoneMessage)
                 .When(x => !string.IsNullOrEmpty(x.PhoneNumber));
 
             RuleFor(x => x.RoleIds)

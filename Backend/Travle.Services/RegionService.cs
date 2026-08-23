@@ -23,6 +23,30 @@ namespace Travle.Services
         {
         }
 
+        private static string BlockedReason(string name, int cityCount, int applicationCount)
+            => $"Cannot delete region '{name}': it is referenced by {cityCount} city/cities and "
+               + $"{applicationCount} role application(s).";
+
+        // Projected list read: usage = cities + role applications pointing at this region.
+        public override Task<PageResult<RegionResponse>> GetAllAsync(RegionSearch? search = null)
+            => GetPageAsync(
+                search,
+                r => new RegionResponse
+                {
+                    Id = r.Id,
+                    Name = r.Name,
+                    CountryId = r.CountryId,
+                    CountryName = r.Country.Name,
+                    UsageCount = _dbContext.Cities.Count(c => c.RegionId == r.Id)
+                                 + _dbContext.RoleApplications.Count(a => a.RegionId == r.Id),
+                    CreatedAt = r.CreatedAt,
+                    ModifiedAt = r.ModifiedAt
+                },
+                row => row.DeleteBlockedReason = row.UsageCount == 0
+                    ? null
+                    : $"Cannot delete region '{row.Name}': it is still referenced by "
+                      + $"{row.UsageCount} other record(s).");
+
         protected override IQueryable<Region> ApplyFilters(IQueryable<Region> query, RegionSearch? search)
         {
             if (search == null)
@@ -39,10 +63,6 @@ namespace Travle.Services
 
             return query;
         }
-
-        // List path: JOIN the parent so Mapster flattens Country.Name -> RegionResponse.CountryName.
-        protected override IQueryable<Region> ApplyIncludes(IQueryable<Region> query, RegionSearch? search)
-            => query.Include(r => r.Country);
 
         // Single-entity path (GetById / create / update): load the parent so CountryName is populated.
         protected override Task LoadResponseNavigationsAsync(Region entity)
@@ -75,8 +95,7 @@ namespace Travle.Services
 
             if (cityCount > 0 || applicationCount > 0)
             {
-                throw new ConflictException(
-                    $"Cannot delete region '{entity.Name}': it is referenced by {cityCount} city/cities and {applicationCount} role application(s).");
+                throw new ConflictException(BlockedReason(entity.Name, cityCount, applicationCount));
             }
         }
 

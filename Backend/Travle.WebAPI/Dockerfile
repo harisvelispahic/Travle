@@ -5,7 +5,8 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
 EXPOSE 5121
 ENV ASPNETCORE_URLS=http://+:5121
-ENV ASPNETCORE_ENVIRONMENT=Development
+# ASPNETCORE_ENVIRONMENT is NOT baked in: docker-compose supplies it from .env (course §3.3 —
+# configuration lives in one place, never hardcoded).
 
 # QuestPDF renders the report PDFs via SkiaSharp, which needs fontconfig present on Linux. The library
 # bundles its own fonts, so no font packages are required — only the native dependency.

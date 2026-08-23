@@ -102,6 +102,9 @@ services:
       - Payments__PlatformFeePercentage=${PLATFORM_FEE_PERCENTAGE}
       # Platform fallback zone for displaying tour event times (see docs/time-and-timezones.md).
       - Time__PlatformTimeZoneId=${PLATFORM_TIMEZONE:-Europe/Sarajevo}
+      # How far ahead the in-process sweep raises the pre-tour reminder. 24 h is the spec; widen it for
+      # a demo, since seeded departures rarely sit exactly 24 h away at review time.
+      - BookingReminder__WindowHours=${BOOKING_REMINDER_WINDOW_HOURS:-24}
     ports:
       - "${API_HOST_PORT}:5121"
     depends_on:

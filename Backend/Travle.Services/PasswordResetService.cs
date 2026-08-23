@@ -127,7 +127,7 @@ namespace Travle.Services
 
             // A password reset ends every existing session: bump the security stamp (rejects existing
             // access tokens on their next request) and drop all refresh tokens.
-            user.SecurityStamp = Guid.NewGuid().ToString("N");
+            user.SecurityStamp = SecurityStamps.New();
             _dbContext.RefreshTokens.RemoveRange(_dbContext.RefreshTokens.Where(rt => rt.UserId == user.Id));
 
             // Session-affecting push: any device still logged in on the old password is force-logged-out

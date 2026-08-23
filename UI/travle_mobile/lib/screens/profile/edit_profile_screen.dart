@@ -224,8 +224,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       prefixIcon: Icons.phone_outlined,
                       keyboardType: TextInputType.phone,
                       textInputAction: TextInputAction.done,
-                      validator: (v) =>
-                          Validators.maxLength(v, 20, field: 'Phone number'),
+                      validator: Validators.phone,
                     ),
                     const SizedBox(height: TravleTokens.space24),
                     Text('Location', style: theme.textTheme.titleMedium),

@@ -80,6 +80,11 @@ ThemeData buildTravleTheme({bool compact = false}) {
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: Colors.white,
+      // Validation messages must be readable in full, under the control (course §4).
+      // Flutter ellipsizes them to a single line by default, which truncates any
+      // message that states a format ("…e.g. +387 61 234 567"), so allow them to wrap.
+      errorMaxLines: 3,
+      helperMaxLines: 2,
       border: OutlineInputBorder(borderRadius: radius),
       enabledBorder: OutlineInputBorder(
         borderRadius: radius,

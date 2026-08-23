@@ -23,6 +23,28 @@ namespace Travle.Services
         {
         }
 
+        private static string BlockedReason(string name, int destinationCount, int interactionCount)
+            => $"Cannot delete tag '{name}': it is referenced by {destinationCount} destination(s) and "
+               + $"{interactionCount} recorded interaction(s).";
+
+        // Projected list read: usage = tagged destinations + recorded recommender interactions.
+        public override Task<PageResult<TagResponse>> GetAllAsync(TagSearch? search = null)
+            => GetPageAsync(
+                search,
+                t => new TagResponse
+                {
+                    Id = t.Id,
+                    Name = t.Name,
+                    UsageCount = _dbContext.DestinationTags.Count(dt => dt.TagId == t.Id)
+                                 + _dbContext.UserInteractions.Count(i => i.TagId == t.Id),
+                    CreatedAt = t.CreatedAt,
+                    ModifiedAt = t.ModifiedAt
+                },
+                row => row.DeleteBlockedReason = row.UsageCount == 0
+                    ? null
+                    : $"Cannot delete tag '{row.Name}': it is still referenced by "
+                      + $"{row.UsageCount} other record(s).");
+
         protected override IQueryable<Tag> ApplyFilters(IQueryable<Tag> query, TagSearch? search)
         {
             query = query.WhereContains(search?.Name, t => t.Name);
@@ -53,8 +75,7 @@ namespace Travle.Services
 
             if (destinationCount > 0 || interactionCount > 0)
             {
-                throw new ConflictException(
-                    $"Cannot delete tag '{entity.Name}': it is referenced by {destinationCount} destination(s) and {interactionCount} recorded interaction(s).");
+                throw new ConflictException(BlockedReason(entity.Name, destinationCount, interactionCount));
             }
         }
     }

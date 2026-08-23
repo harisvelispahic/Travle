@@ -76,6 +76,13 @@ namespace Travle.Services
                 return query;
             }
 
+            // Free-text: the traveler's name/username or the tour's name (each word must land somewhere).
+            query = query.WhereContainsAllWords(search.Text,
+                b => b.User.FirstName,
+                b => b.User.LastName,
+                b => b.User.Username,
+                b => b.TourSchedule.Tour.Name);
+
             if (search.StatusId.HasValue)
             {
                 query = query.Where(b => b.StatusId == search.StatusId.Value);
@@ -255,14 +262,13 @@ namespace Travle.Services
                 .Select(b => b.Id)
                 .ToListAsync();
 
-            foreach (var id in paidActiveIds)
-            {
-                var booking = await _dbContext.Bookings.FirstOrDefaultAsync(b => b.Id == id);
-                if (booking is null)
-                {
-                    continue;
-                }
+            // One tracked load for the whole batch (never a query per id — course §8.2).
+            var paidActive = await _dbContext.Bookings
+                .Where(b => paidActiveIds.Contains(b.Id))
+                .ToListAsync();
 
+            foreach (var booking in paidActive)
+            {
                 var state = _states.GetState((BookingStatusCode)booking.StatusId);
                 await state.CancelForOrganizerSuspensionAsync(booking, adminUserId);
             }
@@ -281,14 +287,13 @@ namespace Travle.Services
                 .Select(b => b.Id)
                 .ToListAsync();
 
-            foreach (var id in activeIds)
-            {
-                var booking = await _dbContext.Bookings.FirstOrDefaultAsync(b => b.Id == id);
-                if (booking is null)
-                {
-                    continue;
-                }
+            // One tracked load for the whole batch (never a query per id — course §8.2).
+            var active = await _dbContext.Bookings
+                .Where(b => activeIds.Contains(b.Id))
+                .ToListAsync();
 
+            foreach (var booking in active)
+            {
                 var state = _states.GetState((BookingStatusCode)booking.StatusId);
                 await state.CancelForSlotAsync(booking, organizerUserId, reason);
             }
@@ -309,12 +314,16 @@ namespace Travle.Services
                 .Select(b => b.Id)
                 .ToListAsync(cancellationToken);
 
+            // One tracked load for the whole batch (never a query per id — course §8.2). The fresh read
+            // also re-checks the status: a webhook may have moved a hold to Pending in the meantime.
+            var due = await _dbContext.Bookings
+                .Where(b => dueIds.Contains(b.Id))
+                .ToListAsync(cancellationToken);
+
             var expired = 0;
-            foreach (var id in dueIds)
+            foreach (var booking in due)
             {
-                var booking = await _dbContext.Bookings.FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
-                // Re-check under the fresh load: a webhook may have moved it to Pending in the meantime.
-                if (booking is null || booking.StatusId != (int)BookingStatusCode.PaymentInProgress)
+                if (booking.StatusId != (int)BookingStatusCode.PaymentInProgress)
                 {
                     continue;
                 }
@@ -336,11 +345,15 @@ namespace Travle.Services
                 .Select(b => b.Id)
                 .ToListAsync(cancellationToken);
 
+            // One tracked load for the whole batch (never a query per id — course §8.2).
+            var due = await _dbContext.Bookings
+                .Where(b => dueIds.Contains(b.Id))
+                .ToListAsync(cancellationToken);
+
             var completed = 0;
-            foreach (var id in dueIds)
+            foreach (var booking in due)
             {
-                var booking = await _dbContext.Bookings.FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
-                if (booking is null || booking.StatusId != (int)BookingStatusCode.Confirmed)
+                if (booking.StatusId != (int)BookingStatusCode.Confirmed)
                 {
                     continue;
                 }

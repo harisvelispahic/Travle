@@ -112,11 +112,6 @@ namespace Travle.Services
             return query;
         }
 
-        // List path: hydrate roles + city so the DTO's Roles/CityName are populated (JOIN, not N+1).
-        protected override IQueryable<User> ApplyIncludes(IQueryable<User> query, UserSearch? search)
-            => query.Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
-                    .Include(u => u.City);
-
         // Single-entity path (admin GetById): load the same navigations the DTO flattens.
         protected override async Task LoadResponseNavigationsAsync(User entity)
         {
@@ -742,7 +737,7 @@ namespace Travle.Services
             _securityStore.Invalidate(userId);
         }
 
-        private static string NewSecurityStamp() => Guid.NewGuid().ToString("N");
+        private static string NewSecurityStamp() => SecurityStamps.New();
 
         // Re-reads the just-mutated user with roles + city so the response DTO is fully populated.
         // This is data loading, not authorization — it stays in the user service.

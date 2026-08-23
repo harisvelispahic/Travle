@@ -8,6 +8,13 @@ namespace Travle.Model.SearchObjects
     /// </summary>
     public class BookingSearch : BaseSearchObject
     {
+        /// <summary>
+        /// Free-text search over the traveler (first/last name, username) and the tour name — the
+        /// "search by user" the admin/organizer booking lists offer. Words are AND-ed across the columns,
+        /// so "amir delic" matches a first name plus a last name.
+        /// </summary>
+        public string? Text { get; set; }
+
         /// <summary>Filter by booking status (the seeded <c>BookingStatus</c> id).</summary>
         public int? StatusId { get; set; }
 

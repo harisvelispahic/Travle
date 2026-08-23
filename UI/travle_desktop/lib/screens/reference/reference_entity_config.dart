@@ -59,6 +59,7 @@ class ReferenceEntityConfig<T> {
     this.formFields = const [],
     this.formValues,
     this.toBody,
+    this.deleteBlockedReason,
   });
 
   final String title;
@@ -95,6 +96,11 @@ class ReferenceEntityConfig<T> {
 
   /// Builds the API request body from the form's collected [values].
   final Map<String, dynamic> Function(Map<String, Object?> values)? toBody;
+
+  /// Why a given row cannot be deleted (null = it can). Supplied by the API as
+  /// `deleteBlockedReason`, so Delete renders *disabled with the reason* instead
+  /// of only failing on click (course §6: unavailable actions explain themselves).
+  final String? Function(T row)? deleteBlockedReason;
 
   Map<String, dynamic> searchQueryFor(String search) =>
       (buildSearchQuery ?? _defaultNameSearch)(search);

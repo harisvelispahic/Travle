@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
@@ -12,7 +14,8 @@ import '../widgets/pager_bar.dart';
 enum _Timeframe { upcoming, past }
 
 /// The organizer's bookings across all their tours (`GET /Bookings/my-tours`),
-/// paginated. Filter by status and split into upcoming / past departures; confirm
+/// paginated. Search by traveler or tour, filter by status, and split into
+/// upcoming / past departures; confirm
 /// a booking that is awaiting confirmation, reject it with a mandatory reason, or
 /// call off an already-confirmed one (all through the backend state machine).
 class OrganizerBookingsScreen extends StatefulWidget {
@@ -26,6 +29,10 @@ class OrganizerBookingsScreen extends StatefulWidget {
 class _OrganizerBookingsScreenState extends State<OrganizerBookingsScreen> {
   static const _pageSize = 20;
 
+  final _searchController = TextEditingController();
+  Timer? _debounce;
+
+  String _search = '';
   int? _statusId; // null = all statuses
   _Timeframe _timeframe = _Timeframe.upcoming;
   int _page = 1;
@@ -39,6 +46,22 @@ class _OrganizerBookingsScreenState extends State<OrganizerBookingsScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    setState(() {});
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      setState(() => _search = value.trim());
+      _reload();
+    });
   }
 
   /// Reloads from page 1 — for anything that changes *which* bookings match.
@@ -62,6 +85,7 @@ class _OrganizerBookingsScreenState extends State<OrganizerBookingsScreen> {
           'page': _page,
           'pageSize': _pageSize,
           'includeTotalCount': true,
+          if (_search.isNotEmpty) 'text': _search,
           if (_statusId != null) 'statusId': _statusId,
           if (upcoming) 'fromDate': now else 'toDate': now,
           'sortBy': upcoming ? 'TourSchedule.StartsAt' : 'TourSchedule.StartsAt desc',
@@ -160,38 +184,71 @@ class _OrganizerBookingsScreenState extends State<OrganizerBookingsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              SegmentedButton<_Timeframe>(
-                segments: const [
-                  ButtonSegment(
-                    value: _Timeframe.upcoming,
-                    label: Text('Upcoming'),
-                    icon: Icon(Icons.event_available_outlined),
-                  ),
-                  ButtonSegment(
-                    value: _Timeframe.past,
-                    label: Text('Past'),
-                    icon: Icon(Icons.history),
-                  ),
-                ],
-                selected: {_timeframe},
-                onSelectionChanged: _loading
-                    ? null
-                    : (selection) {
-                        setState(() => _timeframe = selection.first);
+              Expanded(
+                child: Wrap(
+                  spacing: TravleTokens.space12,
+                  runSpacing: TravleTokens.space8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 280,
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: _onSearchChanged,
+                        decoration: InputDecoration(
+                          isDense: true,
+                          prefixIcon: const Icon(Icons.search),
+                          hintText: 'Search traveler or tour...',
+                          suffixIcon: _searchController.text.isEmpty
+                              ? null
+                              : IconButton(
+                                  icon: const Icon(Icons.close),
+                                  tooltip: 'Clear',
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    _debounce?.cancel();
+                                    setState(() => _search = '');
+                                    _reload();
+                                  },
+                                ),
+                        ),
+                      ),
+                    ),
+                    SegmentedButton<_Timeframe>(
+                      segments: const [
+                        ButtonSegment(
+                          value: _Timeframe.upcoming,
+                          label: Text('Upcoming'),
+                          icon: Icon(Icons.event_available_outlined),
+                        ),
+                        ButtonSegment(
+                          value: _Timeframe.past,
+                          label: Text('Past'),
+                          icon: Icon(Icons.history),
+                        ),
+                      ],
+                      selected: {_timeframe},
+                      onSelectionChanged: _loading
+                          ? null
+                          : (selection) {
+                              setState(() => _timeframe = selection.first);
+                              _reload();
+                            },
+                    ),
+                    _StatusFilter(
+                      value: _statusId,
+                      enabled: !_loading,
+                      onChanged: (v) {
+                        setState(() => _statusId = v);
                         _reload();
                       },
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(width: TravleTokens.space16),
-              _StatusFilter(
-                value: _statusId,
-                enabled: !_loading,
-                onChanged: (v) {
-                  setState(() => _statusId = v);
-                  _reload();
-                },
-              ),
-              const Spacer(),
+              const SizedBox(width: TravleTokens.space12),
               IconButton(
                 onPressed: _loading ? null : _load,
                 icon: const Icon(Icons.refresh),

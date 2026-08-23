@@ -16,9 +16,10 @@ namespace Travle.Model.Configuration
     /// <para>Only values that are <b>identical</b> in both environments are aliased. Anything that
     /// genuinely differs by host — the connection string (<c>localhost,1435</c> vs the
     /// <c>travle-sqlserver</c> service name) and the RabbitMQ host — is deliberately absent, and stays an
-    /// explicit local override in <c>.env</c> (RabbitMQ additionally defaults to localhost in
-    /// <c>appsettings.json</c>). Aliasing those would let a local run silently inherit a container-only
-    /// hostname it cannot resolve.</para>
+    /// explicit local override in <c>.env</c>. Aliasing those would let a local run silently inherit a
+    /// container-only hostname it cannot resolve. Nothing infrastructural lives in
+    /// <c>appsettings.json</c> any more (course §3.3 names RabbitMQ and SMTP explicitly): the
+    /// last-resort fallbacks are the option classes' own property defaults.</para>
     ///
     /// <para>Lives in Travle.Model because both hosts need it and the worker references only this project
     /// (like <see cref="Messaging.RabbitMqOptions"/>). Call it after loading <c>.env</c> and before the
@@ -38,6 +39,14 @@ namespace Travle.Model.Configuration
             ("JWT_AUDIENCE", "JwtToken__Audience"),
             ("JWT_DURATION_MINUTES", "JwtToken__DurationInMinutes"),
             ("JWT_REFRESH_TOKEN_DAYS", "JwtToken__RefreshTokenDays"),
+
+            // RabbitMQ: everything except the HOST, which genuinely differs per host (the compose
+            // service name vs localhost) and stays an explicit local override in .env.
+            ("RABBITMQ_PORT", "RabbitMq__Port"),
+            ("RABBITMQ_USERNAME", "RabbitMq__Username"),
+            ("RABBITMQ_PASSWORD", "RabbitMq__Password"),
+
+            ("PLATFORM_TIMEZONE", "Time__PlatformTimeZoneId"),
 
             ("SMTP_HOST", "Smtp__Host"),
             ("SMTP_PORT", "Smtp__Port"),

@@ -11,6 +11,8 @@ CountryResponse _$CountryResponseFromJson(Map<String, dynamic> json) =>
       id: (json['id'] as num).toInt(),
       name: json['name'] as String,
       createdAt: DateTime.parse(json['createdAt'] as String),
+      usageCount: (json['usageCount'] as num?)?.toInt() ?? 0,
+      deleteBlockedReason: json['deleteBlockedReason'] as String?,
       modifiedAt: json['modifiedAt'] == null
           ? null
           : DateTime.parse(json['modifiedAt'] as String),
@@ -20,6 +22,8 @@ Map<String, dynamic> _$CountryResponseToJson(CountryResponse instance) =>
     <String, dynamic>{
       'id': instance.id,
       'name': instance.name,
+      'usageCount': instance.usageCount,
+      'deleteBlockedReason': instance.deleteBlockedReason,
       'createdAt': instance.createdAt.toIso8601String(),
       'modifiedAt': instance.modifiedAt?.toIso8601String(),
     };

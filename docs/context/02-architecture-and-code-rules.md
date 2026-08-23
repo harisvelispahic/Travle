@@ -67,15 +67,16 @@ A **chain of `IExceptionHandler`s** registered via `AddExceptionHandler<>` and w
 `app.UseExceptionHandler()` (first middleware), invoked in registration order — most specific first,
 generic last, exactly like `try/catch/catch`:
 1. **`TravleExceptionHandler`** — the whole `TravleException` hierarchy (each exception carries its
-   own status + error key) → mapped status + `{ "message", "errors": { key: [msgs] }, "traceId", "details" }`
-   (the `message`/`errors` shape the template's Flutter helpers expect, plus additive `traceId` and
-   dev-only `details`).
+   own status + error key) → mapped status + `{ "message", "errors": { key: [msgs] }, "traceId" }`
+   (the `message`/`errors` shape the template's Flutter helpers expect, plus an additive `traceId`
+   that correlates the response with the server log entry).
 2. **`ValidationExceptionHandler`** — `FluentValidation.ValidationException` → 400, `errors` keyed
    per-property. Validators auto-registered via `AddValidatorsFromAssemblyContaining<>`;
    `[ApiController]` model-binding 400s reuse the same shape via `InvalidModelStateResponseFactory`.
 3. **`GlobalExceptionHandler`** (fallback, last) — everything else → 500, fully logged
-   (`ILogger<GlobalExceptionHandler>`), standardized client message; **stack traces (`details`) only
-   in Development**. Always returns `true` so nothing escapes the chain.
+   (`ILogger<GlobalExceptionHandler>`), standardized client message; **the response never carries a
+   stack trace or any internal detail, in any environment** — a developer reads it from the log the
+   `traceId` points at (hardened in Phase 12). Always returns `true` so nothing escapes the chain.
 
 Services throw; controllers contain zero try/catch. Replaces the template's `ExceptionFilter` +
 `ClientException`.
@@ -88,7 +89,7 @@ One `IEntityTypeConfiguration<T>` per entity (inheriting `BaseEntityConfiguratio
 
 `.env` (+ committed `.env.example`) → compose env vars → options classes bound once at startup; env read in constructors only. Keys: `CONNECTION_STRING`, `JWT_*`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RABBITMQ_*`, `SMTP_*`, `API_BASE_URL`, `PLATFORM_FEE_PERCENTAGE`, `PLATFORM_TIMEZONE`. Nothing secret in appsettings.json.
 
-**One name per secret (2026-08-21).** Two readers consume `.env` and they read different names: docker-compose uses the **plain** names to interpolate `${VAR}` into each container's `environment:` block (as `Payments__StripeSecretKey`, `Smtp__Password`, …), while a local `dotnet run` has no compose — DotNetEnv loads the file into the process environment and .NET configuration binds only the `Section__Key` names. That once forced every secret to be written twice, and the two copies drifted. `Travle.Model/Configuration/EnvironmentConfigurationAliases.Apply()` — called by both `Program.cs` files immediately after the `.env` load and before the host builder — copies each plain name onto its configuration key **only when that key is unset**, so containers and explicit overrides are unaffected. Values that legitimately differ per host (the connection string; the RabbitMQ host, which already defaults to localhost in `appsettings.json`) are deliberately **not** aliased and stay explicit local overrides, so a local run can never silently inherit a container-only hostname. Flutter: `String.fromEnvironment('API_BASE_URL')` + `--dart-define`.
+**One name per secret (2026-08-21).** Two readers consume `.env` and they read different names: docker-compose uses the **plain** names to interpolate `${VAR}` into each container's `environment:` block (as `Payments__StripeSecretKey`, `Smtp__Password`, …), while a local `dotnet run` has no compose — DotNetEnv loads the file into the process environment and .NET configuration binds only the `Section__Key` names. That once forced every secret to be written twice, and the two copies drifted. `Travle.Model/Configuration/EnvironmentConfigurationAliases.Apply()` — called by both `Program.cs` files immediately after the `.env` load and before the host builder — copies each plain name onto its configuration key **only when that key is unset**, so containers and explicit overrides are unaffected. Values that legitimately differ per host (the connection string and the RabbitMQ host) are deliberately **not** aliased and stay explicit `Section__Key` overrides in the local block of `.env`, so a local run can never silently inherit a container-only hostname. **Hardening pass (Phase 12):** `appsettings.json` no longer carries *any* infrastructure section — the RabbitMQ and SMTP blocks (both named explicitly by course §3.3) and the JWT issuer/audience/duration were removed, so every one of those values now has exactly one home, `.env`. Flutter: `String.fromEnvironment('API_BASE_URL')` + `--dart-define` (the app also still accepts the older `BASE_URL` alias, and normalizes a missing trailing slash).
 
 ## 6. API conventions
 

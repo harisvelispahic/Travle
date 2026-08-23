@@ -321,7 +321,7 @@ private async Task DispatchWithRetryAsync(BasicDeliverEventArgs eventArgs)
     for (var attempt = 1; ; attempt++)
     {
         try { await DispatchAsync(eventArgs); return; }
-        catch (Exception ex) when (attempt < MaxSendAttempts)     // 4
+        catch (Exception ex) when (attempt < MaxSendAttempts)     // 5
         {
             _logger.LogWarning(ex, "attempt {Attempt}/{Max} failed; retrying in {Sec}s.", ...);
             await Task.Delay(delay, _stoppingToken);
@@ -330,8 +330,8 @@ private async Task DispatchWithRetryAsync(BasicDeliverEventArgs eventArgs)
     }
 }
 ```
-- Transient failures (SMTP briefly unreachable, a blip) usually clear on retry. Up to 4 tries with
-  **exponential backoff** — the exact §A.1 pattern.
+- Transient failures (SMTP briefly unreachable, a blip) usually clear on retry. Up to 5 tries with
+  **exponential backoff** (1 s → 2 s → 4 s → 8 s) — the exact §A.1 pattern.
 - The `when (attempt < MaxSendAttempts)` filter is the trick: on the *last* attempt the exception is
   **not** caught here, so it propagates to `OnMessageAsync`'s catch → nack. Earlier attempts are caught
   → wait → loop.

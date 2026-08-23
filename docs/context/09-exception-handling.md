@@ -83,7 +83,7 @@ error helpers expect, plus two additive fields):
   "message": "Human-readable summary safe to show the user",
   "errors":  { "<key>": ["message", ...] },   // key = property name (validation) or category (domain)
   "traceId": "0HNN...",                         // always present; ties to the server log line
-  "details": null                               // full exception text — ONLY in Development
+  // no "details" field: the envelope never carries exception text, in any environment
 }
 ```
 
@@ -98,8 +98,7 @@ Verified live output (from the behavioural check we ran against the real handler
 | `ForbiddenException(…)` | 403 | `{"errors":{"forbidden":[…]}}` |
 | `PaymentException(…)` | 402 | `{"errors":{"payment":[…]}}` |
 | `ValidationException` (Email ×2, Price ×1) | 400 | `{"message":"Email is required.","errors":{"Email":["Email is required.","Email format is invalid."],"Price":[…]}}` |
-| `InvalidOperationException` **(Development)** | 500 | `{"message":"An unexpected error occurred. Please try again later.","errors":{"server":[…]},"details":"System.InvalidOperationException: …"}` |
-| `InvalidOperationException` **(Production)** | 500 | same, but **`"details": null`** — the internal message is not leaked |
+| `InvalidOperationException` (any environment) | 500 | `{"message":"An unexpected error occurred. Please try again later.","errors":{"server":[…]},"traceId":"…"}` — the exception text is logged server-side against that `traceId`, never returned |
 
 `traceId` prefers `Activity.Current?.Id` (distributed tracing) and falls back to
 `HttpContext.TraceIdentifier`. It is safe to show the user and lets support correlate a report with

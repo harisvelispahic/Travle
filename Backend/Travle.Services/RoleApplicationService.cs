@@ -220,7 +220,7 @@ namespace Travle.Services
             // request; the client then silently refreshes to a token carrying the new role (refresh tokens
             // are kept — the grant applies seamlessly, no forced logout). See docs/auth-token-invalidation.md.
             var applicant = await _dbContext.Users.FirstAsync(u => u.Id == application.UserId);
-            applicant.SecurityStamp = Guid.NewGuid().ToString("N");
+            applicant.SecurityStamp = SecurityStamps.New();
 
             var roleName = await _dbContext.Roles
                 .Where(r => r.Id == application.RoleId)

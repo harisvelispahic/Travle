@@ -1,17 +1,15 @@
 # travle_mobile
 
-A new Flutter project.
+The Travle **mobile client** (Flutter, Android) — the traveler and curator app.
 
-## Getting Started
+Travelers search destinations, browse tours and departures, book and pay in-app
+(Stripe PaymentSheet), manage their booking history, leave reviews, and receive
+explained recommendations plus real-time notifications. Curators apply for the
+role, submit destinations for moderation, and track their submissions.
 
-This project is a starting point for a Flutter application.
+It depends on two path packages in this repo: `travle_core` (models, providers,
+auth, networking) and `travle_ui` (design tokens and shared widgets).
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Run and build instructions — including the `--dart-define=API_BASE_URL=…`
+configuration and the `env*.json` files — are in [`../RUNNING.md`](../RUNNING.md)
+and in the repository [`README.md`](../../README.md).

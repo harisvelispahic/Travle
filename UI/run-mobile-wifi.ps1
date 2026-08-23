@@ -8,7 +8,7 @@
   Uses "ADB over TCP/IP" (adb tcpip 5555). The crucial point: `adb reverse` works
   over the wireless adb transport exactly like it does over USB, so the API can
   stay bound to localhost and NOTHING about the backend / firewall changes.
-  BASE_URL stays http://localhost:<port>/ just like the cabled flow.
+  API_BASE_URL stays http://localhost:<port> just like the cabled flow.
 
   First run (or after a phone reboot, which resets tcpip mode): plug the phone in
   via USB once. The script flips it into TCP/IP mode, learns its Wi-Fi IP, and
@@ -21,8 +21,8 @@
     3. flutter run -d <phone> --dart-define-from-file=<env file>
 
 .PARAMETER Docker
-  Target the docker-compose API on port 5121 (env.docker.json) instead of the
-  dotnet-run dev API on 5126 (env.json).
+  Target the docker-compose API on port 5121 (env.device.json) instead of the
+  dotnet-run dev API on 5126 (env.local.json).
 
 .PARAMETER Ip
   Phone Wi-Fi IP (e.g. 192.168.1.42). Overrides the saved IP and skips USB
@@ -50,7 +50,7 @@ $ErrorActionPreference = 'Stop'
 # --- config ---------------------------------------------------------------
 $AdbPort   = 5555
 $ApiPort   = if ($Docker) { 5121 } else { 5126 }
-$EnvFile   = if ($Docker) { 'env.docker.json' } else { 'env.json' }
+$EnvFile   = if ($Docker) { 'env.device.json' } else { 'env.local.json' }
 $MobileDir = Join-Path $PSScriptRoot 'travle_mobile'
 $StateFile = Join-Path $env:USERPROFILE '.travle-phone'
 

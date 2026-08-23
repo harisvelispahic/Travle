@@ -11,8 +11,9 @@ namespace Travle.Model.Responses;
 /// </para>
 /// <para>
 /// <see cref="TraceId"/> is always populated so a user can quote an id that ties back to the
-/// server logs. <see cref="Details"/> carries the full exception text and is populated
-/// <b>only in the Development environment</b> — production clients never receive stack traces.
+/// server logs — which is where exception detail lives. <b>No environment, development included,
+/// ever puts a stack trace or any other internal detail in this envelope</b> (course §3.4/§8.1):
+/// the full exception is logged server-side against the same <see cref="TraceId"/>.
 /// </para>
 /// </summary>
 public sealed class ErrorResponse
@@ -28,7 +29,4 @@ public sealed class ErrorResponse
 
     /// <summary>Correlation id that matches the server-side log entry for this failure.</summary>
     public string? TraceId { get; set; }
-
-    /// <summary>Full exception detail — populated only in the Development environment.</summary>
-    public string? Details { get; set; }
 }

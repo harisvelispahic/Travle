@@ -220,7 +220,15 @@ class _CrudFormDialogState extends State<CrudFormDialog> {
       if (!mounted) return;
       setState(() {
         _options[field.id] = options;
-        _optionErrors.remove(field.id);
+        // A successful-but-empty load means the prerequisite table has no rows yet
+        // (course §6: never leave an insert form usable when its FK source is
+        // empty — the disabled dropdown must say why).
+        if (options.isEmpty) {
+          _optionErrors[field.id] =
+              'No ${field.label.toLowerCase()} exists yet — create one first.';
+        } else {
+          _optionErrors.remove(field.id);
+        }
         _optionsLoading[field.id] = false;
         // Drop a stale selection that isn't among the freshly loaded options.
         final selected = _dropdownValues[field.id];

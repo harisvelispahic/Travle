@@ -298,12 +298,20 @@ namespace Travle.Services
             }
 
             _dbContext.Tours.Add(tour);
-            await _dbContext.SaveChangesAsync();
 
-            // Let each destination's curator know their destination is now part of a tour (a nice signal that
-            // their contribution is being used) — never the organizer themselves.
-            await NotifyCuratorsOfNewTourFeaturingDestinationsAsync(tour.Name, request.DestinationIds, userId);
-            await _dbContext.SaveChangesAsync();
+            // Tour row + curator notifications commit together (two SaveChanges → one transaction, rule 7):
+            // the first save assigns the tour id, the second persists the notifications staged after it.
+            await using (var transaction = await _dbContext.Database.BeginTransactionAsync())
+            {
+                await _dbContext.SaveChangesAsync();
+
+                // Let each destination's curator know their destination is now part of a tour (a nice signal
+                // that their contribution is being used) — never the organizer themselves.
+                await NotifyCuratorsOfNewTourFeaturingDestinationsAsync(tour.Name, request.DestinationIds, userId);
+                await _dbContext.SaveChangesAsync();
+
+                await transaction.CommitAsync();
+            }
 
             return await BuildDetailAsync(tour.Id);
         }
@@ -418,11 +426,19 @@ namespace Travle.Services
             };
 
             _dbContext.TourSchedules.Add(schedule);
-            await _dbContext.SaveChangesAsync();
 
-            // Engagement: tell everyone who favorited this tour that a new date just opened up.
-            await NotifyFavoritersOfNewScheduleAsync(tourId, tour.Name);
-            await _dbContext.SaveChangesAsync();
+            // Schedule row + favoriter notifications commit together (two SaveChanges → one transaction,
+            // rule 7): the first save assigns the schedule id, the second persists the staged notifications.
+            await using (var transaction = await _dbContext.Database.BeginTransactionAsync())
+            {
+                await _dbContext.SaveChangesAsync();
+
+                // Engagement: tell everyone who favorited this tour that a new date just opened up.
+                await NotifyFavoritersOfNewScheduleAsync(tourId, tour.Name);
+                await _dbContext.SaveChangesAsync();
+
+                await transaction.CommitAsync();
+            }
 
             return await BuildScheduleResponseAsync(schedule.Id);
         }
