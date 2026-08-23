@@ -15,6 +15,11 @@
     <!-- Hand-picked category illustrations (rasterized from SVG to square PNG), embedded so the onboarding
          card grid is populated at runtime by CategoryContentSeeder without committing blobs to the DB seed. -->
     <EmbeddedResource Include="Database\Seeding\CategoryImages\*.png" />
+
+    <!-- One photograph per seeded destination, fetched once by tools/destination-images/fetch_images.py
+         and cropped to the mobile gallery ratio. Embedded so DestinationImageSeeder can populate them at
+         runtime with no network access, keeping `docker compose up` self-contained. -->
+    <EmbeddedResource Include="Database\Seeding\DestinationImages\*.jpg" />
   </ItemGroup>
 
   <ItemGroup>

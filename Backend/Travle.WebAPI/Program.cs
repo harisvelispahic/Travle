@@ -461,9 +461,10 @@ static async Task SeedBulkDataAsync(WebApplication app)
     await BulkSeeder.SeedAsync(dbContext, logger);
 }
 
-// Idempotent runtime seed: every destination that has no image gets a generated placeholder image plus
-// its thumbnail. Binary blobs can't ride along in HasData, so this runs once on startup after migration;
-// subsequent runs find images already present and do nothing.
+// Idempotent runtime seed: every destination gets its embedded photograph, falling back to a generated
+// placeholder for the few entries with no identifiable subject. Binary blobs can't ride along in HasData,
+// so this runs once on startup after migration; subsequent runs find images already present and do nothing.
+// Owned by the Services assembly (which holds the embedded photos) — see DestinationImageSeeder.
 static async Task SeedDestinationImagesAsync(WebApplication app)
 {
     await using var scope = app.Services.CreateAsyncScope();
@@ -471,33 +472,7 @@ static async Task SeedDestinationImagesAsync(WebApplication app)
     var thumbnailGenerator = scope.ServiceProvider.GetRequiredService<IThumbnailGenerator>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
-    var destinationsWithoutImages = await dbContext.Destinations
-        .Where(d => !d.Images.Any())
-        .Select(d => new { d.Id, d.Name })
-        .ToListAsync();
-
-    if (destinationsWithoutImages.Count == 0)
-    {
-        return;
-    }
-
-    foreach (var destination in destinationsWithoutImages)
-    {
-        var image = await thumbnailGenerator.GeneratePlaceholderJpegAsync(destination.Name);
-        var (thumbnail, contentType) = await thumbnailGenerator.GenerateThumbnailAsync(image);
-
-        dbContext.DestinationImages.Add(new DestinationImage
-        {
-            DestinationId = destination.Id,
-            ImageData = image,
-            ThumbnailData = thumbnail,
-            ContentType = contentType,
-            SortOrder = 0
-        });
-    }
-
-    await dbContext.SaveChangesAsync();
-    logger.LogInformation("Seeded placeholder images for {Count} destination(s).", destinationsWithoutImages.Count);
+    await DestinationImageSeeder.SeedAsync(dbContext, thumbnailGenerator, logger);
 }
 
 // Idempotent runtime seed: backfill each category's onboarding description and (when its embedded PNG asset
