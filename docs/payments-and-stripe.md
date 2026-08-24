@@ -234,11 +234,17 @@ Bound once into `PaymentOptions` (`Travle.Services/Payments/PaymentOptions.cs`),
 Stripe can't reach `localhost` on its own. During development run the **Stripe CLI**:
 
 ```
-stripe login
-stripe listen --forward-to localhost:5121/Payments/Webhook
+stripe listen --api-key sk_test_… --forward-to localhost:5121/Payments/Webhook
 ```
 
-`stripe listen` prints a `whsec_…` — copy it into `STRIPE_WEBHOOK_SECRET` (and restart the API — `.env` is
+**`--api-key` is not optional.** The API creates its PaymentIntents on the account that owns
+`STRIPE_SECRET_KEY`, and a bare `stripe listen` binds to whatever account the local CLI happens to be
+logged into — which then forwards nothing, and the booking sits at `PaymentInProgress` until its hold
+expires. Passing the same `sk_test_…` that is in `.env` puts the listener on the right event stream and
+skips the interactive `stripe login` entirely.
+
+`stripe listen` prints a `whsec_…`. The CLI's signing secret is stable per account, so it normally already
+matches the `STRIPE_WEBHOOK_SECRET` in `.env`; if it differs, copy it in and restart the API (`.env` is
 read only at startup).
 
 ### 6.3 Driving a payment to success **without** the mobile app
@@ -250,7 +256,7 @@ payment fires the `payment_intent.succeeded` webhook. Confirm the intent by hand
 
 ```bash
 # Terminal A — forward webhooks to the API (leave running)
-stripe listen --forward-to localhost:5121/Payments/Webhook
+stripe listen --api-key sk_test_… --forward-to localhost:5121/Payments/Webhook
 
 # Terminal B — confirm THIS booking's intent with a Stripe test card
 stripe payment_intents confirm <pi_id> --payment-method pm_card_visa
@@ -377,7 +383,8 @@ path would have.
   same DbContext scope.
 - `PaymentsController` — `POST /Payments/Webhook`, `[AllowAnonymous]`, reads the **raw** body (no model
   binding) + the `Stripe-Signature` header.
-- Backend builds clean. **End-to-end verification is pending real Stripe test keys + `stripe listen`.**
+- Backend builds clean, and the full pay-and-refund loop has been verified end to end against real
+  Stripe test keys with `stripe listen` forwarding.
 
 #### Edge: payment succeeds just after the booking left PaymentInProgress — **RESOLVED**
 

@@ -177,6 +177,16 @@ Two things to understand about the weights:
 > `View`, the favorites service records a `Favorite`, the booking state machine records
 > `BookingConfirmed`/`BookingCompleted`, and so on). This is requirement 3 from §2.
 
+> **Searching with several categories selected.** The category filter on the search screen is a
+> multi-select, and every category the traveler picked is a stated interest — so the search endpoint
+> records **one full-weight `Search` row per selected category**, exactly as onboarding records one row
+> per pick. Because the profile is normalized (§6c), picking five categories doesn't make that user's
+> profile "louder"; it just spreads the same search evenly across five dials. With no category selected,
+> the search text itself is matched against category names and then tag names; if it matches neither, the
+> row is still written (so the search history is real) but names no feature, so it moves no dial. Only
+> searches that carry text are recorded — the screen runs a search on open, and recording those would
+> log intent nobody expressed.
+
 ---
 
 ## 6. Step 1: building your taste profile
@@ -189,7 +199,8 @@ Go through every one of the user's signals. For each one, add its weight onto th
 
 - A **destination-linked** signal (view/favorite/booking/review) adds its weight to *that destination's*
   category dial, region dial, and each of its tag dials.
-- An **onboarding or search** signal adds its weight directly to the one category or tag dial it names.
+- An **onboarding or search** signal adds its weight directly to the category or tag dial it names, with
+  no destination involved. (A search filtered to several categories writes one such signal each.)
 
 If several signals touch the same feature, the weights **stack up** — that's the point. Favoriting *and*
 reviewing *and* booking waterfalls all pile onto the `Tag:Waterfall` dial, making it dominant.

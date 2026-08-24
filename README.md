@@ -31,7 +31,55 @@ Stripe (test mode) · QuestPDF · Flutter 3.44 · Docker Compose.
 
 ---
 
-## 2. Prerequisites
+## 2. What it does
+
+**Mobile — traveler**
+
+- _Recommended for you_ on the home screen, where **every card states why it was picked**
+- Map browse with category pins, and a search that flies the map to its result
+- Search with autocomplete, accent-insensitive text (`Pocitelj` finds _Počitelj_), multi-select
+  categories, a country → region cascade and a minimum-rating filter
+- Destination pages with gallery, map, reviews and the tours that visit them; favourites
+- Booking a departure: server-side capacity check, a 15-minute seat hold, **in-app Stripe
+  PaymentSheet**, and a tiered refund on cancellation
+- Booking history as a master-detail view; reviewing unlocks once a tour is completed
+- Live notifications over SignalR, profile with photo, e-mail password reset
+
+**Mobile — curator**
+
+- Submit a destination with images, tags, a category and a map-picked location
+- Follow it through moderation, and see its reach on a personal statistics screen
+
+**Desktop — administrator**
+
+- Dashboard with charts over bookings, revenue and the catalogue
+- Two PDF reports, both downloadable and printable
+- Moderation queues for destinations, role applications and reviews
+- Every booking and every payment, searchable and filterable
+- User management — create accounts, grant or revoke roles, suspend
+- CRUD over all eight reference tables, with deletion blocked **and explained** where a record is in use
+
+**Desktop — organizer**
+
+- Build a tour across several approved destinations, with a live itinerary map
+- Publish departures, confirm or reject bookings, cancel a departure (every booking on it is refunded
+  automatically), and read the statistics for their own tours
+
+**API and worker**
+
+- JWT with rotating refresh tokens and server-side invalidation; role-based policies on admin endpoints
+- One centralized booking state machine — no transition logic in controllers
+- Stripe PaymentIntents finalized only by the signature-verified webhook; refunds computed from the
+  amount actually charged; 10 % commission snapshotted per payment
+- Content-based + popularity recommender that returns a written explanation with every result
+- RabbitMQ → a separate worker container → SMTP e-mail
+- SignalR hub for live notifications
+- Pagination, filtering and at least one search parameter on every list endpoint
+- Global exception middleware over a custom exception hierarchy; FluentValidation on every request
+
+---
+
+## 3. Prerequisites
 
 - **Docker Desktop** (Compose v2) — runs the API, worker, SQL Server and RabbitMQ.
 - **Flutter SDK 3.44+** (Dart 3.11+) — only if you want to build the apps from source; the release
@@ -44,13 +92,13 @@ the API's first start.
 
 ---
 
-## 3. Running the backend
+## 4. Running the backend
 
 ```bash
 # 1. from the repository root, create the configuration file
 cp .env.example .env          # Windows: copy .env.example .env
 
-# 2. edit .env and fill in the values marked "replace me" (see §4)
+# 2. edit .env and fill in the values marked "replace me" (see §5)
 
 # 3. start everything
 docker compose up --build
@@ -85,7 +133,7 @@ re-seeds from scratch.
 
 ---
 
-## 4. Configuration
+## 5. Configuration
 
 **Every** configuration value lives in the repository-root `.env` file — nothing is hardcoded in
 source and nothing infrastructural sits in `appsettings.json` (no connection string, no JWT key, no
@@ -100,7 +148,7 @@ environment; a local `dotnet run` loads the same file through DotNetEnv and
 | `MSSQL_SA_PASSWORD` + `CONNECTION_STRING`     | one strong password, identical in both                                                                                                     |
 | `JWT_SECRET_KEY`                              | 32+ random characters (`openssl rand -hex 32`)                                                                                             |
 | `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY` | your Stripe **test-mode** keys (`sk_test_…`, `pk_test_…`)                                                                                  |
-| `STRIPE_WEBHOOK_SECRET`                       | `whsec_…` printed by `stripe listen` (see §7)                                                                                              |
+| `STRIPE_WEBHOOK_SECRET`                       | `whsec_…` printed by `stripe listen` (see §8)                                                                                              |
 | `SMTP_*`                                      | any SMTP provider — Mailtrap's sandbox is easiest. Leave `SMTP_HOST` empty to disable sending; the worker still runs and drains the queue. |
 
 At submission the real `.env` ships as a password-protected `.env-tajne.zip` in the same folder; the
@@ -108,7 +156,7 @@ password is supplied through the DL system.
 
 ---
 
-## 5. Running the Flutter apps
+## 6. Running the Flutter apps
 
 Both apps read the API address from the build-time variable **`API_BASE_URL`**, exactly as the course
 requires:
@@ -158,11 +206,12 @@ flutter build windows --release --dart-define-from-file=env.json
 ```
 
 Both builds are attached to the GitHub Release as a single ZIP archive; they are never committed to
-the repository.
+the repository. **Archive the whole `Release` folder**, not just `travle_desktop.exe` — the DLLs and
+the `data/` directory beside it are part of the application and it will not start without them.
 
 ---
 
-## 6. Login credentials
+## 7. Login credentials
 
 All seeded accounts use the password **`test`**.
 
@@ -182,26 +231,38 @@ the mobile app admits **Traveler** and **Curator**.
 
 ---
 
-## 7. Payments (Stripe test mode)
+## 8. Payments (Stripe test mode)
 
 Payment is real Stripe sandbox, never simulated: the server creates the PaymentIntent (it owns the
 amount), the mobile app confirms it **in-app** through the Stripe PaymentSheet, and the booking is
 promoted to _Pending_ **only** by the signature-verified webhook. Refunds go back through the Stripe
 Refund API against the amount actually charged.
 
-Stripe cannot reach a machine behind NAT on its own, so while testing run the Stripe CLI and copy the
-secret it prints into `STRIPE_WEBHOOK_SECRET`:
+Stripe cannot reach a machine behind NAT on its own, so a payment only completes while the Stripe CLI is
+forwarding webhooks. Run it alongside the stack, passing the **same `sk_test_…` that is in `.env`**:
 
 ```bash
-stripe listen --forward-to localhost:5121/Payments/Webhook
+stripe listen --api-key sk_test_… --forward-to localhost:5121/Payments/Webhook
 ```
 
-Test card: `4242 4242 4242 4242`, any future expiry, any CVC. Details and the full state machine are
-in `docs/payments-and-stripe.md`.
+`--api-key` matters: it binds the listener to the account that owns the key — the account the API creates
+its PaymentIntents on — and skips the interactive `stripe login`. Without it the CLI listens to whichever
+account it was last logged into, forwards nothing, and the booking sits at *PaymentInProgress* until its
+15-minute hold expires. The `whsec_…` the CLI prints is stable per account and normally already matches
+`STRIPE_WEBHOOK_SECRET`; if it differs, paste it in and restart the API.
+
+Test cards — any future expiry date, any CVC:
+
+| Card                  | Scenario                                                                          |
+| --------------------- | --------------------------------------------------------------------------------- |
+| `4242 4242 4242 4242` | payment succeeds                                                                  |
+| `4000 0000 0000 0002` | card declined — the attempt fails, the booking keeps its hold and can be retried |
+
+Details and the full state machine are in `docs/payments-and-stripe.md`.
 
 ---
 
-## 8. What to try after signing in
+## 9. What to try after signing in
 
 - **Mobile / traveler** — the home screen's _Recommended for you_ section (every card states _why_ it
   was picked), search with category/region/rating filters, the map browse tab, a destination's detail
@@ -218,7 +279,7 @@ in `docs/payments-and-stripe.md`.
 
 ---
 
-## 9. Repository layout
+## 10. Repository layout
 
 ```
 travle/
@@ -243,7 +304,7 @@ travle/
 
 ---
 
-## 10. Notes for the review
+## 11. Notes for the review
 
 - `[AllowAnonymous]` appears only where authentication is impossible by definition: login, register,
   refresh-token, the password-reset pair, and the Stripe webhook — and the webhook verifies Stripe's

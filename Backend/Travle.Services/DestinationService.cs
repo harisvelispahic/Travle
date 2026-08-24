@@ -169,11 +169,19 @@ namespace Travle.Services
 
             if (!string.IsNullOrWhiteSpace(search.Text))
             {
-                // One selected category is a clean recommender signal; several are ambiguous, so fall back to
-                // inferring the category from the search text (04 §2).
-                var signalCategoryId = search.CategoryId
-                    ?? (search.CategoryIds is { Count: 1 } single ? single[0] : null);
-                await RecordSearchInteractionAsync(search.Text.Trim(), signalCategoryId);
+                // Every category the search was narrowed to is an expressed interest, so all of them are
+                // recorded (04 §2) — the same way onboarding records one row per pick.
+                var selectedCategoryIds = new List<int>();
+                if (search.CategoryId is int single)
+                {
+                    selectedCategoryIds.Add(single);
+                }
+                if (search.CategoryIds is { Count: > 0 })
+                {
+                    selectedCategoryIds.AddRange(search.CategoryIds);
+                }
+
+                await RecordSearchInteractionAsync(search.Text.Trim(), selectedCategoryIds);
             }
 
             return await GetAllAsync(search);
@@ -703,9 +711,11 @@ namespace Travle.Services
             }
         }
 
-        // Maps a free-text search to the category/tag it names (if any) so the recommender scorer can use
-        // it without re-parsing text (03 §15). Stores whichever it resolves alongside the raw term.
-        private async Task RecordSearchInteractionAsync(string text, int? explicitCategoryId)
+        // Maps a search to the categories/tag it names so the recommender scorer can use it without
+        // re-parsing text (03 §15). Categories the user explicitly filtered to are the best evidence and
+        // are all recorded — one full-weight row each, matching how onboarding records its picks (04 §2);
+        // with no category selected it falls back to resolving the raw term to a category, then a tag.
+        private async Task RecordSearchInteractionAsync(string text, IReadOnlyCollection<int> selectedCategoryIds)
         {
             var userId = _currentUser.GetUserId();
             if (userId is null)
@@ -713,28 +723,47 @@ namespace Travle.Services
                 return;
             }
 
-            int? categoryId = explicitCategoryId
-                ?? await _dbContext.DestinationCategories
+            var weight = _recommenderOptions.Weights.Search;
+
+            if (selectedCategoryIds.Count > 0)
+            {
+                foreach (var categoryId in selectedCategoryIds.Distinct())
+                {
+                    _dbContext.UserInteractions.Add(new UserInteraction
+                    {
+                        UserId = userId.Value,
+                        InteractionType = InteractionType.Search,
+                        Weight = weight,
+                        SearchTerm = text,
+                        CategoryId = categoryId
+                    });
+                }
+            }
+            else
+            {
+                int? categoryId = await _dbContext.DestinationCategories
                     .Where(c => EF.Functions.Collate(c.Name, SearchCollation.CaseInsensitiveAccentInsensitive) == text)
                     .Select(c => (int?)c.Id)
                     .FirstOrDefaultAsync();
 
-            int? tagId = categoryId is not null
-                ? null
-                : await _dbContext.Tags
-                    .Where(t => EF.Functions.Collate(t.Name, SearchCollation.CaseInsensitiveAccentInsensitive) == text)
-                    .Select(t => (int?)t.Id)
-                    .FirstOrDefaultAsync();
+                int? tagId = categoryId is not null
+                    ? null
+                    : await _dbContext.Tags
+                        .Where(t => EF.Functions.Collate(t.Name, SearchCollation.CaseInsensitiveAccentInsensitive) == text)
+                        .Select(t => (int?)t.Id)
+                        .FirstOrDefaultAsync();
 
-            _dbContext.UserInteractions.Add(new UserInteraction
-            {
-                UserId = userId.Value,
-                InteractionType = InteractionType.Search,
-                Weight = _recommenderOptions.Weights.Search,
-                SearchTerm = text,
-                CategoryId = categoryId,
-                TagId = tagId
-            });
+                _dbContext.UserInteractions.Add(new UserInteraction
+                {
+                    UserId = userId.Value,
+                    InteractionType = InteractionType.Search,
+                    Weight = weight,
+                    SearchTerm = text,
+                    CategoryId = categoryId,
+                    TagId = tagId
+                });
+            }
+
             await _dbContext.SaveChangesAsync();
         }
 
