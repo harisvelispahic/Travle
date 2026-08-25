@@ -9,6 +9,28 @@ environment, never source).
 flutter run --dart-define=API_BASE_URL=http://10.0.2.2:5121
 ```
 
+## First-time setup: resolve all four packages
+
+`travle_core` and `travle_ui` are **path** dependencies of both apps. Running
+`flutter pub get` inside `travle_mobile` or `travle_desktop` resolves the app,
+but does **not** create a package resolution inside the two shared packages —
+they end up with no `.dart_tool/package_config.json` of their own. The apps still
+build (the path dependency is resolved through the app), but the Dart analysis
+server cannot resolve imports *inside* `travle_core` / `travle_ui`, and the IDE
+fills up with a thousand-plus phantom errors.
+
+Run it in all four, once per clone:
+
+```bash
+cd UI/travle_core   && flutter pub get
+cd ../travle_ui     && flutter pub get
+cd ../travle_mobile && flutter pub get
+cd ../travle_desktop && flutter pub get
+```
+
+(`flutter analyze` and `flutter test` run `pub get` themselves, which is why the
+errors are visible only in the editor.)
+
 ## How configuration is passed
 
 `env*.json` files hold `{ "API_BASE_URL": "..." }`. They are **not** read

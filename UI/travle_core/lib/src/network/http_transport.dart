@@ -23,9 +23,16 @@ import 'api_error.dart';
 class HttpTransport {
   HttpTransport._();
 
-  /// How long to wait before deciding the server is unreachable. Long enough
-  /// for a cold-started container, short enough that the UI never hangs.
-  static const Duration timeout = Duration(seconds: 20);
+  /// How long to wait before deciding the server is unreachable.
+  ///
+  /// This only ever fires when the server accepted the connection but is slow to
+  /// answer: an API that is not running refuses the connection instead, which
+  /// surfaces as [SocketException] within milliseconds. So the only case this
+  /// bounds is a *live but cold* API — first-request JIT, EF building its model,
+  /// the first query plan — which on a modest machine genuinely exceeded 20 s and
+  /// failed a reviewer's first login. 30 s covers that without leaving the UI
+  /// spinning if something is really wedged.
+  static const Duration timeout = Duration(seconds: 30);
 
   static const String _unreachable =
       'Cannot reach the Travle server. Check that the API is running and that '

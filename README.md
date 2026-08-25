@@ -176,15 +176,27 @@ The checked-in `env*.json` files hold the same value for the common targets, and
 | desktop | `env.json`        | `http://localhost:5121` | Windows against Docker — the release default                  |
 | desktop | `env.local.json`  | `http://localhost:5126` | Windows against a local `dotnet run`                          |
 
+**First time, resolve all four packages** — not just the two apps. `travle_core` and `travle_ui`
+are path dependencies, and an app's own `flutter pub get` does **not** create a package resolution
+inside them. Without it the analyzer cannot resolve their imports and the IDE shows a thousand-plus
+phantom errors (the apps still build — it is an analysis-only problem):
+
+```bash
+cd UI/travle_core  && flutter pub get
+cd ../travle_ui    && flutter pub get
+cd ../travle_mobile && flutter pub get
+cd ../travle_desktop && flutter pub get
+```
+
+Then run either app:
+
 ```bash
 # desktop (Windows)
 cd UI/travle_desktop
-flutter pub get
 flutter run -d windows --dart-define-from-file=env.json
 
 # mobile (Android emulator)
 cd UI/travle_mobile
-flutter pub get
 flutter run --dart-define-from-file=env.json
 ```
 
@@ -317,6 +329,10 @@ travle/
 - Times are stored and transported as UTC. Tour departure times are displayed in the destination
   city's own zone (marked "local time"); audit timestamps are shown in the device's zone. See
   `docs/time-and-timezones.md`.
+- **Two harmless login failures appear in the SQL Server log on the very first start**, before the
+  database exists: the compose healthcheck probing while SQL Server is still initialising the `sa`
+  password, and EF Core testing whether database `230172` exists. The second is immediately followed
+  by `CREATE DATABASE [230172]` and the migrations. Neither appears on later starts.
 - The reminder sweep looks 24 hours ahead. Seed dates are static, so raise
   `BOOKING_REMINDER_WINDOW_HOURS` in `.env` (e.g. to `2000`) if you want to see a reminder fire during
   a short review session.

@@ -45,11 +45,15 @@ services:
     networks:
       - travle-network
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
+      # `ping` only proves the Erlang node answers — it succeeds ~10 s before the broker finishes
+      # booting and opens the AMQP listener, so compose called RabbitMQ healthy while port 5672 was
+      # still refusing connections and the worker started into a retry storm.
+      # `check_port_connectivity` probes the listeners themselves, which is what a client needs.
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
 
   travle-worker:
     build:
