@@ -293,21 +293,29 @@ class _ReferenceCrudScreenState<T> extends State<ReferenceCrudScreen<T>> {
     final level = filter.grandparent;
     if (level == null) return parent;
 
+    // Two dropdowns sharing whatever the toolbar hands this slot: Flexible (not a
+    // fixed pair of SizedBoxes) so they shrink together at the minimum window width
+    // instead of overflowing the row.
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _filterDropdown(
-          label: level.label,
-          value: _grandparentValue,
-          options: _grandparentOptions,
-          onChanged: _onGrandparentChanged,
+        Flexible(
+          child: _filterDropdown(
+            label: level.label,
+            value: _grandparentValue,
+            options: _grandparentOptions,
+            onChanged: _onGrandparentChanged,
+          ),
         ),
         const SizedBox(width: TravleTokens.space12),
-        parent,
+        Flexible(child: parent),
       ],
     );
   }
 
+  /// One filter dropdown at its *preferred* 240 px — a maximum, not a fixed width,
+  /// so a narrow window shrinks it (the option labels ellipsize) rather than
+  /// overflowing the toolbar.
   Widget _filterDropdown({
     required String label,
     required Object? value,
@@ -315,8 +323,8 @@ class _ReferenceCrudScreenState<T> extends State<ReferenceCrudScreen<T>> {
     required ValueChanged<Object?> onChanged,
     Key? key,
   }) {
-    return SizedBox(
-      width: 240,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 240),
       child: DropdownButtonFormField<Object?>(
         key: key,
         initialValue: value,

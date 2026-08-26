@@ -86,6 +86,17 @@ namespace Travle.Model.Responses
         /// </summary>
         public int? CancellationRefundPercentage { get; set; }
 
+        /// <summary>
+        /// What actually came back to the traveler once the booking was cancelled: the KM sum of the
+        /// <c>Refund</c> rows issued against this booking's payments. <c>0</c> is a real outcome (a 0% tier
+        /// still writes the row), so this is only null when no refund was ever issued — nothing was charged,
+        /// or a failed refund is still owed. Detail read (and the cancel response) only.
+        /// </summary>
+        public decimal? RefundedAmount { get; set; }
+
+        /// <summary>The tier percentage that produced <see cref="RefundedAmount"/>; null on the same terms.</summary>
+        public int? RefundedPercentage { get; set; }
+
         /// <summary>Small cover thumbnail (the tour's ordered-first destination) for list/detail cards.</summary>
         public byte[]? TourThumbnail { get; set; }
         public string? TourThumbnailContentType { get; set; }

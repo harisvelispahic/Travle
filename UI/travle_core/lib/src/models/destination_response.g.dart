@@ -50,6 +50,7 @@ DestinationResponse _$DestinationResponseFromJson(
       const [],
   primaryThumbnail: json['primaryThumbnail'] as String?,
   primaryThumbnailContentType: json['primaryThumbnailContentType'] as String?,
+  deleteBlockedReason: json['deleteBlockedReason'] as String?,
   modifiedAt: json['modifiedAt'] == null
       ? null
       : DateTime.parse(json['modifiedAt'] as String),
@@ -86,6 +87,7 @@ Map<String, dynamic> _$DestinationResponseToJson(
   'images': instance.images,
   'primaryThumbnail': instance.primaryThumbnail,
   'primaryThumbnailContentType': instance.primaryThumbnailContentType,
+  'deleteBlockedReason': instance.deleteBlockedReason,
   'createdAt': instance.createdAt.toIso8601String(),
   'modifiedAt': instance.modifiedAt?.toIso8601String(),
 };

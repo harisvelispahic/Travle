@@ -122,8 +122,19 @@ class DestinationProvider extends BaseProvider<DestinationResponse> {
   /// [text] (accent-aware server-side, so "Poc" surfaces "Počitelj"). A too-short
   /// term returns an empty list. Records no interaction — the real Search signal is
   /// written when the user submits the full search from a picked suggestion.
-  Future<List<DestinationSuggestion>> suggest(String text) async {
-    final json = await getAction('suggest', filter: {'text': text}) as List;
+  ///
+  /// [filters] carries the same filter entries the caller's full search sends
+  /// (`categoryIds`, `countryId`, `regionId`, `minRating`) — the endpoint applies
+  /// them all, so the typeahead can never offer a destination the submitted search
+  /// would then filter out. Omit it to suggest over the whole approved catalogue.
+  Future<List<DestinationSuggestion>> suggest(
+    String text, {
+    Map<String, dynamic>? filters,
+  }) async {
+    final json = await getAction('suggest', filter: {
+      ...?filters,
+      'text': text,
+    }) as List;
     return json
         .map((e) => DestinationSuggestion.fromJson(e as Map<String, dynamic>))
         .toList();

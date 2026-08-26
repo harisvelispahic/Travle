@@ -9,7 +9,9 @@ import 'destination_form_dialog.dart';
 
 /// An organizer's own submitted destinations, grouped by moderation status. New
 /// submissions and edits open the [DestinationFormDialog]; a rejected card shows
-/// the reason; a pending card can be deleted (while still unreferenced).
+/// the reason; a destination nothing references yet can be deleted whatever its
+/// status — when something does reference it, Delete stays visible but disabled
+/// with the server's reason as its tooltip (`deleteBlockedReason`).
 class OrganizerDestinationsScreen extends StatefulWidget {
   const OrganizerDestinationsScreen({super.key});
 
@@ -237,7 +239,7 @@ class _OrganizerDestinationsScreenState
               destination: _items[i],
               busy: _acting.contains(_items[i].id),
               onEdit: () => _openForm(existing: _items[i]),
-              onDelete: _items[i].isPending ? () => _delete(_items[i]) : null,
+              onDelete: () => _delete(_items[i]),
             ),
           ),
         ),
@@ -251,13 +253,13 @@ class _OrganizerDestinationCard extends StatelessWidget {
     required this.destination,
     required this.busy,
     required this.onEdit,
-    this.onDelete,
+    required this.onDelete,
   });
 
   final DestinationResponse destination;
   final bool busy;
   final VoidCallback onEdit;
-  final VoidCallback? onDelete;
+  final VoidCallback onDelete;
 
   StatusTone get _tone => switch (destination.status) {
         'Approved' => StatusTone.success,
@@ -269,6 +271,24 @@ class _OrganizerDestinationCard extends StatelessWidget {
   String get _location => [destination.cityName, destination.regionName]
       .where((p) => p != null && p.isNotEmpty)
       .join(', ');
+
+  /// Delete is offered on every own destination — what decides it is whether
+  /// anything still references the row, not its moderation status. The server
+  /// sends that verdict as [DestinationResponse.deleteBlockedReason]; when it is
+  /// set the button renders disabled with the reason as its tooltip, so the user
+  /// learns *why* instead of only finding out on click.
+  Widget _buildDeleteButton(ThemeData theme) {
+    final blockedReason = destination.deleteBlockedReason;
+    final button = OutlinedButton.icon(
+      onPressed: busy || blockedReason != null ? null : onDelete,
+      icon: const Icon(Icons.delete_outline),
+      label: const Text('Delete'),
+      style: OutlinedButton.styleFrom(foregroundColor: theme.colorScheme.error),
+    );
+    return blockedReason == null
+        ? button
+        : Tooltip(message: blockedReason, child: button);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -368,17 +388,8 @@ class _OrganizerDestinationCard extends StatelessWidget {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                   ),
-                if (onDelete != null) ...[
-                  OutlinedButton.icon(
-                    onPressed: busy ? null : onDelete,
-                    icon: const Icon(Icons.delete_outline),
-                    label: const Text('Delete'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: theme.colorScheme.error,
-                    ),
-                  ),
-                  const SizedBox(width: TravleTokens.space12),
-                ],
+                _buildDeleteButton(theme),
+                const SizedBox(width: TravleTokens.space12),
                 FilledButton.icon(
                   onPressed: busy ? null : onEdit,
                   icon: const Icon(Icons.edit_outlined),

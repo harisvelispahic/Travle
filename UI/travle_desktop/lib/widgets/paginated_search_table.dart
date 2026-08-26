@@ -141,6 +141,20 @@ class PaginatedSearchTable<T> extends StatefulWidget {
 class _PaginatedSearchTableState<T> extends State<PaginatedSearchTable<T>> {
   static const _actionsWidth = 112.0;
 
+  /// Preferred (never mandatory) width of the search field. The toolbar has to fit
+  /// the smallest window the app allows — 1200 px minus the 248 px side nav and this
+  /// widget's own 2 x 16 px padding leaves 920 px, which Cities (search + Country +
+  /// Region + a "New City" button) exceeds by ~117 px at fixed widths. So the search
+  /// field and the filter slot are flexible: they take at most their preferred width
+  /// and shrink together when the trailing controls need the room.
+  static const _searchWidth = 320.0;
+
+  /// How the leftover width is split between the search field and the filter slot
+  /// once neither can have its preferred width (the filter holds up to two
+  /// dropdowns, so it gets the larger share).
+  static const _searchFlex = 3;
+  static const _filterFlex = 4;
+
   late final TextEditingController _searchController;
   Timer? _debounce;
 
@@ -192,35 +206,46 @@ class _PaginatedSearchTableState<T> extends State<PaginatedSearchTable<T>> {
   Widget _buildToolbar(BuildContext context) {
     return Row(
       children: [
-        SizedBox(
-          width: 320,
-          child: TextField(
-            controller: _searchController,
-            onChanged: _onSearchChanged,
-            decoration: InputDecoration(
-              isDense: true,
-              prefixIcon: const Icon(Icons.search),
-              hintText: widget.searchHint,
-              suffixIcon: _searchController.text.isEmpty
-                  ? null
-                  : IconButton(
-                      icon: const Icon(Icons.close),
-                      tooltip: 'Clear',
-                      onPressed: () {
-                        _searchController.clear();
-                        _debounce?.cancel();
-                        widget.onSearchChanged('');
-                        setState(() {});
-                      },
+        // The search field and the filter share one Expanded, so the spinner and the
+        // New button keep their intrinsic width and stay pinned right while the two
+        // shrinkable controls absorb every narrowing (see _searchWidth).
+        Expanded(
+          child: Row(
+            children: [
+              Flexible(
+                flex: _searchFlex,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: _searchWidth),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: _onSearchChanged,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.search),
+                      hintText: widget.searchHint,
+                      suffixIcon: _searchController.text.isEmpty
+                          ? null
+                          : IconButton(
+                              icon: const Icon(Icons.close),
+                              tooltip: 'Clear',
+                              onPressed: () {
+                                _searchController.clear();
+                                _debounce?.cancel();
+                                widget.onSearchChanged('');
+                                setState(() {});
+                              },
+                            ),
                     ),
-            ),
+                  ),
+                ),
+              ),
+              if (widget.filter != null) ...[
+                const SizedBox(width: TravleTokens.space12),
+                Flexible(flex: _filterFlex, child: widget.filter!),
+              ],
+            ],
           ),
         ),
-        if (widget.filter != null) ...[
-          const SizedBox(width: TravleTokens.space12),
-          widget.filter!,
-        ],
-        const Spacer(),
         if (widget.loading)
           const Padding(
             padding: EdgeInsets.only(right: TravleTokens.space16),

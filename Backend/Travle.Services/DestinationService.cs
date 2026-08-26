@@ -226,9 +226,10 @@ namespace Travle.Services
             return items;
         }
 
-        public async Task<List<DestinationSuggestionResponse>> GetSuggestionsAsync(string? text)
+        public async Task<List<DestinationSuggestionResponse>> GetSuggestionsAsync(DestinationSearch? search)
         {
-            var term = text?.Trim();
+            search ??= new DestinationSearch();
+            var term = search.Text?.Trim();
             // A typeahead probes on every keystroke; a term below the floor isn't a client error, it's just
             // too broad to suggest on, so hand back an empty list (never a validation exception).
             if (string.IsNullOrEmpty(term) || term.Length < MinSuggestionChars)
@@ -236,12 +237,20 @@ namespace Travle.Services
                 return new List<DestinationSuggestionResponse>();
             }
 
-            // Approved-only, accent-aware name match (WhereContains: "Poc" matches "Počitelj"), best-rated
-            // first, capped. Records no interaction — the genuine Search signal is written when the user
-            // submits the full search from a picked suggestion.
-            var query = _dbContext.Destinations
-                .AsNoTracking()
-                .Where(d => d.Status == DestinationStatus.Approved)
+            // The typeahead runs the SAME filters as the search it feeds — every category, the
+            // country → region cascade, the minimum rating — so it can never offer a destination the
+            // submitted search would then drop, leaving the user on an empty result list. The free text is
+            // the one deliberate difference: it matches the NAME only here (the full search also matches
+            // descriptions), because a suggestion whose name doesn't contain what was typed reads as a bug.
+            search.Text = null;
+            // Approved-only and never scoped to a submitter, exactly like SearchAsync.
+            search.Status = (int)DestinationStatus.Approved;
+            search.SubmittedByUserId = null;
+
+            // Accent-aware match (WhereContains: "Poc" matches "Počitelj"), best-rated first, capped.
+            // Records no interaction — the genuine Search signal is written when the user submits the full
+            // search from a picked suggestion.
+            var query = ApplyFilters(_dbContext.Destinations.AsNoTracking(), search)
                 .WhereContains(term, d => d.Name)
                 .OrderByDescending(d => d.AverageRating)
                 .ThenBy(d => d.Name)
@@ -259,7 +268,12 @@ namespace Travle.Services
             // Force ownership scoping: a caller can never widen this to another curator's destinations.
             search.SubmittedByUserId = userId;
             search.SortBy ??= "CreatedAt desc";
-            return await GetAllAsync(search);
+            var page = await GetAllAsync(search);
+
+            // This is the only list that renders a Delete action, so it is the only one that pays for the
+            // reference counts behind it (one extra query for the page, never one per row).
+            await ApplyDeleteBlockedReasonsAsync(page.Items);
+            return page;
         }
 
         public async Task<PageResult<DestinationResponse>> GetModerationQueueAsync(DestinationSearch? search)
@@ -435,43 +449,89 @@ namespace Travle.Services
 
             _authorization.EnsureSelfOrAdmin(destination.SubmittedByUserId, "destination");
 
-            if (destination.Status != DestinationStatus.Pending)
+            // Any status can go, as long as nothing points at it: a submitter who publishes a destination
+            // nobody has used yet is not stuck with it forever. What protects the catalogue is the reference
+            // check below, not the moderation state — and it is the same rule the list surfaces as
+            // DeleteBlockedReason, so the disabled button and this guard always agree.
+            var blockedReason = BuildDeleteBlockedReason(await CountDeleteBlockersAsync(id));
+            if (blockedReason is not null)
             {
-                throw new ConflictException(
-                    "Only a pending destination can be deleted. Approved or rejected destinations are kept for their moderation history.");
+                throw new ConflictException(blockedReason);
             }
 
-            var tourRefs = await _dbContext.TourDestinations.CountAsync(td => td.DestinationId == id);
-            if (tourRefs > 0)
-            {
-                throw new ConflictException($"Cannot delete this destination: it is used by {tourRefs} tour(s).");
-            }
-
-            var reviewRefs = await _dbContext.DestinationReviews.CountAsync(r => r.DestinationId == id);
-            if (reviewRefs > 0)
-            {
-                throw new ConflictException($"Cannot delete this destination: it has {reviewRefs} review(s).");
-            }
-
-            var favoriteRefs = await _dbContext.Favorites.CountAsync(f => f.DestinationId == id);
-            if (favoriteRefs > 0)
-            {
-                throw new ConflictException($"Cannot delete this destination: it is in {favoriteRefs} user favorite(s).");
-            }
-
-            // If an admin removed someone else's pending submission, tell the submitter (they didn't do it,
-            // and their draft is now gone). Self-deletion is silent — the curator just did it themselves.
+            // If an admin removed someone else's submission, tell the submitter (they didn't do it, and it
+            // is now gone). Self-deletion is silent — the curator just did it themselves.
             var actingUserId = _authorization.RequireUserId();
             if (actingUserId != destination.SubmittedByUserId)
             {
                 _notifications.Enqueue(destination.SubmittedByUserId, NotificationType.General,
                     "Destination removed",
-                    $"Your pending destination '{destination.Name}' was removed by an administrator.",
+                    $"Your destination '{destination.Name}' was removed by an administrator.",
                     relatedEntityId: null);
             }
 
             _dbContext.Destinations.Remove(destination); // images cascade away
             await _dbContext.SaveChangesAsync();
+        }
+
+        /// <summary>Everything that can still point at a destination and so keep it from being deleted.</summary>
+        private readonly record struct DeleteBlockers(int Tours, int Reviews, int Favorites, int Interactions);
+
+        /// <summary>
+        /// The one sentence explaining why a destination can't be deleted (null = it can). Shared by the
+        /// enforcing delete and by the submitter's list, which renders it on a disabled Delete button.
+        /// Recommender interactions count: that diary is append-only (the FK is <c>Restrict</c>), so a
+        /// destination travelers have already browsed can no longer be removed.
+        /// </summary>
+        private static string? BuildDeleteBlockedReason(DeleteBlockers blockers) => blockers switch
+        {
+            { Tours: > 0 } => $"Cannot delete this destination: it is used by {blockers.Tours} tour(s).",
+            { Reviews: > 0 } => $"Cannot delete this destination: it has {blockers.Reviews} review(s).",
+            { Favorites: > 0 } => $"Cannot delete this destination: it is in {blockers.Favorites} user favorite(s).",
+            { Interactions: > 0 } =>
+                $"Cannot delete this destination: travelers have already browsed it ({blockers.Interactions} recorded interaction(s)).",
+            _ => null
+        };
+
+        private async Task<DeleteBlockers> CountDeleteBlockersAsync(int id)
+            => (await CountDeleteBlockersAsync(new List<int> { id })).GetValueOrDefault(id);
+
+        // The counts for a whole page in a single round trip (never a query per row — course §8.2).
+        private async Task<Dictionary<int, DeleteBlockers>> CountDeleteBlockersAsync(List<int> ids)
+        {
+            var counts = await _dbContext.Destinations
+                .AsNoTracking()
+                .Where(d => ids.Contains(d.Id))
+                .Select(d => new
+                {
+                    d.Id,
+                    Tours = _dbContext.TourDestinations.Count(td => td.DestinationId == d.Id),
+                    Reviews = _dbContext.DestinationReviews.Count(r => r.DestinationId == d.Id),
+                    Favorites = _dbContext.Favorites.Count(f => f.DestinationId == d.Id),
+                    Interactions = _dbContext.UserInteractions.Count(i => i.DestinationId == d.Id)
+                })
+                .ToListAsync();
+
+            return counts.ToDictionary(
+                c => c.Id,
+                c => new DeleteBlockers(c.Tours, c.Reviews, c.Favorites, c.Interactions));
+        }
+
+        private async Task ApplyDeleteBlockedReasonsAsync(List<DestinationResponse> items)
+        {
+            if (items.Count == 0)
+            {
+                return;
+            }
+
+            var blockers = await CountDeleteBlockersAsync(items.Select(i => i.Id).ToList());
+            foreach (var item in items)
+            {
+                if (blockers.TryGetValue(item.Id, out var itemBlockers))
+                {
+                    item.DeleteBlockedReason = BuildDeleteBlockedReason(itemBlockers);
+                }
+            }
         }
 
         public async Task<DestinationResponse> ApproveAsync(int id)

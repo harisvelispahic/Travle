@@ -48,11 +48,12 @@ public class DestinationsController
         => Ok(await _service.GetMapPinsAsync(search));
 
     // Search-autocomplete typeahead over the approved catalogue: a capped, best-rated-first list of name
-    // matches for the partial term (accent-aware; a too-short term returns an empty list). Records no
-    // interaction — the real Search signal fires when the full search is submitted from a suggestion.
+    // matches for the partial term (accent-aware; a too-short term returns an empty list). Takes the same
+    // search object as the list endpoint and honours every filter on it, so a suggestion always survives the
+    // search it feeds. Records no interaction — the real Search signal fires when that search is submitted.
     [HttpGet("suggest")]
-    public async Task<ActionResult<List<DestinationSuggestionResponse>>> Suggest([FromQuery] string? text)
-        => Ok(await _service.GetSuggestionsAsync(text));
+    public async Task<ActionResult<List<DestinationSuggestionResponse>>> Suggest([FromQuery] DestinationSearch? search)
+        => Ok(await _service.GetSuggestionsAsync(search));
 
     // The current curator/organizer's own submissions, any status.
     [HttpGet("mine")]

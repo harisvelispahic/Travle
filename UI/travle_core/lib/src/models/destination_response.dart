@@ -42,6 +42,7 @@ class DestinationResponse {
     this.images = const [],
     this.primaryThumbnail,
     this.primaryThumbnailContentType,
+    this.deleteBlockedReason,
     this.modifiedAt,
   });
 
@@ -92,6 +93,15 @@ class DestinationResponse {
   /// Base64 thumbnail bytes for the list card (null when there is no image).
   final String? primaryThumbnail;
   final String? primaryThumbnailContentType;
+
+  /// Why this destination cannot be deleted, or null when it can. Sent only on the
+  /// submitter's own list (`GET /Destinations/mine`), where a Delete action exists:
+  /// non-null renders Delete disabled with this text as its tooltip, and it is the
+  /// same sentence the server would throw if the delete were attempted anyway.
+  final String? deleteBlockedReason;
+
+  /// Whether the current user's own destination can be deleted right now.
+  bool get canBeDeleted => deleteBlockedReason == null;
 
   final DateTime createdAt;
   final DateTime? modifiedAt;

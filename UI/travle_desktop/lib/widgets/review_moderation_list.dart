@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:travle_core/travle_core.dart';
 import 'package:travle_ui/travle_ui.dart';
@@ -64,8 +66,12 @@ typedef ReviewRemove = Future<void> Function(int id, String reason);
 /// A paginated, filterable card list of reviews. Used by the admin moderation
 /// screen (with [onRemove] set, so each active review can be soft-removed with a
 /// mandatory reason) and by the organizer's read-only "reviews of my tours" view
-/// (with [onRemove] null and [showStatusFilter] false). Every list view carries a
-/// search parameter (minimum rating) per course §2.2.
+/// (with [onRemove] null and [showStatusFilter] false). The list view's search
+/// parameters (course §2.2) are a debounced free-text box over the reviewed
+/// destination/tour and the author, plus a minimum-rating filter — and picking a
+/// minimum rating also re-orders the list to start at that rating, so the effect
+/// of the filter is visible in the first card instead of being buried under the
+/// newest 5-star reviews.
 class ReviewModerationList extends StatefulWidget {
   const ReviewModerationList({
     super.key,
@@ -97,7 +103,17 @@ class ReviewModerationList extends StatefulWidget {
 class _ReviewModerationListState extends State<ReviewModerationList> {
   static const int _pageSize = 20;
 
+  /// Same typing pause the reference tables use, so search feels identical app-wide.
+  static const _searchDebounce = Duration(milliseconds: 350);
+
+  /// Preferred width of the search box; it shrinks below this on a narrow window.
+  static const double _searchWidth = 320;
+
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _debounce;
+
   bool _includeRemoved = false;
+  String _search = '';
   int? _minRating;
   int _page = 1;
   int _totalCount = 0;
@@ -112,13 +128,28 @@ class _ReviewModerationListState extends State<ReviewModerationList> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  /// With a minimum rating chosen, the lowest kept rating comes first (2+ → the
+  /// 2-star reviews, then 3, 4, 5) so changing the filter visibly changes the top
+  /// of the list — those borderline reviews are the ones a moderator is after.
+  /// Unfiltered, the newest review still leads.
+  String get _sortBy =>
+      _minRating == null ? 'CreatedAt desc' : 'Rating asc, CreatedAt desc';
+
   Map<String, dynamic> _filter() => <String, dynamic>{
         'page': _page,
         'pageSize': _pageSize,
         'includeTotalCount': true,
-        'sortBy': 'CreatedAt desc',
+        'sortBy': _sortBy,
         if (widget.showStatusFilter && _includeRemoved) 'includeRemoved': true,
         if (_minRating != null) 'minRating': _minRating,
+        if (_search.isNotEmpty) 'text': _search,
       };
 
   Future<void> _load() async {
@@ -146,6 +177,18 @@ class _ReviewModerationListState extends State<ReviewModerationList> {
   void _resetAndLoad() {
     _page = 1;
     _load();
+  }
+
+  void _onSearchChanged(String value) {
+    // Rebuild so the clear (x) affordance tracks the field's contents live.
+    setState(() {});
+    _debounce?.cancel();
+    _debounce = Timer(_searchDebounce, () {
+      final term = value.trim();
+      if (term == _search) return;
+      _search = term;
+      _resetAndLoad();
+    });
   }
 
   Future<void> _remove(ReviewRow row) async {
@@ -211,26 +254,65 @@ class _ReviewModerationListState extends State<ReviewModerationList> {
                   },
           ),
         if (widget.showStatusFilter) const SizedBox(width: TravleTokens.space16),
-        // The list view's search parameter (course §2.2): minimum rating.
-        DropdownButton<int?>(
-          value: _minRating,
-          hint: const Text('Any rating'),
-          items: const [
-            DropdownMenuItem(value: null, child: Text('Any rating')),
-            DropdownMenuItem(value: 5, child: Text('5 stars')),
-            DropdownMenuItem(value: 4, child: Text('4+ stars')),
-            DropdownMenuItem(value: 3, child: Text('3+ stars')),
-            DropdownMenuItem(value: 2, child: Text('2+ stars')),
-            DropdownMenuItem(value: 1, child: Text('1+ stars')),
-          ],
-          onChanged: _loading
-              ? null
-              : (value) {
-                  setState(() => _minRating = value);
-                  _resetAndLoad();
-                },
+        // The two filters share what the trailing controls leave over, so the row
+        // still fits the app's minimum window width (see PaginatedSearchTable).
+        Expanded(
+          child: Row(
+            children: [
+              Flexible(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: _searchWidth),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: _onSearchChanged,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.search),
+                      hintText: 'Search ${widget.targetNoun}s or authors…',
+                      suffixIcon: _searchController.text.isEmpty
+                          ? null
+                          : IconButton(
+                              icon: const Icon(Icons.close),
+                              tooltip: 'Clear',
+                              onPressed: () {
+                                _searchController.clear();
+                                _debounce?.cancel();
+                                if (_search.isNotEmpty) {
+                                  _search = '';
+                                  _resetAndLoad();
+                                } else {
+                                  setState(() {});
+                                }
+                              },
+                            ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: TravleTokens.space16),
+              // The second search parameter: minimum rating — which also decides the
+              // order (see _sortBy), so the reviews at that rating lead the list.
+              DropdownButton<int?>(
+                value: _minRating,
+                hint: const Text('Any rating'),
+                items: const [
+                  DropdownMenuItem(value: null, child: Text('Any rating')),
+                  DropdownMenuItem(value: 5, child: Text('5 stars')),
+                  DropdownMenuItem(value: 4, child: Text('4+ stars')),
+                  DropdownMenuItem(value: 3, child: Text('3+ stars')),
+                  DropdownMenuItem(value: 2, child: Text('2+ stars')),
+                  DropdownMenuItem(value: 1, child: Text('1+ stars')),
+                ],
+                onChanged: _loading
+                    ? null
+                    : (value) {
+                        setState(() => _minRating = value);
+                        _resetAndLoad();
+                      },
+              ),
+            ],
+          ),
         ),
-        const Spacer(),
         if (_loading)
           const Padding(
             padding: EdgeInsets.only(right: TravleTokens.space16),

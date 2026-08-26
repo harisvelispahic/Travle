@@ -67,6 +67,14 @@ namespace Travle.Services
                 return query;
             }
 
+            // Free-text over the reviewed destination and the author (each word must land somewhere), the
+            // same shape the bookings list uses — it is what the moderation screen's search box submits.
+            query = query.WhereContainsAllWords(search.Text,
+                r => r.Destination.Name,
+                r => r.User.FirstName,
+                r => r.User.LastName,
+                r => r.User.Username);
+
             if (search.DestinationId.HasValue)
             {
                 query = query.Where(r => r.DestinationId == search.DestinationId.Value);

@@ -20,12 +20,18 @@ namespace Travle.Services
 
         /// <summary>
         /// Search-autocomplete typeahead over the approved catalogue: a capped, best-rated-first list of
-        /// name matches for the partial <paramref name="text"/>, accent-aware ("Poc" matches "Počitelj").
-        /// A term shorter than the minimum length yields an empty list rather than an error (a typeahead
-        /// probes as the user types). Records no interaction — the real <c>Search</c> signal is written when
-        /// the user submits the full search from a suggestion.
+        /// name matches for the partial <c>Text</c>, accent-aware ("Poc" matches "Počitelj"). A term shorter
+        /// than the minimum length yields an empty list rather than an error (a typeahead probes as the user
+        /// types). Records no interaction — the real <c>Search</c> signal is written when the user submits
+        /// the full search from a suggestion.
+        /// <para>
+        /// It takes the <b>same search object</b> as <see cref="SearchAsync"/> and applies every filter on
+        /// it (categories, country → region, minimum rating), so the typeahead can never offer a destination
+        /// the submitted search would filter out. Only the free text differs: here it matches the name
+        /// alone, never the description.
+        /// </para>
         /// </summary>
-        Task<List<DestinationSuggestionResponse>> GetSuggestionsAsync(string? text);
+        Task<List<DestinationSuggestionResponse>> GetSuggestionsAsync(DestinationSearch? search);
 
         /// <summary>
         /// Light, approved-only markers within a visible bounding box for the mobile map screen: only the

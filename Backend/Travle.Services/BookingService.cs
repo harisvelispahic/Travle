@@ -167,6 +167,7 @@ namespace Travle.Services
             response.AllowedActions = _states.ResolveAllowedActionNames(response.StatusId);
             ApplyReviewFlag(response);
             await ApplyCancellationRefundPreviewAsync(response);
+            await ApplyRefundOutcomeAsync(response);
             return response;
         }
 
@@ -246,6 +247,10 @@ namespace Travle.Services
                 ? "Traveler cancelled the booking."
                 : request.Reason.Trim();
             await _refunds.RefundForBookingAsync(id, userId, refundReason, forcedPercentage: null);
+
+            // The refund row exists by now, so the cancel response can already state what came back —
+            // the traveler sees "Refunded X KM (Y%)" without a second round-trip.
+            await ApplyRefundOutcomeAsync(response);
             return response;
         }
 
@@ -519,6 +524,30 @@ namespace Travle.Services
             // Same resolver the refund execution uses, so the previewed % always equals the charged one.
             response.CancellationRefundPercentage = await PaymentMath.ResolveRefundPercentageAsync(
                 _dbContext, response.ScheduleStartsAt, DateTime.UtcNow);
+        }
+
+        // The other half of the story: what was actually refunded once the booking ended up Cancelled.
+        // Read from the Refund rows themselves (never recomputed from the tier ladder — the executed
+        // percentage is snapshotted there, and an organizer-side cancellation forces 100% whatever the
+        // notice period). Both stay null when no refund was ever issued, so the clients omit the line.
+        private async Task ApplyRefundOutcomeAsync(BookingResponse response)
+        {
+            var refunds = await _dbContext.Refunds
+                .AsNoTracking()
+                .Where(r => r.Payment.BookingId == response.Id)
+                .OrderByDescending(r => r.Id)
+                .Select(r => new { r.Amount, r.PercentageApplied })
+                .ToListAsync();
+
+            if (refunds.Count == 0)
+            {
+                return;
+            }
+
+            // A booking has at most one refunded payment in practice (a retry only ever charges once), but
+            // sum defensively so a partial-then-final pair can never under-report the money returned.
+            response.RefundedAmount = refunds.Sum(r => r.Amount);
+            response.RefundedPercentage = refunds[0].PercentageApplied;
         }
     }
 }

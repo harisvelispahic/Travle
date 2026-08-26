@@ -7,6 +7,12 @@ namespace Travle.Model.SearchObjects
     /// </summary>
     public class DestinationReviewSearch : BaseSearchObject
     {
+        /// <summary>
+        /// Free text: the reviewed destination's name or the author's name/username (each word must land
+        /// somewhere), so the moderation list has the search parameter every list view owes (course §2.2).
+        /// </summary>
+        public string? Text { get; set; }
+
         public int? DestinationId { get; set; }
         public int? UserId { get; set; }
         public int? MinRating { get; set; }

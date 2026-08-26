@@ -119,16 +119,23 @@ class _SearchScreenState extends State<SearchScreen> {
       _regionId != null ||
       _minRating != null;
 
+  /// The filter chips as query parameters — the single source of truth shared by the
+  /// full search and the typeahead, so a suggestion can never survive one and be
+  /// dropped by the other (which read as "the suggestion does nothing").
+  Map<String, dynamic> _activeFilters() => <String, dynamic>{
+        if (_categoryIds.isNotEmpty) 'categoryIds': _categoryIds.toList(),
+        if (_countryId != null) 'countryId': _countryId,
+        if (_regionId != null) 'regionId': _regionId,
+        if (_minRating != null) 'minRating': _minRating,
+      };
+
   Map<String, dynamic> _buildFilter(int page) => <String, dynamic>{
         'page': page,
         'pageSize': _pageSize,
         'includeTotalCount': true,
         'sortBy': 'AverageRating desc',
         if (_query.isNotEmpty) 'text': _query,
-        if (_categoryIds.isNotEmpty) 'categoryIds': _categoryIds.toList(),
-        if (_countryId != null) 'countryId': _countryId,
-        if (_regionId != null) 'regionId': _regionId,
-        if (_minRating != null) 'minRating': _minRating,
+        ..._activeFilters(),
       };
 
   Future<void> _runSearch() async {
@@ -225,7 +232,9 @@ class _SearchScreenState extends State<SearchScreen> {
   Future<void> _fetchSuggestions(String term, int seq) async {
     final provider = context.read<DestinationProvider>();
     try {
-      final items = await provider.suggest(term);
+      // Narrowed by every active filter, exactly as the submitted search is — otherwise
+      // the typeahead offers a destination the search then (correctly) finds nothing for.
+      final items = await provider.suggest(term, filters: _activeFilters());
       if (!mounted || seq != _suggestSeq) return; // a newer keystroke superseded this
       setState(() {
         _suggestions = items;
@@ -372,6 +381,23 @@ class _SearchScreenState extends State<SearchScreen> {
     _runSearch();
   }
 
+  /// Resets every filter chip in one tap (the text term is the search field's own
+  /// business — its ✕ clears that). Disabled while nothing is filtered.
+  void _clearFilters() {
+    if (!_hasActiveFilters) return;
+    setState(() {
+      _categoryIds.clear();
+      _countryId = null;
+      _countryName = null;
+      // The region cascade hangs off the country, so its pick and cached list go too.
+      _regionId = null;
+      _regionName = null;
+      _regions = null;
+      _minRating = null;
+    });
+    _runSearch();
+  }
+
   Future<void> _openRatingSheet() async {
     final choice = await _showChoiceSheet<double>(
       title: 'Minimum rating',
@@ -511,6 +537,11 @@ class _SearchScreenState extends State<SearchScreen> {
       padding: const EdgeInsets.symmetric(horizontal: TravleTokens.space16),
       child: Row(
         children: [
+          _ClearFiltersButton(
+            enabled: _hasActiveFilters,
+            onTap: _clearFilters,
+          ),
+          const SizedBox(width: TravleTokens.space8),
           _FilterButton(
             label: multiSelectChipLabel(
               emptyLabel: 'Category',
@@ -697,6 +728,38 @@ class _Choice<T> {
 
   final T? value;
   final String label;
+}
+
+/// The filter strip's leading action: one tap resets every chip after it. Always in
+/// place so its position never moves, greyed out while there is nothing to clear.
+class _ClearFiltersButton extends StatelessWidget {
+  const _ClearFiltersButton({required this.enabled, required this.onTap});
+
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final foreground = enabled
+        ? theme.colorScheme.error
+        : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5);
+    return ActionChip(
+      onPressed: enabled ? onTap : null,
+      visualDensity: VisualDensity.compact,
+      // Icon-only: the strip is horizontal real estate on a phone, and the icon sits
+      // right next to the chips it clears. The chip's own tooltip (long-press) and the
+      // semantics label carry the meaning.
+      label: Icon(
+        Icons.filter_alt_off_outlined,
+        size: 18,
+        color: foreground,
+        semanticLabel: 'Clear all filters',
+      ),
+      labelPadding: EdgeInsets.zero,
+      tooltip: 'Clear all filters',
+    );
+  }
 }
 
 /// A pill button that opens a filter sheet; highlighted while a value is selected.

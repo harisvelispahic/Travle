@@ -42,6 +42,8 @@ class BookingResponse {
     this.cancellationReason,
     this.expiresAt,
     this.cancellationRefundPercentage,
+    this.refundedAmount,
+    this.refundedPercentage,
     this.tourThumbnail,
     this.tourThumbnailContentType,
     this.modifiedAt,
@@ -108,6 +110,16 @@ class BookingResponse {
 
   /// Refund % the traveler would get if they cancelled now (detail read, own booking).
   final int? cancellationRefundPercentage;
+
+  /// What was actually refunded once the booking was cancelled (KM) and the tier
+  /// percentage behind it. `0` is a real outcome — a 0% tier still records the
+  /// refund — so both are null only when no refund was ever issued (nothing was
+  /// charged, or one is still owed), and the detail screen then omits the line.
+  final double? refundedAmount;
+  final int? refundedPercentage;
+
+  /// Whether this booking has a refund outcome to show.
+  bool get hasRefund => refundedAmount != null && refundedPercentage != null;
 
   /// Base64 cover thumbnail (the tour's ordered-first destination), for cards.
   final String? tourThumbnail;

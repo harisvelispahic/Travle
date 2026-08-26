@@ -60,6 +60,15 @@ namespace Travle.Services
             {
                 query = query.Where(r => r.TourId == search.TourId.Value);
             }
+
+            // Free-text over the reviewed tour and the author (each word must land somewhere), the same
+            // shape the bookings list uses — it is what the moderation screen's search box submits.
+            query = query.WhereContainsAllWords(search.Text,
+                r => r.Tour.Name,
+                r => r.User.FirstName,
+                r => r.User.LastName,
+                r => r.User.Username);
+
             if (search.OrganizerId.HasValue)
             {
                 query = query.Where(r => r.Tour.OrganizerId == search.OrganizerId.Value);

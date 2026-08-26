@@ -151,6 +151,14 @@ environment; a local `dotnet run` loads the same file through DotNetEnv and
 | `STRIPE_WEBHOOK_SECRET`                       | `whsec_…` printed by `stripe listen` (see §8)                                                                                              |
 | `SMTP_*`                                      | any SMTP provider — Mailtrap's sandbox is easiest. Leave `SMTP_HOST` empty to disable sending; the worker still runs and drains the queue. |
 
+> **A word on the e-mail quota.** Mailtrap's free sandbox accepts **50 e-mails a month**, and Travle
+> mails on every notable event (registration, booking confirmed, refund issued, password reset…). One
+> action can spend a lot of it at once: suspending an organizer cancels and refunds *every* paid
+> booking on their tours, and each affected traveler gets a refund e-mail. So suspend an organizer
+> with a couple of bookings rather than one of the seeded busy ones (`amir_tours`), or leave
+> `SMTP_HOST` empty to stop sending altogether — the worker still runs and drains the queue, and the
+> in-app/SignalR notifications are unaffected either way.
+
 At submission the real `.env` ships as a password-protected `.env-tajne.zip` in the same folder; the
 password is supplied through the DL system.
 
@@ -175,6 +183,21 @@ The checked-in `env*.json` files hold the same value for the common targets, and
 | mobile  | `env.local.json`  | `http://localhost:5126` | physical phone against a local `dotnet run`                   |
 | desktop | `env.json`        | `http://localhost:5121` | Windows against Docker — the release default                  |
 | desktop | `env.local.json`  | `http://localhost:5126` | Windows against a local `dotnet run`                          |
+
+> **On a physical Android phone, forward the port first.** The phone has no route to the host's
+> `localhost`, so `env.device.json` only works once the port is bridged over USB. With the phone
+> plugged in and USB debugging on, run:
+>
+> ```bash
+> adb reverse tcp:5121 tcp:5121
+> ```
+>
+> Re-run it after unplugging the phone, rebooting it, or restarting the adb server — the forward does
+> not survive any of those. Without it the app builds and starts fine but every request fails with a
+> `SocketException`, even though the stack is healthy. Against a local `dotnet run` (`env.local.json`)
+> forward that port instead: `adb reverse tcp:5126 tcp:5126`. The **emulator needs nothing** — it
+> reaches the host at `10.0.2.2`, which is what `env.json` already uses. `UI/RUNNING.md` covers the
+> Wi-Fi variant and the VS Code task that runs this for you.
 
 **First time, resolve all four packages** — not just the two apps. `travle_core` and `travle_ui`
 are path dependencies, and an app's own `flutter pub get` does **not** create a package resolution

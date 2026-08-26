@@ -63,6 +63,16 @@ namespace Travle.Model.Responses
         public byte[]? PrimaryThumbnail { get; set; }
         public string? PrimaryThumbnailContentType { get; set; }
 
+        /// <summary>
+        /// Why this destination cannot be deleted, or <c>null</c> when it can. Populated only on the
+        /// submitter's own list (<c>GET /Destinations/mine</c>) — the one place a Delete affordance is
+        /// rendered — so the curator/organizer sees Delete <b>disabled with the reason</b> instead of only
+        /// finding out on click (course §6, same convention as the reference tables). The service throws
+        /// this exact sentence as a <c>ConflictException</c> if a delete is attempted anyway, so the two
+        /// can never drift.
+        /// </summary>
+        public string? DeleteBlockedReason { get; set; }
+
         public DateTime CreatedAt { get; set; }
         public DateTime? ModifiedAt { get; set; }
     }

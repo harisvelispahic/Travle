@@ -230,7 +230,10 @@ class _MyDestinationsScreenState extends State<MyDestinationsScreen> {
                       return _DestinationCard(
                         destination: _items[i],
                         onTap: () => _openForm(existing: _items[i]),
-                        onDelete: _items[i].isPending
+                        // Any own destination nothing references yet can go — the
+                        // server decides that and says why not (deleteBlockedReason),
+                        // so the action simply isn't offered when it would fail.
+                        onDelete: _items[i].canBeDeleted
                             ? () => _delete(_items[i])
                             : null,
                       );

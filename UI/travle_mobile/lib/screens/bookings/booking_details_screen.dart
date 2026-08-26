@@ -494,6 +494,10 @@ class _DetailCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final peopleLabel =
         '${booking.numberOfPeople} ${booking.numberOfPeople == 1 ? 'person' : 'people'}';
+    // A refund can only be issued against a captured payment, so a refunded booking
+    // still counts as paid here: isPaid alone flips to false once its payment row
+    // moves to Refunded, which would read as "never paid" right above the refund line.
+    final wasPaid = booking.isPaid || booking.hasRefund;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(TravleTokens.space16),
@@ -519,12 +523,22 @@ class _DetailCard extends StatelessWidget {
             ),
             const Divider(height: TravleTokens.space24),
             _Row(
-              icon: booking.isPaid
-                  ? Icons.check_circle_outline
-                  : Icons.pending_outlined,
+              icon: wasPaid ? Icons.check_circle_outline : Icons.pending_outlined,
               label: 'Payment',
-              value: booking.isPaid ? 'Paid' : 'Not paid',
+              value: wasPaid ? 'Paid' : 'Not paid',
             ),
+            // What the cancellation actually returned. Present only once a refund has
+            // been issued, so a booking that was never charged shows no line at all —
+            // but a 0% tier does show "0.00 KM (0%)", which is the honest outcome.
+            if (booking.hasRefund) ...[
+              const Divider(height: TravleTokens.space24),
+              _Row(
+                icon: Icons.savings_outlined,
+                label: 'Refunded',
+                value: '${formatPrice(booking.refundedAmount!)} '
+                    '(${booking.refundedPercentage}%)',
+              ),
+            ],
             if (booking.confirmedByName != null) ...[
               const Divider(height: TravleTokens.space24),
               _Row(

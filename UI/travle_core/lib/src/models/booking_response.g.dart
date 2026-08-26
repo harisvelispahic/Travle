@@ -47,6 +47,8 @@ BookingResponse _$BookingResponseFromJson(Map<String, dynamic> json) =>
           : DateTime.parse(json['expiresAt'] as String),
       cancellationRefundPercentage:
           (json['cancellationRefundPercentage'] as num?)?.toInt(),
+      refundedAmount: (json['refundedAmount'] as num?)?.toDouble(),
+      refundedPercentage: (json['refundedPercentage'] as num?)?.toInt(),
       tourThumbnail: json['tourThumbnail'] as String?,
       tourThumbnailContentType: json['tourThumbnailContentType'] as String?,
       modifiedAt: json['modifiedAt'] == null
@@ -86,6 +88,8 @@ Map<String, dynamic> _$BookingResponseToJson(BookingResponse instance) =>
       'reviewId': instance.reviewId,
       'allowedActions': instance.allowedActions,
       'cancellationRefundPercentage': instance.cancellationRefundPercentage,
+      'refundedAmount': instance.refundedAmount,
+      'refundedPercentage': instance.refundedPercentage,
       'tourThumbnail': instance.tourThumbnail,
       'tourThumbnailContentType': instance.tourThumbnailContentType,
       'createdAt': instance.createdAt.toIso8601String(),
