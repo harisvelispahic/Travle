@@ -49,7 +49,15 @@ services:
       # booting and opens the AMQP listener, so compose called RabbitMQ healthy while port 5672 was
       # still refusing connections and the worker started into a retry storm.
       # `check_port_connectivity` probes the listeners themselves, which is what a client needs.
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      #
+      # Run it through `gosu rabbitmq`, exactly as the image's own entrypoint starts the broker. A
+      # healthcheck does NOT go through the entrypoint — Docker executes it directly, as the image's
+      # default user, which here is root. rabbitmq-diagnostics is an Erlang CLI tool, so when no
+      # cookie exists yet it *creates* /var/lib/rabbitmq/.erlang.cookie as the user running it. On a
+      # slow or loaded host the broker has not written that cookie by the time the first check fires
+      # (5 s in), root wins the race, and the broker then dies with
+      # "Error when reading /var/lib/rabbitmq/.erlang.cookie: eacces" on every clean start.
+      test: ["CMD", "gosu", "rabbitmq", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
       interval: 5s
       timeout: 10s
       retries: 20
