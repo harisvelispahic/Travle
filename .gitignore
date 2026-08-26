@@ -402,3 +402,6 @@ FodyWeavers.xsd
 # Working artifacts of the destination-image fetcher (the script itself is tracked)
 tools/destination-images/manifest.json
 tools/destination-images/*.log
+
+# Release build archive — staged outside the tree, never committed
+fit-build-*.zip

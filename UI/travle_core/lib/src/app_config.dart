@@ -9,8 +9,7 @@
 /// ```
 ///
 /// A file works too and is what the checked-in launch configurations use:
-/// `--dart-define-from-file=env.json`. `BASE_URL` is still accepted as an alias
-/// so older commands and scripts keep working.
+/// `--dart-define-from-file=env.json`.
 ///
 /// The value may be given with or without a trailing slash — [baseUrl]
 /// normalizes it, because providers concatenate `baseUrl + endpoint`
@@ -24,19 +23,14 @@
 class AppConfig {
   AppConfig._();
 
-  /// Course-mandated name (§3.3), read first.
+  /// Course-mandated name (§3.3).
   static const String _apiBaseUrl = String.fromEnvironment('API_BASE_URL');
-
-  /// Backwards-compatible alias used by the older env files/launch configs.
-  static const String _legacyBaseUrl = String.fromEnvironment('BASE_URL');
 
   static const String _fallback = 'http://localhost:5121/';
 
   /// The API root, always ending in a single `/`.
   static String get baseUrl {
-    final raw = _apiBaseUrl.isNotEmpty
-        ? _apiBaseUrl
-        : (_legacyBaseUrl.isNotEmpty ? _legacyBaseUrl : _fallback);
+    final raw = _apiBaseUrl.isNotEmpty ? _apiBaseUrl : _fallback;
     final trimmed = raw.trim();
     return trimmed.endsWith('/') ? trimmed : '$trimmed/';
   }

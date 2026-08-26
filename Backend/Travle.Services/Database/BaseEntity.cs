@@ -5,7 +5,7 @@ namespace Travle.Services.Database
     /// <see cref="CreatedAt"/> / <see cref="ModifiedAt"/> are populated centrally in
     /// <c>TravleDbContext.SaveChanges</c> — never set them manually in a service.
     /// Soft-delete flags are intentionally NOT here: they are per-entity and named for their
-    /// meaning (e.g. <c>IsRemoved</c>, <c>IsSuspended</c>). See docs/context/02 §2b/§6a.
+    /// meaning (e.g. <c>IsRemoved</c>, <c>IsSuspended</c>).
     /// </summary>
     public abstract class BaseEntity
     {

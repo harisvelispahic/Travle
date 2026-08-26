@@ -44,7 +44,7 @@ flutter run --dart-define-from-file=env.json
 …or use the VS Code launch configs (below), which pass the right file per target.
 If nothing is passed, the built-in default in `travle_core/lib/src/app_config.dart`
 (`http://localhost:5121/`, i.e. the docker-compose API) is used. A trailing slash is
-optional — `AppConfig` normalizes it. `BASE_URL` is still accepted as an alias.
+optional — `AppConfig` normalizes it.
 
 ## API ports differ by how you run the backend
 

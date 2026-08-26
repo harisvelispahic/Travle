@@ -60,7 +60,7 @@ EnvironmentConfigurationAliases.Apply();
 var builder = WebApplication.CreateBuilder(args);
 
 // QuestPDF Community licence (free under the revenue threshold — fine for a seminar project). Must be
-// set once before any report PDF is generated. See docs/context §Phase 11.
+// set once before any report PDF is generated.
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
 // CORS policy names and the origins it allows (explicit, from configuration — never AllowAnyOrigin).
@@ -75,8 +75,7 @@ builder.Services.AddScoped<IAppAuthorizationService, AppAuthorizationService>();
 
 // Global exception-handling pipeline: a chain of IExceptionHandler implementations invoked in
 // registration order (specific first, generic last — the try/catch/catch mental model). The
-// fallback GlobalExceptionHandler is registered last and always handles. See
-// docs/context/09-exception-handling.md.
+// fallback GlobalExceptionHandler is registered last and always handles.
 builder.Services.AddExceptionHandler<TravleExceptionHandler>();
 builder.Services.AddExceptionHandler<ValidationExceptionHandler>();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();

@@ -158,9 +158,8 @@ namespace Travle.Services.Database
     }
 
     /// <summary>
-    /// Kind of recorded <see cref="UserInteraction"/> — recommender fuel. Weights are documented in
-    /// docs/context/04-recommender-spec.md §2 and applied by the scoring service, not stored per row
-    /// beyond the <see cref="UserInteraction.Weight"/> snapshot.
+    /// Kind of recorded <see cref="UserInteraction"/> — recommender fuel. Weights are applied by the
+    /// scoring service, not stored per row beyond the <see cref="UserInteraction.Weight"/> snapshot.
     /// </summary>
     public enum InteractionType
     {

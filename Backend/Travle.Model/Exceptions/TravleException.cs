@@ -10,7 +10,7 @@ namespace Travle.Model.Exceptions;
 /// <see cref="System.Exception.Message"/> to the caller verbatim. Infrastructure or otherwise
 /// unexpected failures must <b>not</b> derive from this type — they are caught by the fallback
 /// handler, logged in full, and reported to the client as a generic HTTP 500 with no internal
-/// detail (see <c>docs/context/09-exception-handling.md</c>).
+/// detail.
 /// </para>
 /// </summary>
 public abstract class TravleException : Exception

@@ -2,7 +2,7 @@
 
 > **Platform for discovering destinations and booking tourist experiences**
 > Course: Razvoj softvera II, FIT · Student: Haris Velispahić (IB230172)
-> Status: **Source of truth**, revision 3 (2026-07-10) — **reconciliation complete, no open items**. Decision history: `00-ANALYSIS-AND-OPEN-QUESTIONS.md`.
+> Status: **Source of truth**, revision 3 (2026-07-10) — **reconciliation complete, no open items**.
 
 ---
 

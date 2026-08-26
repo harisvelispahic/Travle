@@ -3,11 +3,9 @@
 > **What this file is.** A from-scratch, human-friendly walkthrough of how Travle recommends
 > destinations. It assumes **no prior knowledge** of recommender systems or the math involved.
 >
-> **What this file is _not_.** It is not the graded deliverable. The formal specification lives in
-> [`docs/context/04-recommender-spec.md`](context/04-recommender-spec.md) (terse, written for precision),
-> and the submission document `recommender-dokumentacija.md` (Bosnian) is derived from that spec. This
-> file is the "explain it to me like I'm learning it" companion — read this first, and the other two will
-> make sense.
+> **What this file is _not_.** It is not the graded deliverable — the submission document
+> `recommender-dokumentacija.md` (Bosnian) is. This file is the "explain it to me like I'm learning it"
+> companion — read this one first and that one will make sense.
 
 ---
 

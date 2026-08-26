@@ -8,7 +8,7 @@ namespace Travle.Services.Database.Configurations
     /// timestamp columns. Concrete per-entity configurations inherit this, override
     /// <see cref="Configure"/>, call <c>base.Configure(builder)</c> first, then declare their own
     /// properties, relationships (explicit <c>HasOne/WithMany/HasForeignKey/OnDelete</c>) and indexes.
-    /// Applied via <c>ApplyConfigurationsFromAssembly</c>. See docs/context/02 §4.
+    /// Applied via <c>ApplyConfigurationsFromAssembly</c>.
     /// </summary>
     public abstract class BaseEntityConfiguration<T> : IEntityTypeConfiguration<T>
         where T : BaseEntity
