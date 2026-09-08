@@ -1,9 +1,10 @@
-using Travle.Model.Exceptions;
+﻿using Travle.Model.Exceptions;
 using Travle.Model.Requests;
 using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
 using Travle.Services.Database;
+using Travle.Services.Visibility;
 using Travle.Services.Projections;
 using Travle.Services.Recommender;
 using FluentValidation;
@@ -59,8 +60,11 @@ namespace Travle.Services
             var userId = _authorization.RequireUserId();
             search ??= new DestinationSearch();
 
+            // A favorited destination that has left the published catalogue is hidden for as long as it is
+            // away, exactly as it is in browse — the favorite row survives, so it returns on re-approval.
             IQueryable<Destination> query = _dbContext.Destinations.AsNoTracking()
-                .Where(d => _dbContext.Favorites.Any(f => f.UserId == userId && f.DestinationId == d.Id));
+                .Where(d => _dbContext.Favorites.Any(f => f.UserId == userId && f.DestinationId == d.Id))
+                .VisibleToTravelers();
 
             query = ApplyDestinationText(query, search.Text);
             if (search.CategoryId.HasValue)
@@ -97,13 +101,12 @@ namespace Travle.Services
             search ??= new TourSearch();
             var now = DateTime.UtcNow;
 
+            // Same rule as public browse, so a favorited tour that is deactivated, whose organizer is
+            // suspended, or that has a stop back under review disappears until it is bookable again. The
+            // favorite row is never deleted, so all three reverse on their own.
             IQueryable<Tour> query = _dbContext.Tours.AsNoTracking()
                 .Where(t => _dbContext.Favorites.Any(f => f.UserId == userId && f.TourId == t.Id))
-                // Hide a favorited tour whose organizer is currently suspended (reappears on unsuspend).
-                .Where(t => !t.Organizer.IsSuspended)
-                // Hide a favorited tour that has an under-review stop (reappears when it's approved again),
-                // matching the public browse — a traveler must never open such a tour.
-                .Where(t => t.TourDestinations.All(td => td.Destination.Status == DestinationStatus.Approved));
+                .BookableToTravelers();
 
             query = ApplyTourText(query, search.Text);
             if (search.TourTypeId.HasValue)

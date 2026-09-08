@@ -22,8 +22,8 @@ namespace Travle.Services.Payments
     {
         /// <summary>
         /// Throws unless <paramref name="tiers"/> covers every hour from 0 upwards exactly once: sorted by
-        /// their lower bound, the first starts at 0, each one ends where the next begins, and precisely one
-        /// — the last — is open-ended.
+        /// their lower bound, the first starts at 0, each one ends where the next begins, precisely one
+        /// — the last — is open-ended, and each tier refunds strictly more than the one below it.
         /// </summary>
         public static void EnsureContiguous(IReadOnlyCollection<RefundPolicyTier> tiers)
         {
@@ -69,7 +69,9 @@ namespace Travle.Services.Payments
             }
 
             // Each tier ends exactly where the next begins: a lower Max leaves hours uncovered, a higher one
-            // makes two tiers claim the same hour.
+            // makes two tiers claim the same hour. And the further ahead a traveler cancels, the more they
+            // get back — a policy that paid less for more notice would punish exactly the behaviour it is
+            // meant to encourage, so the percentages must rise with the ladder.
             for (var i = 0; i < ordered.Count - 1; i++)
             {
                 var current = ordered[i];
@@ -87,6 +89,17 @@ namespace Travle.Services.Payments
                         $"The refund tiers {current.HoursBeforeMin}h–{current.HoursBeforeMax}h and "
                         + $"{next.HoursBeforeMin}h–{FormatUpper(next.HoursBeforeMax)} overlap. Each hour before departure "
                         + "must match exactly one tier.");
+                }
+
+                // Strictly greater, not merely non-decreasing: two adjacent tiers paying the same percentage
+                // describe one rule written twice, and the honest fix is to merge them into a single tier.
+                if (next.Percentage <= current.Percentage)
+                {
+                    throw new BusinessRuleException(
+                        $"Refunds must increase with notice: the {next.HoursBeforeMin}h–{FormatUpper(next.HoursBeforeMax)} tier "
+                        + $"pays {next.Percentage}%, which is not more than the {current.HoursBeforeMin}h–{current.HoursBeforeMax}h "
+                        + $"tier's {current.Percentage}%. Cancelling earlier must never refund less"
+                        + (next.Percentage == current.Percentage ? "; merge the two tiers if they should pay the same." : "."));
                 }
             }
         }

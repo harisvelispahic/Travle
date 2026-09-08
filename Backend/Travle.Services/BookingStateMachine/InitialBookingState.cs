@@ -1,7 +1,8 @@
-using Travle.Model.Exceptions;
+﻿using Travle.Model.Exceptions;
 using Travle.Model.Requests;
 using Travle.Model.Responses;
 using Travle.Services.Database;
+using Travle.Services.Visibility;
 using FluentValidation;
 using MapsterMapper;
 using Microsoft.Data.SqlClient;
@@ -63,18 +64,15 @@ namespace Travle.Services.BookingStateMachine
             var cutoffMinutes = BookingTimeRules.ResolveCutoffMinutes(slot.Tour.BookingCutoffMinutes, _options);
             BookingTimeRules.EnsureOpenForBooking(slot.StartsAt, cutoffMinutes, now);
 
-            if (!slot.Tour.IsActive)
-            {
-                throw new BusinessRuleException("This tour is no longer active.");
-            }
-
-            // A suspended organizer can't confirm bookings, so their tours are not bookable while suspended
-            // (defense in depth — the tour is already hidden from browse). Reverses on unsuspend.
-            var organizerSuspended = await DbContext.Users
-                .Where(u => u.Id == slot.Tour.OrganizerId)
-                .Select(u => u.IsSuspended)
-                .FirstOrDefaultAsync();
-            if (organizerSuspended)
+            // The same condition public browse and the tour detail apply — active, organizer not suspended,
+            // every stop still approved — asked here as well. Checking it only at the read paths left a
+            // remembered scheduleId as a way to book a tour that had already vanished from the catalogue
+            // (its stop sent back to moderation, say), so the rule is enforced where the seats are claimed.
+            var bookable = await DbContext.Tours
+                .Where(t => t.Id == slot.TourId)
+                .BookableToTravelers()
+                .AnyAsync();
+            if (!bookable)
             {
                 throw new BusinessRuleException("This tour is not currently available for booking.");
             }

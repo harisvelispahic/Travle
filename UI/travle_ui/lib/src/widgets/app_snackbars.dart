@@ -9,15 +9,16 @@ import '../theme/travle_colors.dart';
 class AppSnackbars {
   AppSnackbars._();
 
-  static void success(BuildContext context, String message) {
+  static void success(BuildContext context, String message, {Duration? duration}) {
     final colors = Theme.of(context).extension<TravleColors>()!;
     _show(context, message, colors.success, colors.onSuccess,
-        Icons.check_circle_outline);
+        Icons.check_circle_outline, duration: duration);
   }
 
-  static void error(BuildContext context, String message) {
+  static void error(BuildContext context, String message, {Duration? duration}) {
     final scheme = Theme.of(context).colorScheme;
-    _show(context, message, scheme.error, scheme.onError, Icons.error_outline);
+    _show(context, message, scheme.error, scheme.onError, Icons.error_outline,
+        duration: duration);
   }
 
   /// A neutral, informational message (e.g. a transient hint like "Press back
@@ -43,7 +44,7 @@ class AppSnackbars {
       ..showSnackBar(
         SnackBar(
           backgroundColor: background,
-          duration: duration ?? const Duration(seconds: 4),
+          duration: duration ?? _readingTime(message),
           content: Row(
             children: [
               Icon(icon, color: foreground),
@@ -56,4 +57,15 @@ class AppSnackbars {
         ),
       );
   }
+
+  /// How long to leave a message up, from how much there is to read.
+  ///
+  /// A fixed four seconds is fine for "Saved" but not for the server's business
+  /// rules, several of which are a couple of sentences that name counts and say
+  /// what to do next — those used to vanish mid-sentence. Roughly 12 characters
+  /// a second, floored at the old default so short messages are unchanged, and
+  /// capped so nothing camps on the screen. A caller can still pass an explicit
+  /// [Duration] when it knows better.
+  static Duration _readingTime(String message) =>
+      Duration(seconds: (message.length / 12).ceil().clamp(4, 12));
 }

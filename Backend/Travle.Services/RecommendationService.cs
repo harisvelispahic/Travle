@@ -1,7 +1,8 @@
-using Travle.Model.Exceptions;
+﻿using Travle.Model.Exceptions;
 using Travle.Model.Responses;
 using Travle.Services.Authorization;
 using Travle.Services.Database;
+using Travle.Services.Visibility;
 using Travle.Services.Projections;
 using Travle.Services.Recommender;
 using Microsoft.EntityFrameworkCore;
@@ -256,8 +257,13 @@ namespace Travle.Services
                 return new Dictionary<int, DestinationResponse>();
             }
 
+            // Re-check approval on the way out. These ids come from the recommendation cache, which is
+            // computed from approved destinations but outlives a moderation change — without this a
+            // destination sent back for review lingers in recommendations until the cache expires.
             var cards = await DestinationProjections
-                .ProjectToResponse(_dbContext.Destinations.AsNoTracking().Where(d => ids.Contains(d.Id)))
+                .ProjectToResponse(_dbContext.Destinations.AsNoTracking()
+                    .Where(d => ids.Contains(d.Id))
+                    .VisibleToTravelers())
                 .ToListAsync();
             DestinationProjections.FinalizeThumbnails(cards);
 

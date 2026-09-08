@@ -1,4 +1,4 @@
-using Travle.Model.Constants;
+﻿using Travle.Model.Constants;
 using Travle.Model.Exceptions;
 using Travle.Model.Requests;
 using Travle.Model.Responses;
@@ -6,6 +6,7 @@ using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
 using Travle.Services.BookingStateMachine;
 using Travle.Services.Database;
+using Travle.Services.Visibility;
 using Travle.Services.Notifications;
 using Travle.Services.Payments;
 using Travle.Services.Projections;
@@ -130,7 +131,7 @@ namespace Travle.Services
             // leaves it off so they still see the tour (flagged) and can act on it.
             if (search.ExcludeUnavailableDestinations == true)
             {
-                query = query.Where(t => t.TourDestinations.All(td => td.Destination.Status == DestinationStatus.Approved));
+                query = query.Where(TravelerVisibility.AllStopsApproved);
             }
 
             return query;
@@ -252,7 +253,19 @@ namespace Travle.Services
             }
             else
             {
-                // Non-owners only ever see bookable slots — the search filters are ignored for them.
+                // Non-owners only ever see bookable slots — the search filters are ignored for them. The
+                // tour itself must also still be traveler-visible: without this the endpoint handed out
+                // schedule ids for a tour that had already left the catalogue, which is how a remembered
+                // id became a booking attempt.
+                var tourVisible = await _dbContext.Tours
+                    .Where(t => t.Id == tourId)
+                    .BookableToTravelers()
+                    .AnyAsync();
+                if (!tourVisible)
+                {
+                    return new PageResult<TourScheduleResponse> { Items = [], TotalCount = 0 };
+                }
+
                 query = query.Where(s => s.Status == ScheduleStatus.Active && s.StartsAt > now);
             }
 

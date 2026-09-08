@@ -12,8 +12,8 @@ rule adopted to fix it, and where that rule now lives in the code. Kept up to da
 | 2   | Missing time rules for `Pending` / `Confirmed` bookings | Done    |
 | 3   | Refund amount re-decided on every retry                 | Done    |
 | 4   | Refund policy validated per row, not as a scale         | Done    |
-| 5   | Traveler visibility / bookability rules inconsistent    | Pending |
-| 6   | `Organizer` role revocable with live tours and bookings | Pending |
+| 5   | Traveler visibility / bookability rules inconsistent    | Done    |
+| 6   | `Organizer` role revocable with live tours and bookings | Done    |
 | 7   | `IsDeletable` disagreed with the real delete rule       | Done    |
 | 8   | No Print action on the PDF reports                      | Pending |
 | 9   | No filter on the desktop notifications list             | Pending |
@@ -149,6 +149,54 @@ uses it, matching `DeleteScheduleAsync` exactly. The response also carries `Dele
 console shows that server-authored sentence in its tooltip instead of a hardcoded local one, so the
 explanation and the eventual error can never tell different stories.
 
+## 5. Traveler visibility and bookability were spelled out differently at each entry point
+
+**Was:** four versions of one rule. Public search and `GetDetailAsync` hid a tour that was inactive, whose
+organizer was suspended, or that had a stop back under moderation. `GetSchedulesAsync` checked only that the
+slot was active and future. `InitialBookingState.CreateAsync` checked the slot, the tour's activation and the
+organizer's suspension — but not whether the stops were still approved. So a tour could disappear from
+search and detail while a remembered `scheduleId` remained enough to book it: unreachable and bookable at the
+same time. Three more places had their own partial versions — the recommender re-hydrated cached destination
+ids without re-checking approval, favorited destinations were not filtered at all, and the organizer's public
+profile listed tours on activation alone.
+
+**Now:** one `TravelerVisibility` class holds the condition — active, organizer not suspended, every stop
+approved — and every entry point composes it: public search, the schedules endpoint (which now returns
+nothing to a non-owner for a tour that is not traveler-visible), the booking guard, both favorites lists, the
+recommender's final read, and the organizer profile. One condition to read, one to change, one to defend.
+
+Organizer- and admin-facing reads deliberately do not apply it: an organizer must still see their own
+deactivated or temporarily unavailable tour in order to act on it.
+
+## 6. `Organizer` role revocable with live tours and bookings
+
+**Was:** `RevokeRoleAsync` guarded self-lockout and the last-admin case, and nothing else. Removing Organizer
+from someone with live tours left those tours active and bookable while their owner no longer passed the
+role check on confirm and reject — so a traveler could pay for a seat nobody had the authority to confirm.
+
+**Now:** the revoke is refused while the organizer has an active tour with upcoming dates, or an unresolved
+booking on an upcoming date. The message names both counts and the two ways forward. Past tours and finished
+bookings are irrelevant: the role governs what happens next, not what already happened.
+
+See the decisions log for why this blocks rather than cascades.
+
+## Refund policy editor (follow-on from #4)
+
+Making the ladder contiguous had a consequence worth recording: it made the per-row reference CRUD screen
+unusable. A ladder that tiles every hour before departure has no room for another row, so **every**
+single-row edit to a valid policy is correctly refused — adding a tier overlaps a neighbour, deleting one
+leaves a gap, and capping the top one removes the open end. The rule was right and the screen was now wrong.
+
+The tiers are one aggregate, so they are now edited as one: `PUT /RefundPolicyTiers/ladder` replaces the
+whole set in a transaction after validating it, and the console has a dedicated editor in place of the
+generic CRUD screen. In it the boundary between two tiers is a single shared value, so a gap or an overlap
+is not something an admin can express — moving a boundary moves both sides at once. That leaves two
+structural actions, both of which preserve coverage by construction: **split** a tier at a new boundary and
+**merge** a tier into the one below. Validation runs live against the same rules the server enforces.
+
+The per-row endpoints remain and still enforce the ladder rule; they are simply no longer how the policy is
+edited.
+
 ---
 
 ## Decisions log
@@ -157,6 +205,7 @@ explanation and the eventual error can never tell different stories.
 | ------------------------------------ | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Unresolved `Pending` at departure    | Cancel with a 100% refund         | The traveler paid and was never accepted, and an unconfirmed seat cannot be honoured. Auto-confirming would hand out a place the organizer never agreed to.                                                                                                                                                                                                                                                                                                               |
 | Admin-initiated cancellation         | 100%                              | Only the traveler's own decision is tiered. Makes the first attempt and any retry identical by construction.                                                                                                                                                                                                                                                                                                                                                              |
+| Refund percentages | Must strictly increase with notice | A policy paying less for more notice would punish the behaviour it exists to encourage. Two adjacent tiers paying the same are one rule written twice, so they must be merged rather than duplicated. |
 | Booking cutoff scope                 | Per tour, over a platform default | The lead time an organizer needs in order to confirm is a property of the tour. `null` uses the platform default, `0` keeps a date bookable until it starts.                                                                                                                                                                                                                                                                                                              |
 | Revoking `Organizer` with live tours | Block and inform                  | **The cascading variant already exists as account suspension**, which deactivates the organizer's upcoming tours and cancels and refunds their outstanding bookings. Building a second cascade behind a role toggle would duplicate a working flow and hide a lot of irreversible work behind one click. The revoke therefore refuses while active future tours or unresolved bookings exist, and points the admin at deactivating those tours or suspending the account. |
 

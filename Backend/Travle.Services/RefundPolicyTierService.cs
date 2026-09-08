@@ -1,3 +1,4 @@
+﻿using Travle.Model.Constants;
 using Travle.Model.Requests;
 using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
@@ -13,14 +14,22 @@ namespace Travle.Services
         : ReferenceCrudService<RefundPolicyTier, RefundPolicyTierResponse, RefundPolicyTierSearch, RefundPolicyTierInsertRequest, RefundPolicyTierUpdateRequest>,
           IRefundPolicyTierService
     {
+        // The base keeps its own copy for the CRUD verbs; the ladder replacement is a verb of this service's
+        // own, so it holds the authorization boundary and its validator directly.
+        private readonly IAppAuthorizationService _authorization;
+        private readonly IValidator<RefundPolicyLadderRequest> _ladderValidator;
+
         public RefundPolicyTierService(
             TravleDbContext dbContext,
             MapsterMapper.IMapper mapper,
             IValidator<RefundPolicyTierInsertRequest> insertValidator,
             IValidator<RefundPolicyTierUpdateRequest> updateValidator,
+            IValidator<RefundPolicyLadderRequest> ladderValidator,
             IAppAuthorizationService authorization)
             : base(dbContext, mapper, insertValidator, updateValidator, authorization)
         {
+            _authorization = authorization;
+            _ladderValidator = ladderValidator;
         }
 
         protected override IQueryable<RefundPolicyTier> ApplyFilters(IQueryable<RefundPolicyTier> query, RefundPolicyTierSearch? search)
@@ -56,6 +65,47 @@ namespace Travle.Services
 
         protected override async Task OnBeforeDeleteAsync(RefundPolicyTier entity)
             => RefundPolicyLadder.EnsureContiguous(await OtherTiersAsync(entity.Id));
+
+        /// <summary>
+        /// Replaces the whole ladder in one transaction. Validated as a set first, so the database never
+        /// briefly holds an invalid policy and a rejected edit changes nothing at all.
+        ///
+        /// The rows are replaced rather than reconciled: no foreign key points at a tier — refunds snapshot
+        /// the percentage they applied, and since the August review the booking snapshots the amount it
+        /// owes — so a tier carries no history worth preserving through an edit, and matching old rows to
+        /// new ones would only invent an identity the ladder does not have.
+        /// </summary>
+        public async Task<List<RefundPolicyTierResponse>> ReplaceLadderAsync(RefundPolicyLadderRequest request)
+        {
+            _authorization.EnsureInRole(RoleNames.Admin);
+            await _ladderValidator.ValidateAndThrowAsync(request);
+
+            var replacement = request.Tiers
+                .Select(t => new RefundPolicyTier
+                {
+                    HoursBeforeMin = t.HoursBeforeMin,
+                    HoursBeforeMax = t.HoursBeforeMax,
+                    Percentage = t.Percentage
+                })
+                .ToList();
+
+            RefundPolicyLadder.EnsureContiguous(replacement);
+
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+
+            _dbContext.RefundPolicyTiers.RemoveRange(await _dbContext.RefundPolicyTiers.ToListAsync());
+            await _dbContext.SaveChangesAsync();
+
+            _dbContext.RefundPolicyTiers.AddRange(replacement);
+            await _dbContext.SaveChangesAsync();
+
+            await transaction.CommitAsync();
+
+            return replacement
+                .OrderByDescending(t => t.HoursBeforeMin)
+                .Select(_mapper.Map<RefundPolicyTierResponse>)
+                .ToList();
+        }
 
         // The ladder as it stands, minus the row being changed. Untracked so it can never collide with the
         // tracked entity the CRUD base is about to mutate.

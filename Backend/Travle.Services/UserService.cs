@@ -1,10 +1,11 @@
-using Travle.Model.Constants;
+﻿using Travle.Model.Constants;
 using Travle.Model.Exceptions;
 using Travle.Model.Requests;
 using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
 using Travle.Services.Database;
+using Travle.Services.Visibility;
 using Travle.Services.Imaging;
 using Travle.Services.Notifications;
 using Travle.Services.Payments;
@@ -334,6 +335,20 @@ namespace Travle.Services
                 throw new BusinessRuleException("You cannot remove the last remaining Admin.");
             }
 
+            // Removing Organizer is a business lifecycle change, not just an identity edit: the role is what
+            // lets someone confirm or reject bookings on their own tours. Strip it while their tours are
+            // still live and those tours stay bookable with nobody able to answer for them — a traveler can
+            // pay for a seat the owner has no authority to confirm.
+            //
+            // Blocked rather than cascaded on purpose. The cascade already exists as account suspension,
+            // which deactivates upcoming tours and cancels and refunds outstanding bookings through the
+            // booking/refund flow; building a second one behind a role toggle would duplicate it and hide a
+            // lot of irreversible work behind one click. So this refuses and says what is in the way.
+            if (roleName == RoleNames.Organizer)
+            {
+                await EnsureOrganizerHasNoLiveCommitmentsAsync(id);
+            }
+
             _dbContext.UserRoles.Remove(userRole);
 
             // Bump the stamp so the current access token is rejected and re-minted without the role. Refresh
@@ -350,6 +365,51 @@ namespace Travle.Services
             _securityStore.Invalidate(id);
 
             return await RequireWithRolesAsync(id);
+        }
+
+        /// <summary>
+        /// Refuses to strip the Organizer role while the user still owes something as an organizer: an
+        /// active tour with an upcoming date, or a booking on an upcoming date that nobody else can resolve.
+        /// Both counts are named in the message, with the two ways forward, so the admin is told what to do
+        /// rather than just told no. Past tours and finished bookings are irrelevant — the role governs what
+        /// happens next, not what already happened.
+        /// </summary>
+        private async Task EnsureOrganizerHasNoLiveCommitmentsAsync(int organizerId)
+        {
+            var now = DateTime.UtcNow;
+
+            var liveTours = await _dbContext.Tours.CountAsync(t =>
+                t.OrganizerId == organizerId
+                && t.IsActive
+                && t.Schedules.Any(s => s.Status == ScheduleStatus.Active && s.StartsAt > now));
+
+            var unresolvedBookings = await _dbContext.Bookings.CountAsync(b =>
+                b.TourSchedule.Tour.OrganizerId == organizerId
+                && b.TourSchedule.StartsAt > now
+                && (b.StatusId == (int)BookingStatusCode.PaymentInProgress
+                    || b.StatusId == (int)BookingStatusCode.Pending
+                    || b.StatusId == (int)BookingStatusCode.Confirmed));
+
+            if (liveTours == 0 && unresolvedBookings == 0)
+            {
+                return;
+            }
+
+            var blockers = new List<string>();
+            if (liveTours > 0)
+            {
+                blockers.Add($"{liveTours} active tour(s) with upcoming dates");
+            }
+            if (unresolvedBookings > 0)
+            {
+                blockers.Add($"{unresolvedBookings} unresolved booking(s) on upcoming dates");
+            }
+
+            throw new BusinessRuleException(
+                $"This organizer still has {string.Join(" and ", blockers)}, and removing the role would leave "
+                + "them unable to confirm or reject those bookings. Deactivate the tours (or let their dates "
+                + "pass) and then remove the role, or suspend the account instead — that cancels the upcoming "
+                + "bookings and refunds the travelers in full.");
         }
 
         public async Task<UserResponse> UpdateProfileAsync(int id, UserUpdateRequest request)
@@ -592,7 +652,8 @@ namespace Travle.Services
             var reviewCount = ratingAgg?.Count ?? 0;
             var averageRating = reviewCount > 0 ? ratingAgg!.Sum / reviewCount : 0d;
 
-            var tourCount = await _dbContext.Tours.CountAsync(t => t.OrganizerId == id && t.IsActive);
+            // Count and list only what a traveler could actually open from here — the same rule as browse.
+            var tourCount = await _dbContext.Tours.Where(t => t.OrganizerId == id).BookableToTravelers().CountAsync();
 
             // A preview of the organizer's active tours through the shared list projection (thumbnails only,
             // never full image bytes). The rating is computed inside the projection, so we rank on the
@@ -601,7 +662,7 @@ namespace Travle.Services
             // not set — this is a public preview, and the tour card here shows no heart.
             var now = DateTime.UtcNow;
             var activeTours = await TourProjections.ProjectToListResponse(
-                    _dbContext.Tours.AsNoTracking().Where(t => t.OrganizerId == id && t.IsActive),
+                    _dbContext.Tours.AsNoTracking().Where(t => t.OrganizerId == id).BookableToTravelers(),
                     now)
                 .ToListAsync();
 

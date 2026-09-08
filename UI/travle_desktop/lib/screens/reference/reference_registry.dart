@@ -4,6 +4,7 @@ import 'package:travle_core/travle_core.dart';
 import '../../widgets/crud_form_dialog.dart';
 import '../../widgets/paginated_search_table.dart';
 import 'reference_crud_screen.dart';
+import 'refund_ladder_screen.dart';
 import 'reference_entity_config.dart';
 
 /// The ordered set of reference tables shown under the sidebar's "Reference
@@ -42,11 +43,16 @@ List<ReferenceModule> buildReferenceModules() => [
         icon: Icons.sell_outlined,
         builder: (_) => ReferenceCrudScreen<TagResponse>(config: _tag()),
       ),
+      // Not a ReferenceCrudScreen: the refund tiers are one ladder, not a set of
+      // independent rows. They have to tile every hour before departure exactly
+      // once, so a per-row add always overlaps a neighbour and a per-row delete
+      // always leaves a gap — every single-row edit to a valid ladder is refused.
+      // The dedicated editor shares the boundaries between adjacent tiers, which
+      // makes those invalid states impossible to express in the first place.
       ReferenceModule(
-        title: 'Refund Tiers',
+        title: 'Refund Policy',
         icon: Icons.percent_outlined,
-        builder: (_) =>
-            ReferenceCrudScreen<RefundPolicyTierResponse>(config: _refundTier()),
+        builder: (_) => const RefundLadderScreen(),
       ),
       ReferenceModule(
         title: 'Booking Statuses',
@@ -63,13 +69,6 @@ String _date(DateTime utc) {
   final d = utc.toLocal();
   String two(int v) => v.toString().padLeft(2, '0');
   return '${d.year}-${two(d.month)}-${two(d.day)}';
-}
-
-/// Human description of a refund tier's cancellation window (no raw fields shown).
-String _tierWindow(int min, int? max) {
-  if (max == null) return '$min h or more before';
-  if (min == 0) return 'Under $max h before';
-  return '$min–$max h before';
 }
 
 // Every page — the seeded set outgrew the API's 100-row cap, and a Region row whose
@@ -315,70 +314,6 @@ ReferenceEntityConfig<TagResponse> _tag() => _simpleNamed<TagResponse>(
       emptyMessage: 'No tags yet.',
       usageCount: (t) => t.usageCount,
       deleteBlockedReason: (t) => t.deleteBlockedReason,
-    );
-
-ReferenceEntityConfig<RefundPolicyTierResponse> _refundTier() =>
-    ReferenceEntityConfig<RefundPolicyTierResponse>(
-      title: 'Refund Tier',
-      providerFactory: RefundPolicyTierProvider.new,
-      idOf: (t) => t.id,
-      rowTitle: (t) =>
-          '${_tierWindow(t.hoursBeforeMin, t.hoursBeforeMax)} → ${t.percentage}%',
-      searchHint: 'Filter by refund %…',
-      emptyMessage: 'No refund tiers yet.',
-      buildSearchQuery: (s) {
-        final n = int.tryParse(s.trim());
-        return n == null ? const {} : {'percentage': n};
-      },
-      columns: [
-        TableColumnSpec(
-            label: 'Cancellation window',
-            sortKey: 'HoursBeforeMin',
-            flex: 4,
-            cell: (t) => _tierWindow(t.hoursBeforeMin, t.hoursBeforeMax)),
-        TableColumnSpec(
-            label: 'Refund',
-            sortKey: 'Percentage',
-            flex: 2,
-            numeric: true,
-            cell: (t) => '${t.percentage}%'),
-        TableColumnSpec(
-            label: 'Added', sortKey: 'CreatedAt', flex: 2, cell: (t) => _date(t.createdAt)),
-      ],
-      formFields: const [
-        CrudField(
-          id: 'hoursBeforeMin',
-          label: 'From (hours)',
-          kind: CrudFieldKind.integer,
-          min: 0,
-          helperText: 'Hours before the slot this tier starts at',
-        ),
-        CrudField(
-          id: 'hoursBeforeMax',
-          label: 'To (hours)',
-          kind: CrudFieldKind.integer,
-          required: false,
-          min: 0,
-          helperText: 'Leave blank for the open-ended top tier',
-        ),
-        CrudField(
-          id: 'percentage',
-          label: 'Refund %',
-          kind: CrudFieldKind.integer,
-          min: 0,
-          max: 100,
-        ),
-      ],
-      formValues: (t) => {
-        'hoursBeforeMin': t.hoursBeforeMin,
-        'hoursBeforeMax': t.hoursBeforeMax,
-        'percentage': t.percentage,
-      },
-      toBody: (v) => {
-        'hoursBeforeMin': v['hoursBeforeMin'],
-        'hoursBeforeMax': v['hoursBeforeMax'],
-        'percentage': v['percentage'],
-      },
     );
 
 ReferenceEntityConfig<BookingStatusResponse> _bookingStatus() =>
