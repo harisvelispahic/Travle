@@ -487,7 +487,7 @@ namespace Travle.Services
             foreach (var bookingId in cancelledBookingIds)
             {
                 await _refunds.RefundForBookingAsync(bookingId, adminId,
-                    "The tour organizer's account was suspended.", forcedPercentage: 100);
+                    "The tour organizer's account was suspended.");
             }
 
             _securityStore.Invalidate(id);

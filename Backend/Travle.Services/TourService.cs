@@ -4,6 +4,7 @@ using Travle.Model.Requests;
 using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
+using Travle.Services.BookingStateMachine;
 using Travle.Services.Database;
 using Travle.Services.Notifications;
 using Travle.Services.Payments;
@@ -11,6 +12,7 @@ using Travle.Services.Projections;
 using Travle.Services.Time;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Travle.Services
 {
@@ -37,6 +39,7 @@ namespace Travle.Services
         private readonly IRefundService _refunds;
         private readonly INotificationDispatcher _notifications;
         private readonly ITimeZoneService _timeZones;
+        private readonly BookingOptions _bookingOptions;
         private readonly IValidator<TourScheduleInsertRequest> _scheduleInsertValidator;
         private readonly IValidator<TourScheduleCancelRequest> _scheduleCancelValidator;
 
@@ -49,12 +52,14 @@ namespace Travle.Services
             IRefundService refunds,
             INotificationDispatcher notifications,
             ITimeZoneService timeZones,
+            IOptions<BookingOptions> bookingOptions,
             IValidator<TourInsertRequest> insertValidator,
             IValidator<TourUpdateRequest> updateValidator,
             IValidator<TourScheduleInsertRequest> scheduleInsertValidator,
             IValidator<TourScheduleCancelRequest> scheduleCancelValidator)
             : base(dbContext, mapper, insertValidator, updateValidator)
         {
+            _bookingOptions = bookingOptions.Value;
             _authorization = authorization;
             _currentUser = currentUser;
             _bookingService = bookingService;
@@ -260,7 +265,7 @@ namespace Travle.Services
             query = query.OrderBy(s => s.StartsAt);
             query = ApplySchedulePaging(query, search);
 
-            var items = await ProjectSchedule(query).ToListAsync();
+            var items = await ProjectSchedule(query, _bookingOptions.DefaultCutoffMinutes).ToListAsync();
             FinalizeScheduleFlags(items, now);
 
             return new PageResult<TourScheduleResponse> { Items = items, TotalCount = totalCount };
@@ -287,6 +292,7 @@ namespace Travle.Services
                 PricePerPerson = request.PricePerPerson,
                 Capacity = request.Capacity,
                 TourTypeId = request.TourTypeId,
+                BookingCutoffMinutes = request.BookingCutoffMinutes,
                 IsActive = true
             };
 
@@ -342,6 +348,7 @@ namespace Travle.Services
             tour.PricePerPerson = request.PricePerPerson;
             tour.Capacity = request.Capacity;
             tour.TourTypeId = request.TourTypeId;
+            tour.BookingCutoffMinutes = request.BookingCutoffMinutes;
 
             ReconcileDestinations(tour, request.DestinationIds);
 
@@ -409,10 +416,12 @@ namespace Travle.Services
             // then an honest instant-vs-instant comparison (see docs/time-and-timezones.md).
             var timeZoneId = await ResolveTourTimeZoneAsync(tourId);
             var startsAt = _timeZones.ConvertLocalToUtc(request.StartsAt, timeZoneId);
-            if (startsAt <= DateTime.UtcNow)
-            {
-                throw new BusinessRuleException("A schedule must start in the future.");
-            }
+
+            // Must start in the future, and far enough into it to be bookable at all: a date inside its own
+            // tour's booking cutoff would be published already closed. Same rule as the traveler's booking
+            // guard, enforced at the point the date is created.
+            var cutoffMinutes = BookingTimeRules.ResolveCutoffMinutes(tour.BookingCutoffMinutes, _bookingOptions);
+            BookingTimeRules.EnsureSchedulable(startsAt, cutoffMinutes, DateTime.UtcNow);
 
             var schedule = new TourSchedule
             {
@@ -570,10 +579,11 @@ namespace Travle.Services
             // Detail carries only the upcoming Active slots (bounded) — the organizer's full history is
             // fetched through the paged schedules endpoint instead.
             var slots = await ProjectSchedule(_dbContext.TourSchedules
-                    .AsNoTracking()
-                    .Where(s => s.TourId == id && s.Status == ScheduleStatus.Active && s.StartsAt > now)
-                    .OrderBy(s => s.StartsAt)
-                    .Take(UpcomingScheduleLimit))
+                        .AsNoTracking()
+                        .Where(s => s.TourId == id && s.Status == ScheduleStatus.Active && s.StartsAt > now)
+                        .OrderBy(s => s.StartsAt)
+                        .Take(UpcomingScheduleLimit),
+                    _bookingOptions.DefaultCutoffMinutes)
                 .ToListAsync();
             FinalizeScheduleFlags(slots, now);
             tour.Schedules = slots;
@@ -582,13 +592,21 @@ namespace Travle.Services
             return tour;
         }
 
-        private static IQueryable<TourScheduleResponse> ProjectSchedule(IQueryable<TourSchedule> query)
+        // The booking cutoff is resolved per row — the tour's own value, or the platform default when it
+        // sets none — so a tour's lead time applies to its existing schedules the moment it is edited,
+        // rather than being snapshotted per slot.
+        private static IQueryable<TourScheduleResponse> ProjectSchedule(
+            IQueryable<TourSchedule> query, int defaultCutoffMinutes)
             => query.Select(s => new TourScheduleResponse
             {
                 Id = s.Id,
                 TourId = s.TourId,
                 StartsAt = s.StartsAt,
                 EndsAt = s.EndsAt,
+                BookingClosesAt = s.StartsAt.AddMinutes(
+                    -(s.Tour.BookingCutoffMinutes ?? defaultCutoffMinutes)),
+                // Every booking row, including cancelled/expired ones — the delete rule counts them all.
+                BookingCount = s.Bookings.Count(),
                 TimeZoneId = s.Tour.TourDestinations
                     .OrderBy(td => td.SortOrder)
                     .Select(td => td.Destination.City.TimeZoneId)
@@ -606,7 +624,9 @@ namespace Travle.Services
         private async Task<TourScheduleResponse> BuildScheduleResponseAsync(int scheduleId)
         {
             var now = DateTime.UtcNow;
-            var response = await ProjectSchedule(_dbContext.TourSchedules.AsNoTracking().Where(s => s.Id == scheduleId))
+            var response = await ProjectSchedule(
+                    _dbContext.TourSchedules.AsNoTracking().Where(s => s.Id == scheduleId),
+                    _bookingOptions.DefaultCutoffMinutes)
                 .FirstOrDefaultAsync()
                 ?? throw new NotFoundException("TourSchedule", scheduleId);
             FinalizeScheduleFlag(response, now);
@@ -627,8 +647,37 @@ namespace Travle.Services
         {
             var isActive = slot.Status == nameof(ScheduleStatus.Active);
             var isFuture = slot.StartsAt > now;
+
             slot.IsCancellable = isActive && isFuture;
-            slot.IsDeletable = isActive && isFuture && slot.SeatsTaken == 0;
+
+            // Bookable is the traveler-facing capability: open, before the cutoff, with a seat left. The
+            // clients gate their Book button on this, so it must be the same rule InitialBookingState
+            // enforces — the cutoff instant is projected from the tour, the seat check is live.
+            slot.IsBookable = isActive && now < slot.BookingClosesAt && slot.FreeSeats > 0;
+
+            // Deletable mirrors DeleteScheduleAsync exactly, booking rows included: a slot that ever carried
+            // a booking (even a cancelled or expired one) keeps that history and can only be cancelled.
+            slot.IsDeletable = isActive && isFuture && slot.BookingCount == 0;
+            slot.DeleteBlockedReason = slot.IsDeletable ? null : DescribeDeleteBlock(isActive, isFuture, slot.BookingCount);
+        }
+
+        // Why a slot can't be hard-deleted, in the order DeleteScheduleAsync checks it, so the tooltip and
+        // the eventual server error tell the same story.
+        private static string? DescribeDeleteBlock(bool isActive, bool isFuture, int bookingCount)
+        {
+            if (!isFuture)
+            {
+                return "A past or in-progress schedule cannot be deleted. Cancel it instead if needed.";
+            }
+            if (!isActive)
+            {
+                return "Only an active schedule can be deleted.";
+            }
+            if (bookingCount > 0)
+            {
+                return $"This schedule has {bookingCount} booking(s) on record and cannot be deleted. Cancel the schedule instead.";
+            }
+            return null;
         }
 
         // Sets IsFavorite for the current user across a page of tours in one batch query (no N+1).

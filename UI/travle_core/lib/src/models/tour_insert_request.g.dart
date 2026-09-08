@@ -14,6 +14,7 @@ TourInsertRequest _$TourInsertRequestFromJson(Map<String, dynamic> json) =>
       pricePerPerson: (json['pricePerPerson'] as num).toDouble(),
       capacity: (json['capacity'] as num).toInt(),
       tourTypeId: (json['tourTypeId'] as num).toInt(),
+      bookingCutoffMinutes: (json['bookingCutoffMinutes'] as num?)?.toInt(),
       destinationIds:
           (json['destinationIds'] as List<dynamic>?)
               ?.map((e) => (e as num).toInt())
@@ -29,5 +30,6 @@ Map<String, dynamic> _$TourInsertRequestToJson(TourInsertRequest instance) =>
       'pricePerPerson': instance.pricePerPerson,
       'capacity': instance.capacity,
       'tourTypeId': instance.tourTypeId,
+      'bookingCutoffMinutes': instance.bookingCutoffMinutes,
       'destinationIds': instance.destinationIds,
     };

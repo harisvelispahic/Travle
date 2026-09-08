@@ -23,15 +23,6 @@ namespace Travle.Services
     /// </summary>
     public class BookingService : BaseReadService<Booking, BookingResponse, BookingSearch>, IBookingService
     {
-        /// <summary>
-        /// Grace beyond <see cref="InitialBookingState.HoldDuration"/> before the sweep expires a lapsed
-        /// hold. It gives a payment confirmed in the final moments time for its
-        /// <c>payment_intent.succeeded</c> webhook to promote the booking, instead of racing this sweep and
-        /// stranding a captured charge on an already-expired booking. The orphaned-success auto-refund in
-        /// <see cref="Payments.PaymentService"/> is the backstop for when the race is still lost.
-        /// </summary>
-        private static readonly TimeSpan SweepGracePeriod = TimeSpan.FromSeconds(90);
-
         private readonly IAppAuthorizationService _authorization;
         private readonly IAuthenticatedUserAccessor _currentUser;
         private readonly BaseBookingState _states;
@@ -164,7 +155,8 @@ namespace Travle.Services
                 ?? throw new NotFoundException("Booking", id);
 
             BookingProjections.FinalizeThumbnail(response);
-            response.AllowedActions = _states.ResolveAllowedActionNames(response.StatusId);
+            response.AllowedActions = _states.ResolveAllowedActionNames(
+                response.StatusId, response.ScheduleStartsAt, response.ExpiresAt);
             ApplyReviewFlag(response);
             await ApplyCancellationRefundPreviewAsync(response);
             await ApplyRefundOutcomeAsync(response);
@@ -204,9 +196,10 @@ namespace Travle.Services
             var state = _states.GetState((BookingStatusCode)booking.StatusId);
             var response = await state.RejectAsync(booking, organizerId, reason);
 
-            // Organizer rejection ⇒ 100% refund. Issued after the Cancelled transition has committed, so the
-            // Stripe call never runs inside a DB transaction (idempotent — a retry won't double-refund).
-            await _refunds.RefundForBookingAsync(id, organizerId, $"Organizer rejected the booking: {reason}", forcedPercentage: 100);
+            // The rejection transition already recorded the obligation (100%, organizer-initiated); this
+            // just carries it out to Stripe, after the Cancelled transition has committed so the call never
+            // runs inside a DB transaction (idempotent — a retry won't double-refund).
+            await _refunds.RefundForBookingAsync(id, organizerId, $"Organizer rejected the booking: {reason}");
             return response;
         }
 
@@ -223,9 +216,10 @@ namespace Travle.Services
             var state = _states.GetState((BookingStatusCode)booking.StatusId);
             var response = await state.CancelByOrganizerAsync(booking, organizerId, reason);
 
-            // Organizer-initiated ⇒ 100% refund whatever the notice period (00 §1.4); the tier ladder is only
-            // for traveler cancellations. Issued post-commit so Stripe never runs inside a DB transaction.
-            await _refunds.RefundForBookingAsync(id, organizerId, $"Organizer cancelled the booking: {reason}", forcedPercentage: 100);
+            // Organizer-initiated ⇒ 100% whatever the notice period (00 §1.4); the tier ladder is only for
+            // traveler cancellations. The transition recorded that; this executes it, post-commit so Stripe
+            // never runs inside a DB transaction.
+            await _refunds.RefundForBookingAsync(id, organizerId, $"Organizer cancelled the booking: {reason}");
             return response;
         }
 
@@ -241,12 +235,12 @@ namespace Travle.Services
             var state = _states.GetState((BookingStatusCode)booking.StatusId);
             var response = await state.CancelAsync(booking, userId, request.Reason?.Trim());
 
-            // Traveler cancellation ⇒ tiered refund (null lets the tier resolve from hours-before-start).
-            // Post-commit, so the Stripe refund runs outside the cancellation's transaction.
+            // The cancelling transition resolved the tier and froze the amount; this executes it, post-commit
+            // so the Stripe refund runs outside the cancellation's transaction.
             var refundReason = string.IsNullOrWhiteSpace(request.Reason)
                 ? "Traveler cancelled the booking."
                 : request.Reason.Trim();
-            await _refunds.RefundForBookingAsync(id, userId, refundReason, forcedPercentage: null);
+            await _refunds.RefundForBookingAsync(id, userId, refundReason);
 
             // The refund row exists by now, so the cancel response can already state what came back —
             // the traveler sees "Refunded X KM (Y%)" without a second round-trip.
@@ -259,9 +253,15 @@ namespace Travle.Services
             // Paid, still-active bookings (Pending/Confirmed) on the suspended organizer's tours. Unpaid
             // PaymentInProgress holds are deliberately left to expire on their own — no money was taken, so
             // a "full refund" message would be wrong, and the 15-minute hold clears the seats shortly anyway.
+            //
+            // Only upcoming departures. A suspension says the organizer cannot run tours from now on; it
+            // says nothing about ones already delivered, and cancelling those would refund tours the
+            // travelers actually went on. Past bookings finish their own lifecycle (auto-complete).
+            var now = DateTime.UtcNow;
             var paidActiveIds = await _dbContext.Bookings
                 .AsNoTracking()
                 .Where(b => b.TourSchedule.Tour.OrganizerId == organizerId
+                            && b.TourSchedule.StartsAt > now
                             && (b.StatusId == (int)BookingStatusCode.Pending
                                 || b.StatusId == (int)BookingStatusCode.Confirmed))
                 .Select(b => b.Id)
@@ -309,8 +309,9 @@ namespace Travle.Services
         public async Task<int> ExpireOverdueHoldsAsync(CancellationToken cancellationToken = default)
         {
             // Expire only holds overdue by at least the grace period, so a last-moment payment's webhook can
-            // promote the booking before this sweep would strand the charge (see SweepGracePeriod).
-            var cutoff = DateTime.UtcNow - SweepGracePeriod;
+            // promote the booking before this sweep would strand the charge. The webhook honours a charge on
+            // exactly the same terms (BookingTimeRules.HoldGracePeriod), so the two can never disagree.
+            var cutoff = DateTime.UtcNow - BookingTimeRules.HoldGracePeriod;
             var dueIds = await _dbContext.Bookings
                 .AsNoTracking()
                 .Where(b => b.StatusId == (int)BookingStatusCode.PaymentInProgress
@@ -338,6 +339,53 @@ namespace Travle.Services
             }
 
             return expired;
+        }
+
+        public async Task<int> ResolveUnconfirmedPendingAsync(CancellationToken cancellationToken = default)
+        {
+            var now = DateTime.UtcNow;
+
+            // Paid bookings whose departure has come while they were still awaiting the organizer's decision.
+            // Every other state has a terminus of its own — holds expire, confirmed bookings complete — so
+            // without this sweep Pending is the one state that can outlive its own tour.
+            var dueIds = await _dbContext.Bookings
+                .AsNoTracking()
+                .Where(b => b.StatusId == (int)BookingStatusCode.Pending
+                            && b.TourSchedule.StartsAt <= now)
+                .Select(b => b.Id)
+                .ToListAsync(cancellationToken);
+
+            // One tracked load for the whole batch (never a query per id — course §8.2).
+            var due = await _dbContext.Bookings
+                .Where(b => dueIds.Contains(b.Id))
+                .ToListAsync(cancellationToken);
+
+            var resolved = 0;
+            foreach (var booking in due)
+            {
+                // A concurrent confirm/reject may have landed between the two reads — that decision wins.
+                if (booking.StatusId != (int)BookingStatusCode.Pending)
+                {
+                    continue;
+                }
+
+                await _states.GetState(BookingStatusCode.Pending).CancelUnconfirmedAtStartAsync(booking);
+
+                // The transition recorded the obligation (the whole charge — the traveler paid and was never
+                // accepted); this carries it out after the cancellation commits, so Stripe is never called
+                // inside a DB transaction. Idempotent, so a failure here leaves the refund owed and
+                // retryable rather than double-refunding on the next tick. Attributed to the traveler — no
+                // admin or organizer initiated this.
+                await _refunds.RefundForBookingAsync(
+                    booking.Id,
+                    booking.UserId,
+                    "The organizer did not confirm this booking before the tour started.",
+                    cancellationToken);
+
+                resolved++;
+            }
+
+            return resolved;
         }
 
         public async Task<int> AutoCompletePastConfirmedAsync(CancellationToken cancellationToken = default)
@@ -461,7 +509,8 @@ namespace Travle.Services
             foreach (var item in items)
             {
                 BookingProjections.FinalizeThumbnail(item);
-                item.AllowedActions = _states.ResolveAllowedActionNames(item.StatusId);
+                item.AllowedActions = _states.ResolveAllowedActionNames(
+                    item.StatusId, item.ScheduleStartsAt, item.ExpiresAt);
                 ApplyReviewFlag(item);
             }
 
@@ -513,10 +562,11 @@ namespace Travle.Services
         // still-cancellable booking (the refund itself executes in Phase 6).
         private async Task ApplyCancellationRefundPreviewAsync(BookingResponse response)
         {
+            // Read the capability off AllowedActions (already resolved above) rather than re-testing the
+            // status: cancelling is time-gated as well as status-gated now, and a preview of a refund the
+            // traveler can no longer claim would be a lie.
             var callerId = _currentUser.GetUserId();
-            var cancellable = response.StatusId == (int)BookingStatusCode.Pending
-                              || response.StatusId == (int)BookingStatusCode.Confirmed;
-            if (callerId != response.UserId || !cancellable)
+            if (callerId != response.UserId || !response.AllowedActions.Contains(nameof(BookingAction.Cancel)))
             {
                 return;
             }

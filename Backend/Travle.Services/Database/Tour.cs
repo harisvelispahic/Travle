@@ -22,6 +22,14 @@ namespace Travle.Services.Database
 
         public bool IsActive { get; set; } = true;
 
+        /// <summary>
+        /// How many minutes before a departure this tour stops accepting bookings and completed payments —
+        /// the organizer's own lead time for confirming or rejecting. Null = use the platform default
+        /// (<c>Booking:DefaultCutoffMinutes</c>); 0 = bookable right up to departure. Resolved through
+        /// <see cref="BookingStateMachine.BookingTimeRules"/>, never read raw.
+        /// </summary>
+        public int? BookingCutoffMinutes { get; set; }
+
         public ICollection<TourSchedule> Schedules { get; set; } = new List<TourSchedule>();
         public ICollection<TourDestination> TourDestinations { get; set; } = new List<TourDestination>();
         public ICollection<TourReview> Reviews { get; set; } = new List<TourReview>();

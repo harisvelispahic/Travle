@@ -56,6 +56,45 @@ namespace Travle.Services.Database
         CancelByOrganizer = 4
     }
 
+    /// <summary>
+    /// Who or what cancelled a booking. Recorded on the booking itself at the moment of cancellation,
+    /// together with the refund obligation it produced, because the two are one decision: the source is
+    /// what determines whether the traveler is owed the tiered percentage or the whole charge. Reading it
+    /// back later can only report that decision — never re-make it (03 §refunds).
+    /// </summary>
+    public enum CancellationSource
+    {
+        /// <summary>
+        /// A booking cancelled before this record existed, whose source the backfill could not determine
+        /// from the audit fields alone. Historical only — no live path ever writes it.
+        /// </summary>
+        Unknown = 0,
+
+        /// <summary>The traveler cancelled their own booking — the one case the tier ladder applies to.</summary>
+        Traveler = 1,
+
+        /// <summary>An admin cancelled on the traveler's behalf. Not the traveler's own choice ⇒ full refund.</summary>
+        Admin = 2,
+
+        /// <summary>The organizer rejected a booking awaiting their confirmation ⇒ full refund.</summary>
+        OrganizerReject = 3,
+
+        /// <summary>The organizer called off one confirmed booking ⇒ full refund.</summary>
+        OrganizerCancel = 4,
+
+        /// <summary>The organizer retired the whole schedule ⇒ full refund for every booking on it.</summary>
+        ScheduleCancel = 5,
+
+        /// <summary>The organizer's account was suspended, so their upcoming tours can't run ⇒ full refund.</summary>
+        OrganizerSuspension = 6,
+
+        /// <summary>
+        /// The departure arrived with the organizer never having confirmed or rejected ⇒ full refund. The
+        /// only source with no acting user: the lifecycle sweep raises it.
+        /// </summary>
+        UnconfirmedAtStart = 7
+    }
+
     /// <summary>Decision lifecycle of a <see cref="RoleApplication"/>.</summary>
     public enum RoleApplicationStatus
     {
@@ -154,7 +193,14 @@ namespace Travle.Services.Database
         /// Traveler: a card was declined, so that payment attempt failed. The booking itself survives —
         /// the seats stay held for the rest of the 15-minute window so another card can be tried.
         /// </summary>
-        PaymentFailed = 30
+        PaymentFailed = 30,
+
+        /// <summary>
+        /// Traveler: their paid booking reached its departure without the organizer ever confirming or
+        /// rejecting it, so the system cancelled it and refunded in full. Raised by the lifecycle sweep —
+        /// nobody clicked anything, which is exactly why the traveler must be told.
+        /// </summary>
+        BookingUnconfirmed = 31
     }
 
     /// <summary>

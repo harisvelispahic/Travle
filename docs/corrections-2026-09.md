@@ -1,0 +1,172 @@
+# Corrections — August 2026 review
+
+Answers the nine mandatory items in the review of **IB230172**, for the
+academic year 2025/26 resubmission.
+
+This document is both the working tracker and the write-up: each finding records what was wrong, the
+rule adopted to fix it, and where that rule now lives in the code. Kept up to date as the batches land.
+
+| #   | Finding                                                 | Status  |
+| --- | ------------------------------------------------------- | ------- |
+| 1   | Payment could complete after the tour had started       | Done    |
+| 2   | Missing time rules for `Pending` / `Confirmed` bookings | Done    |
+| 3   | Refund amount re-decided on every retry                 | Done    |
+| 4   | Refund policy validated per row, not as a scale         | Done    |
+| 5   | Traveler visibility / bookability rules inconsistent    | Pending |
+| 6   | `Organizer` role revocable with live tours and bookings | Pending |
+| 7   | `IsDeletable` disagreed with the real delete rule       | Done    |
+| 8   | No Print action on the PDF reports                      | Pending |
+| 9   | No filter on the desktop notifications list             | Pending |
+
+Two migrations so far, both additive and nullable:
+`20260903171501_AddTourBookingCutoff`, `20260908160920_AddBookingCancellationSnapshot`.
+
+---
+
+## The rules introduced
+
+Three ideas do most of the work, each kept in one place, so the fixes are consistent rather than nine
+separate patches.
+
+**`BookingTimeRules`** — every deadline in the booking lifecycle. There are two, both relative to
+`TourSchedule.StartsAt`: the **booking cutoff** (bookings and payments close this long before
+departure) and the **departure** itself (the wall for confirm / reject / cancel). Booking creation, the
+payment hold, the Stripe webhook, the lifecycle sweeps, the schedule-creation guard and the capability
+flags the apps render all read these, so no two paths can disagree about what "too late" means.
+
+**The refund obligation is snapshotted, never recomputed.** The moment a booking is cancelled, the
+cancelling transition freezes who cancelled it, when, and the percentage and amount owed — in the same
+transaction as the status change. Every later execution, including an admin retry hours afterwards, pays
+that stored figure.
+
+**Capability flags come from the server.** Where the apps used to re-derive a rule locally
+(`isDeletable`, `isBookable`, the allowed booking actions), the server now computes it from the same
+condition it enforces and sends the verdict, with the reason when the answer is no.
+
+---
+
+## 1. Payment could complete after the tour had started
+
+**Was:** `InitialBookingState.CreateAsync` refused a booking on a departed schedule but then set
+`ExpiresAt` to a flat 15 minutes, unbounded by the departure — book one minute before a tour and the
+payment hold stayed valid a quarter of an hour into it. `PaymentService.HandlePaymentSucceededAsync`
+promoted a `PaymentInProgress` booking to paid `Pending` on the sole condition that it was still
+`PaymentInProgress`; it never re-read `TourSchedule.StartsAt`.
+
+**Now:** booking closes a configurable interval **before** departure (`Tour.BookingCutoffMinutes`, or
+the platform default `Booking:DefaultCutoffMinutes`, two hours). The hold is clamped to
+`min(now + 15 min, StartsAt − cutoff)`, so it can never outlive the cutoff. The webhook re-checks the
+clock at the moment of promotion and accepts only while the hold is honoured (the same 90-second grace
+the expiry sweep gives it) and the tour has not started. A charge that arrives too late is recorded
+truthfully, the booking is expired so its seats are released, and the money is refunded in full through
+the existing orphaned-payment path.
+
+The cutoff is deliberately earlier than departure rather than exactly at it: it guarantees the organizer
+real time to confirm or reject, and it makes the "payment lands on a running tour" race unreachable in
+normal operation instead of merely handled.
+
+**Organizers are held to the same rule.** `AddScheduleAsync` refuses a date starting inside its own
+tour's cutoff — a schedule published already closed is a mistake worth catching where it is made.
+
+## 2. Missing time rules for `Pending` and `Confirmed` bookings
+
+**Was:** `ConfirmAsync`, `RejectAsync`, `CancelAsync` and `CancelByOrganizerAsync` never looked at
+`StartsAt`, so a tour that ran last week could still be confirmed, rejected or cancelled — the last of
+which released seats and owed a refund for a tour that had been delivered. Meanwhile the lifecycle
+automation expired held payments and completed confirmed bookings, but nothing resolved a **paid
+`Pending`** booking: if the organizer never acted, it stayed `Pending` through the departure and past the
+end of the tour, indefinitely.
+
+**Now:** all four transitions are gated at `StartsAt` by `BookingTimeRules.EnsureNotStarted`. A new
+lifecycle sweep, `ResolveUnconfirmedPendingAsync`, cancels any booking still `Pending` at its departure
+and refunds it **in full** — the traveler paid and was never accepted, so the money goes back; both
+parties are notified. It runs before auto-completion, so an unconfirmed booking is never quietly
+completed as though it had happened.
+
+`ResolveAllowedActionNames` now takes the schedule's start and the hold's expiry, so the apps stop
+offering buttons the server would reject, and the pre-cancellation refund preview keys off that same
+list rather than re-testing the status.
+
+Two related holes closed by the same rule: organizer suspension now cancels only **upcoming** bookings
+(it was refunding tours travelers had already been on), and schedule cancellation was already guarded
+this way — the booking-level transitions had simply never been given the same rule.
+
+## 3. Refund amount re-decided on every retry
+
+**Was:** `RefundService.IssueRefundAsync` resolved the tier against `DateTime.UtcNow` — the moment the
+refund _executed_. When Stripe failed, no `Refund` row was written, so nothing about the obligation was
+persisted anywhere, and `PaymentService.RetryRefundAsync` re-resolved the ladder against a new clock: the
+same cancellation could drop from 50% to 25% because an admin retried it three hours later. Worse, the
+retry inferred the percentage from _who_ cancelled (anyone but the traveler meaning 100%), while the
+original admin-initiated cancellation went down the tiered path — so the first attempt and the retry of
+one obligation carried different financial meaning.
+
+**Now:** `Booking` carries `CancelledAt`, `CancellationSource`, `RefundPercentageOwed` and
+`RefundAmountOwed`, written **once** by `BaseBookingState.SnapshotRefundObligationAsync` inside the
+cancelling transition. Only a traveler's own cancellation is tiered; every other source is a full refund.
+The amount is computed from the charge actually captured, because that is what Stripe can give back.
+
+`RefundService` no longer decides anything — `IssueRefundAsync` is handed the percentage and amount and
+executes them. `RefundForBookingAsync` lost its `forcedPercentage` parameter, and the inference inside
+`RetryRefundAsync` is gone entirely. The obligation survives a failed Stripe call, so the admin payments
+screen can now name the figure a retry will pay instead of describing it vaguely.
+
+**Locked decision:** an admin cancelling on a traveler's behalf owes **100%**. One sentence then covers
+the whole system — _the traveler is penalised only for their own decision_ — and it removes the
+divergence the review identified.
+
+`RefundOrphanedPaymentAsync` deliberately stays outside this: it is a payment-level remedy for money
+captured against a booking that could not be honoured at all (often `Expired`, not `Cancelled`), so there
+is no cancellation obligation to read.
+
+## 4. Refund policy validated per row, not as a scale
+
+**Was:** the insert and update validators checked one tier in isolation — minimum not negative, maximum
+above minimum, percentage within 0–100. Nothing looked at the other rows, so an admin could create
+overlapping intervals, leave an uncovered gap, or define several open-ended tiers. There was no delete
+guard at all. `PaymentMath.ResolveRefundPercentageAsync` then resolved an overlap arbitrarily by sort
+order and a gap silently to 0% — deciding real money with no error anywhere.
+
+**Now:** `RefundPolicyLadder.EnsureContiguous` validates the scale the write would **produce**, from all
+three `OnBefore*` hooks (insert, update and delete). The resulting tiers must start at 0 hours, meet
+exactly with no gap and no overlap, and contain exactly one open-ended tier which must be the highest; at
+least one tier must survive. So for every possible number of hours before departure there is exactly one
+refund rule. Messages name the offending boundary.
+
+**Consequence worth knowing:** deleting a tier is now usually refused, because removing a middle row
+leaves a gap and removing the top row leaves no open end. That is the contiguity rule working as
+specified — an admin widens a neighbour first.
+
+## 7. `IsDeletable` disagreed with the real delete rule
+
+**Was:** the flag was `active && future && SeatsTaken == 0`, but `DeleteScheduleAsync` additionally
+refuses when **any** booking row exists, including cancelled and expired ones — which do not count
+toward `SeatsTaken`. A slot that had once held an expired booking reported `IsDeletable: true`, the
+desktop enabled Delete, and the server returned 409.
+
+**Now:** the projection carries `BookingCount` (every booking row ever made on the slot) and the flag
+uses it, matching `DeleteScheduleAsync` exactly. The response also carries `DeleteBlockedReason`, and the
+console shows that server-authored sentence in its tooltip instead of a hardcoded local one, so the
+explanation and the eventual error can never tell different stories.
+
+---
+
+## Decisions log
+
+| Decision                             | Choice                            | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------ | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unresolved `Pending` at departure    | Cancel with a 100% refund         | The traveler paid and was never accepted, and an unconfirmed seat cannot be honoured. Auto-confirming would hand out a place the organizer never agreed to.                                                                                                                                                                                                                                                                                                               |
+| Admin-initiated cancellation         | 100%                              | Only the traveler's own decision is tiered. Makes the first attempt and any retry identical by construction.                                                                                                                                                                                                                                                                                                                                                              |
+| Booking cutoff scope                 | Per tour, over a platform default | The lead time an organizer needs in order to confirm is a property of the tour. `null` uses the platform default, `0` keeps a date bookable until it starts.                                                                                                                                                                                                                                                                                                              |
+| Revoking `Organizer` with live tours | Block and inform                  | **The cascading variant already exists as account suspension**, which deactivates the organizer's upcoming tours and cancels and refunds their outstanding bookings. Building a second cascade behind a role toggle would duplicate a working flow and hide a lot of irreversible work behind one click. The revoke therefore refuses while active future tours or unresolved bookings exist, and points the admin at deactivating those tours or suspending the account. |
+
+## Configuration added
+
+```json
+"Booking": {
+  "DefaultCutoffMinutes": 120
+}
+```
+
+Platform-wide default, in minutes, for how long before a departure bookings and completed payments
+close. A tour may override it; `0` keeps a date bookable right up to departure.

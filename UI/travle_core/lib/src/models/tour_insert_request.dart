@@ -15,6 +15,7 @@ class TourInsertRequest {
     required this.pricePerPerson,
     required this.capacity,
     required this.tourTypeId,
+    this.bookingCutoffMinutes,
     this.destinationIds = const [],
   });
 
@@ -24,6 +25,11 @@ class TourInsertRequest {
   final double pricePerPerson;
   final int capacity;
   final int tourTypeId;
+
+  /// Minutes before a departure that bookings and payments close for this tour.
+  /// Null uses the platform default; 0 keeps a departure bookable until it starts.
+  final int? bookingCutoffMinutes;
+
   final List<int> destinationIds;
 
   factory TourInsertRequest.fromJson(Map<String, dynamic> json) =>

@@ -22,6 +22,10 @@ class PaymentResponse {
     required this.refundCount,
     required this.createdAt,
     this.refundOwed = false,
+    this.refundOwedAmount,
+    this.refundOwedPercentage,
+    this.cancellationSource,
+    this.cancelledAt,
     this.succeededAt,
   });
 
@@ -46,6 +50,16 @@ class PaymentResponse {
   /// True when a refund is owed on this captured payment (booking cancelled, no
   /// refund recorded — an automatic attempt failed). Drives the "Retry refund" action.
   final bool refundOwed;
+
+  /// The refund amount and percentage frozen when the booking was cancelled —
+  /// exactly what a retry pays. Null for a booking that was never cancelled.
+  final double? refundOwedAmount;
+  final int? refundOwedPercentage;
+
+  /// Who or what cancelled the booking (enum name) — why the percentage is what
+  /// it is. Null for a booking that was never cancelled.
+  final String? cancellationSource;
+  final DateTime? cancelledAt;
 
   final DateTime? succeededAt;
   final DateTime createdAt;

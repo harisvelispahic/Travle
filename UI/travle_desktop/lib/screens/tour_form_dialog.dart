@@ -58,6 +58,11 @@ class _TourFormDialogState extends State<TourFormDialog> {
   final _price = TextEditingController();
   final _capacity = TextEditingController();
 
+  /// Optional per-tour booking cutoff. Empty = follow the platform default, so
+  /// this stays a String rather than defaulting to a number the organizer never
+  /// chose — the null is meaningful.
+  final _bookingCutoff = TextEditingController();
+
   List<TourTypeResponse> _tourTypes = [];
   int? _tourTypeId;
   final List<_Stop> _stops = [];
@@ -79,6 +84,7 @@ class _TourFormDialogState extends State<TourFormDialog> {
       _duration.text = existing.durationMinutes.toString();
       _price.text = existing.pricePerPerson.toStringAsFixed(2);
       _capacity.text = existing.capacity.toString();
+      _bookingCutoff.text = existing.bookingCutoffMinutes?.toString() ?? '';
       _tourTypeId = existing.tourTypeId;
     }
     _bootstrap();
@@ -91,6 +97,7 @@ class _TourFormDialogState extends State<TourFormDialog> {
     _duration.dispose();
     _price.dispose();
     _capacity.dispose();
+    _bookingCutoff.dispose();
     super.dispose();
   }
 
@@ -198,6 +205,10 @@ class _TourFormDialogState extends State<TourFormDialog> {
       final durationMinutes = int.parse(_duration.text.trim());
       final pricePerPerson = double.parse(_price.text.trim());
       final capacity = int.parse(_capacity.text.trim());
+      // Empty means "no override" — send null, not 0 (0 is its own rule: bookable
+      // right up to departure).
+      final cutoffText = _bookingCutoff.text.trim();
+      final bookingCutoffMinutes = cutoffText.isEmpty ? null : int.parse(cutoffText);
       final destinationIds = _stops.map((s) => s.destinationId).toList();
 
       if (widget.isEditing) {
@@ -210,6 +221,7 @@ class _TourFormDialogState extends State<TourFormDialog> {
             pricePerPerson: pricePerPerson,
             capacity: capacity,
             tourTypeId: _tourTypeId!,
+            bookingCutoffMinutes: bookingCutoffMinutes,
             destinationIds: destinationIds,
           ),
         );
@@ -222,6 +234,7 @@ class _TourFormDialogState extends State<TourFormDialog> {
             pricePerPerson: pricePerPerson,
             capacity: capacity,
             tourTypeId: _tourTypeId!,
+            bookingCutoffMinutes: bookingCutoffMinutes,
             destinationIds: destinationIds,
           ),
         );
@@ -395,6 +408,22 @@ class _TourFormDialogState extends State<TourFormDialog> {
             ),
             const SizedBox(height: TravleTokens.space16),
             TravleTextField(
+              controller: _bookingCutoff,
+              label: 'Booking cutoff (minutes before departure)',
+              prefixIcon: Icons.lock_clock_outlined,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              validator: _validateBookingCutoff,
+            ),
+            const SizedBox(height: TravleTokens.space8),
+            Text(
+              'How long before a departure bookings and payments close, leaving you time to confirm or '
+              'reject. Leave empty to use the platform default; 0 keeps a date bookable until it starts.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: TravleTokens.space16),
+            TravleTextField(
               controller: _description,
               label: 'Description',
               minLines: 4,
@@ -529,6 +558,19 @@ class _TourFormDialogState extends State<TourFormDialog> {
     if (parsed == null) return '$field must be a whole number';
     if (parsed < min || parsed > max) {
       return '$field must be between $min and $max';
+    }
+    return null;
+  }
+
+  /// Optional, unlike the other numbers: empty is a valid answer meaning "use the
+  /// platform default". Bounds mirror the server's validator (0 minutes to 7 days).
+  String? _validateBookingCutoff(String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) return null;
+    final parsed = int.tryParse(text);
+    if (parsed == null) return 'Booking cutoff must be a whole number of minutes';
+    if (parsed > 10080) {
+      return 'Booking cutoff cannot exceed 7 days (10080 minutes)';
     }
     return null;
   }

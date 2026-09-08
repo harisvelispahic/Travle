@@ -28,6 +28,31 @@ namespace Travle.Services.Database
         public User? CancelledByUser { get; set; }
         public string? CancellationReason { get; set; }
 
+        /// <summary>When this booking was cancelled. Null while it has not been.</summary>
+        public DateTime? CancelledAt { get; set; }
+
+        /// <summary>
+        /// Who or what cancelled it — the input that decides whether the traveler is owed the tier
+        /// percentage or the whole charge. Null while the booking has not been cancelled.
+        /// </summary>
+        public CancellationSource? CancellationSource { get; set; }
+
+        /// <summary>
+        /// The refund percentage owed, frozen at the moment of cancellation. <b>Write-once</b>: the tier
+        /// ladder is resolved against the clock, so recomputing it later would hand the traveler a
+        /// different answer to the same decision — a Stripe failure followed by an admin retry hours later
+        /// must pay what was owed then, not what the ladder says now.
+        /// </summary>
+        public int? RefundPercentageOwed { get; set; }
+
+        /// <summary>
+        /// The KM amount owed, frozen alongside <see cref="RefundPercentageOwed"/> and computed from the
+        /// charge actually captured. This is the figure every refund attempt executes — the first one and
+        /// every retry — so the obligation is recorded even when the Stripe call fails and no
+        /// <see cref="Refund"/> row exists yet.
+        /// </summary>
+        public decimal? RefundAmountOwed { get; set; }
+
         public DateTime? ExpiresAt { get; set; }
 
         /// <summary>

@@ -22,6 +22,12 @@ PaymentResponse _$PaymentResponseFromJson(Map<String, dynamic> json) =>
       refundCount: (json['refundCount'] as num).toInt(),
       createdAt: DateTime.parse(json['createdAt'] as String),
       refundOwed: json['refundOwed'] as bool? ?? false,
+      refundOwedAmount: (json['refundOwedAmount'] as num?)?.toDouble(),
+      refundOwedPercentage: (json['refundOwedPercentage'] as num?)?.toInt(),
+      cancellationSource: json['cancellationSource'] as String?,
+      cancelledAt: json['cancelledAt'] == null
+          ? null
+          : DateTime.parse(json['cancelledAt'] as String),
       succeededAt: json['succeededAt'] == null
           ? null
           : DateTime.parse(json['succeededAt'] as String),
@@ -42,6 +48,10 @@ Map<String, dynamic> _$PaymentResponseToJson(PaymentResponse instance) =>
       'refundedAmount': instance.refundedAmount,
       'refundCount': instance.refundCount,
       'refundOwed': instance.refundOwed,
+      'refundOwedAmount': instance.refundOwedAmount,
+      'refundOwedPercentage': instance.refundOwedPercentage,
+      'cancellationSource': instance.cancellationSource,
+      'cancelledAt': instance.cancelledAt?.toIso8601String(),
       'succeededAt': instance.succeededAt?.toIso8601String(),
       'createdAt': instance.createdAt.toIso8601String(),
     };

@@ -37,6 +37,13 @@ namespace Travle.Model.Responses
         public bool IsActive { get; set; }
 
         /// <summary>
+        /// This tour's own booking cutoff in minutes, or null when it follows the platform default. Shown on
+        /// the organizer's tour form only; travelers see the resolved effect as each schedule's
+        /// <see cref="TourScheduleResponse.BookingClosesAt"/>.
+        /// </summary>
+        public int? BookingCutoffMinutes { get; set; }
+
+        /// <summary>
         /// True when at least one of the tour's stops is no longer an approved destination (its curator
         /// edited it back into moderation, or it was rejected). Such a tour is hidden from travelers
         /// entirely; it is surfaced only on the organizer's own "my tours" view, where it drives a

@@ -6,6 +6,7 @@ using FluentValidation;
 using MapsterMapper;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Travle.Services.BookingStateMachine
 {
@@ -14,7 +15,8 @@ namespace Travle.Services.BookingStateMachine
     /// service routes creation here — mirroring the template's Initial state holding Insert). Enforces the
     /// server-side preconditions (slot bookable, tour active, no duplicate/overlap), computes the total
     /// from the tour price, claims capacity with the transactional conditional guard (03 §6) and enters
-    /// the booking as PaymentInProgress holding the seats for 15 minutes.
+    /// the booking as PaymentInProgress holding the seats for 15 minutes — or for less, when the schedule's
+    /// booking cutoff falls inside that window (see <see cref="BookingTimeRules"/>).
     /// </summary>
     public class InitialBookingState : BaseBookingState
     {
@@ -26,15 +28,18 @@ namespace Travle.Services.BookingStateMachine
         private const int DuplicateKey = 2601;
 
         private readonly IValidator<BookingInsertRequest> _validator;
+        private readonly BookingOptions _options;
 
         public InitialBookingState(
             TravleDbContext dbContext,
             IMapper mapper,
             IServiceProvider serviceProvider,
-            IValidator<BookingInsertRequest> validator)
+            IValidator<BookingInsertRequest> validator,
+            IOptions<BookingOptions> options)
             : base(dbContext, mapper, serviceProvider)
         {
             _validator = validator;
+            _options = options.Value;
         }
 
         public override async Task<BookingResponse> CreateAsync(BookingInsertRequest request, int userId)
@@ -47,10 +52,17 @@ namespace Travle.Services.BookingStateMachine
                 ?? throw new NotFoundException("TourSchedule", request.TourScheduleId);
 
             var now = DateTime.UtcNow;
-            if (slot.Status != ScheduleStatus.Active || slot.StartsAt <= now)
+            if (slot.Status != ScheduleStatus.Active)
             {
                 throw new BusinessRuleException("This schedule is not open for booking.");
             }
+
+            // Booking closes before the departure, not at it, so a booking that reaches the organizer always
+            // leaves them time to confirm or reject it (BookingTimeRules). This also bounds the payment hold
+            // below: a hold can never outlive the cutoff, so payment can never complete on a running tour.
+            var cutoffMinutes = BookingTimeRules.ResolveCutoffMinutes(slot.Tour.BookingCutoffMinutes, _options);
+            BookingTimeRules.EnsureOpenForBooking(slot.StartsAt, cutoffMinutes, now);
+
             if (!slot.Tour.IsActive)
             {
                 throw new BusinessRuleException("This tour is no longer active.");
@@ -119,7 +131,9 @@ namespace Travle.Services.BookingStateMachine
                     TotalAmount = totalAmount,
                     StatusId = (int)BookingStatusCode.PaymentInProgress,
                     StatusChangedAt = now,
-                    ExpiresAt = now.Add(HoldDuration)
+                    // The standard hold, cut short if the cutoff lands inside it — booking a few minutes
+                    // before the window closes must not license a payment after it.
+                    ExpiresAt = BookingTimeRules.HoldExpiryFor(slot.StartsAt, cutoffMinutes, now, HoldDuration)
                 };
 
                 DbContext.Bookings.Add(booking);

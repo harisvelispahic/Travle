@@ -206,9 +206,17 @@ builder.Services.AddScoped<CompletedBookingState>();
 builder.Services.AddScoped<CancelledBookingState>();
 builder.Services.AddScoped<ExpiredBookingState>();
 
-// In-process scheduler (IHostedService): expires 15-min PaymentInProgress holds, auto-completes Confirmed
-// bookings past their schedule end, and raises the 24-hour pre-tour reminder. Lives in the API, not the
-// RabbitMQ worker container. The reminder window is configurable (BookingReminder section).
+// Booking lifecycle rules: the platform-wide booking cutoff (how long before a departure bookings and
+// payments close) that a tour may override per-tour. Read through BookingTimeRules — see
+// docs/tours-and-bookings.md.
+builder.Services.AddOptions<BookingOptions>()
+    .Bind(builder.Configuration.GetSection(BookingOptions.SectionName))
+    .ValidateDataAnnotations();
+
+// In-process scheduler (IHostedService): expires PaymentInProgress holds, cancels+refunds paid bookings the
+// organizer never decided on by their departure, auto-completes Confirmed bookings past their schedule end,
+// and raises the 24-hour pre-tour reminder. Lives in the API, not the RabbitMQ worker container. The
+// reminder window is configurable (BookingReminder section).
 builder.Services.AddOptions<BookingReminderOptions>()
     .Bind(builder.Configuration.GetSection(BookingReminderOptions.SectionName))
     .ValidateDataAnnotations();

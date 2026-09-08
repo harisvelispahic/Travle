@@ -32,7 +32,7 @@ namespace Travle.Services.Payments
         }
 
         public async Task RefundForBookingAsync(
-            int bookingId, int initiatedByUserId, string reason, int? forcedPercentage, CancellationToken cancellationToken = default)
+            int bookingId, int initiatedByUserId, string reason, CancellationToken cancellationToken = default)
         {
             var payment = await LoadRefundablePaymentsQuery()
                 .Where(p => p.BookingId == bookingId)
@@ -46,7 +46,7 @@ namespace Travle.Services.Payments
                 return;
             }
 
-            await IssueRefundAsync(payment, forcedPercentage, initiatedByUserId, reason, cancellationToken);
+            await ExecuteRecordedObligationAsync(payment, initiatedByUserId, reason, cancellationToken);
         }
 
         public async Task RefundForScheduleCancellationAsync(
@@ -58,9 +58,35 @@ namespace Travle.Services.Payments
 
             foreach (var payment in payments)
             {
-                // The organizer retired the whole slot ⇒ always a full refund.
-                await IssueRefundAsync(payment, forcedPercentage: 100, initiatedByUserId, reason, cancellationToken);
+                await ExecuteRecordedObligationAsync(payment, initiatedByUserId, reason, cancellationToken);
             }
+        }
+
+        /// <summary>
+        /// Pays exactly what the booking recorded when it was cancelled. This service decides nothing about
+        /// how much is owed — the cancelling transition already did, in the same transaction that cancelled
+        /// the booking (<c>BaseBookingState.SnapshotRefundObligationAsync</c>). That separation is the point:
+        /// a Stripe failure leaves no <c>Refund</c> row, so if the amount lived only in this method a later
+        /// retry would recompute it against a different clock and hand the traveler a different answer to a
+        /// decision they made once.
+        /// </summary>
+        private async Task ExecuteRecordedObligationAsync(
+            Payment payment, int initiatedByUserId, string reason, CancellationToken cancellationToken)
+        {
+            if (payment.Booking.RefundPercentageOwed is not int percentage
+                || payment.Booking.RefundAmountOwed is not decimal amount)
+            {
+                // Every cancellation path snapshots the obligation, so this cannot happen through the state
+                // machine. Refuse rather than guess: inventing an amount here is precisely the behaviour
+                // this design removes.
+                _logger.LogError(
+                    "Booking {BookingId} is cancelled but carries no recorded refund obligation; refusing to "
+                    + "improvise one for payment {PaymentId}.",
+                    payment.BookingId, payment.Id);
+                return;
+            }
+
+            await IssueRefundAsync(payment, percentage, amount, initiatedByUserId, reason, cancellationToken);
         }
 
         public async Task RefundOrphanedPaymentAsync(
@@ -84,11 +110,15 @@ namespace Travle.Services.Payments
                 return;
             }
 
-            // Full auto-refund, attributed to the traveler themselves (no admin/organizer initiated it). The
+            // Full refund of the whole captured charge, attributed to the traveler themselves (no
+            // admin/organizer initiated it). This one does NOT read the booking's obligation: it is a
+            // payment-level remedy for money taken against a booking that could not be honoured at all, not
+            // the settlement of a cancellation — the booking may even be Expired rather than Cancelled. The
             // idempotency guard inside IssueRefundAsync makes a webhook replay safe (never a double refund).
             await IssueRefundAsync(
                 payment,
-                forcedPercentage: 100,
+                percentage: 100,
+                amount: payment.Amount,
                 initiatedByUserId: payment.Booking.UserId,
                 reason,
                 cancellationToken,
@@ -103,16 +133,22 @@ namespace Travle.Services.Payments
             => payment.StripePaymentIntentId.StartsWith(SyntheticIntentPrefix, StringComparison.Ordinal);
 
         // Paid, now-cancelled bookings that don't already carry a refund — the set that is owed a refund.
+        // The booking comes along because it carries the recorded obligation this service executes.
         private IQueryable<Payment> LoadRefundablePaymentsQuery()
             => _dbContext.Payments
-                .Include(p => p.Booking).ThenInclude(b => b.TourSchedule)
+                .Include(p => p.Booking)
                 .Where(p => p.Status == PaymentStatus.Succeeded
                             && p.Booking.StatusId == (int)BookingStatusCode.Cancelled
                             && !p.Refunds.Any());
 
+        /// <summary>
+        /// Executes an already-decided refund: calls Stripe for <paramref name="amount"/>, writes the
+        /// <c>Refund</c> row and advances the payment. It takes the figures rather than deriving them, so
+        /// there is exactly one place in the system where "how much is owed" is answered, and it isn't here.
+        /// </summary>
         private async Task IssueRefundAsync(
-            Payment payment, int? forcedPercentage, int initiatedByUserId, string reason, CancellationToken cancellationToken,
-            string? notificationText = null)
+            Payment payment, int percentage, decimal amount, int initiatedByUserId, string reason,
+            CancellationToken cancellationToken, string? notificationText = null)
         {
             // Idempotency guard (belt-and-suspenders alongside the query filter): never refund twice.
             var alreadyRefunded = await _dbContext.Refunds.AnyAsync(r => r.PaymentId == payment.Id, cancellationToken);
@@ -121,11 +157,6 @@ namespace Travle.Services.Payments
                 _logger.LogDebug("Payment {PaymentId} already has a refund; skipping.", payment.Id);
                 return;
             }
-
-            var percentage = forcedPercentage
-                ?? await PaymentMath.ResolveRefundPercentageAsync(
-                    _dbContext, payment.Booking.TourSchedule.StartsAt, DateTime.UtcNow, cancellationToken);
-            var amount = PaymentMath.RefundAmount(payment.Amount, percentage);
 
             try
             {

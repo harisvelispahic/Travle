@@ -127,15 +127,25 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
     _load();
   }
 
-  // Retries an owed refund (an earlier automatic attempt failed). The backend reuses the idempotent,
-  // tier-capped refund path, so this can never over-refund; if Stripe fails again the row stays owed.
+  // Retries an owed refund (an earlier automatic attempt failed). The amount was frozen when the booking
+  // was cancelled, so this pays exactly what the first attempt would have — it is never recalculated, and
+  // the idempotent refund path means it can never over-refund. If Stripe fails again the row stays owed.
   Future<void> _retryRefund(PaymentResponse row) async {
+    // Name the figure rather than saying "the same amount": the whole point of the recorded obligation is
+    // that it is a known number, so the admin should be able to see it before authorising the payout.
+    final owed = row.refundOwedAmount;
+    final owedText = owed == null
+        ? 'the recorded refund'
+        : '${formatPrice(owed)}'
+            '${row.refundOwedPercentage == null ? '' : ' (${row.refundOwedPercentage}%)'}';
+
     final confirmed = await showConfirmDialog(
       context,
       title: 'Retry refund',
       message:
-          'Re-attempt the owed refund for ${row.travelerName} on "${row.tourName}"? '
-          'This re-runs the original refund at the same amount — it can never over-refund.',
+          'Re-attempt the owed refund of $owedText for ${row.travelerName} on "${row.tourName}"? '
+          'This pays the amount recorded when the booking was cancelled — it is never recalculated, '
+          'and it can never over-refund.',
       confirmLabel: 'Retry refund',
     );
     if (!confirmed) return;

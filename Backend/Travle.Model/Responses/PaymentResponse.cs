@@ -33,6 +33,26 @@ namespace Travle.Model.Responses
         /// </summary>
         public bool RefundOwed { get; set; }
 
+        /// <summary>
+        /// The refund amount and percentage the booking recorded when it was cancelled — what a retry will
+        /// pay, to the fening. Present for any cancelled booking (whether or not the refund went through),
+        /// so an owed refund can be shown as a concrete figure rather than an open question. Null for a
+        /// booking that was never cancelled.
+        /// </summary>
+        public decimal? RefundOwedAmount { get; set; }
+
+        /// <summary>The percentage behind <see cref="RefundOwedAmount"/>; null on the same terms.</summary>
+        public int? RefundOwedPercentage { get; set; }
+
+        /// <summary>
+        /// Who or what cancelled the booking (the enum name) — the reason that percentage is what it is.
+        /// Null for a booking that was never cancelled.
+        /// </summary>
+        public string? CancellationSource { get; set; }
+
+        /// <summary>When the booking was cancelled; null if it never was.</summary>
+        public DateTime? CancelledAt { get; set; }
+
         public DateTime? SucceededAt { get; set; }
         public DateTime CreatedAt { get; set; }
     }

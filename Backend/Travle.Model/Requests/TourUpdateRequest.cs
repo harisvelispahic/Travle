@@ -20,6 +20,13 @@ namespace Travle.Model.Requests
 
         public int TourTypeId { get; set; }
 
+        /// <summary>
+        /// Minutes before a departure that bookings and payments close for this tour. Null uses the platform
+        /// default; 0 keeps a departure bookable until it starts. Applies to every schedule immediately —
+        /// including existing ones, since it is resolved on read rather than snapshotted per slot.
+        /// </summary>
+        public int? BookingCutoffMinutes { get; set; }
+
         public List<int> DestinationIds { get; set; } = new List<int>();
     }
 }

@@ -7,21 +7,25 @@ namespace Travle.Services.Payments
     /// while a DB transaction is open — so the orchestrators (BookingService, TourService) commit the
     /// cancellation first, then call in here. Every method is idempotent: a booking/payment that already
     /// carries a <c>Refund</c> is skipped, so a retry never double-refunds.
+    ///
+    /// This service decides <b>nothing</b> about how much is owed. The cancelling transition freezes the
+    /// percentage and amount onto the booking as it cancels it; these methods only carry that recorded
+    /// obligation out to Stripe. That is what makes a retry safe: the first attempt and every later one
+    /// execute the same figure, however much time has passed.
     /// </summary>
     public interface IRefundService
     {
         /// <summary>
-        /// Refunds the charged amount for a single cancelled booking. <paramref name="forcedPercentage"/>
-        /// is 100 for an organizer rejection; <c>null</c> means "resolve the tier from how far ahead of the
-        /// schedule the traveler cancelled" (user cancellation). A booking with no succeeded payment (never
-        /// paid) is a no-op. A 0% outcome still records a zero <c>Refund</c> row for audit.
+        /// Executes the refund obligation recorded on a cancelled booking. A booking with no succeeded
+        /// payment (never paid) is a no-op. A 0% obligation still records a zero <c>Refund</c> row for audit.
         /// </summary>
         Task RefundForBookingAsync(
-            int bookingId, int initiatedByUserId, string reason, int? forcedPercentage, CancellationToken cancellationToken = default);
+            int bookingId, int initiatedByUserId, string reason, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Refunds every paid, now-cancelled booking on a slot the organizer retired, at 100% each. Runs
-        /// after the slot-cancel transaction has committed; skips any booking already refunded.
+        /// Executes the recorded obligation for every paid, now-cancelled booking on a slot the organizer
+        /// retired (each snapshotted at 100% by the slot-cancel transition). Runs after that transaction has
+        /// committed; skips any booking already refunded.
         /// </summary>
         Task RefundForScheduleCancellationAsync(
             int scheduleId, int initiatedByUserId, string reason, CancellationToken cancellationToken = default);

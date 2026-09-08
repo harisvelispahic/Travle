@@ -337,9 +337,10 @@ class _ScheduleTile extends StatelessWidget {
                   icon: Icons.delete_outline,
                   destructive: true,
                   onPressed: busy ? null : onDelete,
-                  disabledReason: slot.isDeletable
-                      ? null
-                      : 'Only a future, active slot with no bookings can be deleted.',
+                  // The server sends the specific reason it would refuse with —
+                  // "3 booking(s) on record", not a generic rule — so the tooltip
+                  // and the eventual error can never tell different stories.
+                  disabledReason: slot.deleteBlockedReason,
                 ),
               ],
             ),
@@ -454,6 +455,18 @@ class _AddScheduleDialogState extends State<_AddScheduleDialog> {
       setState(() => _error = 'The schedule must start in the future.');
       return;
     }
+    // A date inside its own tour's booking cutoff would be published already
+    // closed. Only checkable here when the tour sets an explicit cutoff — the
+    // platform default is a server-side value the console doesn't carry — so the
+    // server stays the authority and returns the same rule in its own words.
+    final cutoff = widget.tour.bookingCutoffMinutes;
+    if (cutoff != null &&
+        startsAt.isBefore(DateTime.now().add(Duration(minutes: cutoff)))) {
+      setState(() => _error =
+          'This tour closes bookings ${formatDuration(cutoff)} before departure, '
+          'so this date could never be booked. Pick a later start.');
+      return;
+    }
     int? capacity;
     final capText = _capacity.text.trim();
     if (capText.isNotEmpty) {
@@ -503,7 +516,10 @@ class _AddScheduleDialogState extends State<_AddScheduleDialog> {
             ),
             const SizedBox(height: TravleTokens.space8),
             Text(
-              'Times are local to the tour’s destination.',
+              widget.tour.bookingCutoffMinutes == null
+                  ? 'Times are local to the tour’s destination.'
+                  : 'Times are local to the tour’s destination. Bookings for this tour close '
+                      '${formatDuration(widget.tour.bookingCutoffMinutes!)} before departure.',
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),

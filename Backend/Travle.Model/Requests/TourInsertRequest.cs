@@ -19,6 +19,13 @@ namespace Travle.Model.Requests
 
         public int TourTypeId { get; set; }
 
+        /// <summary>
+        /// Minutes before a departure that bookings and payments close for this tour — the organizer's lead
+        /// time to confirm or reject. Null uses the platform default; 0 keeps a departure bookable until it
+        /// starts.
+        /// </summary>
+        public int? BookingCutoffMinutes { get; set; }
+
         /// <summary>Approved destinations to visit, in itinerary order (order = SortOrder). At least one.</summary>
         public List<int> DestinationIds { get; set; } = new List<int>();
     }

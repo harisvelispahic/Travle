@@ -638,7 +638,10 @@ class _Departures extends StatelessWidget {
                       _SeatsPill(freeSeats: s.freeSeats, capacity: s.capacity),
                     ],
                   ),
-                  if (canBook && s.freeSeats > 0) ...[
+                  // The server decides bookability (open, before the cutoff, seats
+                  // free) and says so per slot — offering a Book button on any
+                  // other basis would promise something the API refuses.
+                  if (canBook && s.isBookable) ...[
                     const SizedBox(height: TravleTokens.space12),
                     Align(
                       alignment: Alignment.centerRight,
@@ -647,6 +650,25 @@ class _Departures extends StatelessWidget {
                         icon: const Icon(Icons.add_circle_outline, size: 18),
                         label: const Text('Book'),
                       ),
+                    ),
+                  ] else if (canBook && s.freeSeats > 0) ...[
+                    // Seats left but the window has closed: say so, rather than
+                    // showing a dead button or silently nothing.
+                    const SizedBox(height: TravleTokens.space8),
+                    Row(
+                      children: [
+                        Icon(Icons.lock_clock_outlined,
+                            size: 16, color: theme.colorScheme.onSurfaceVariant),
+                        const SizedBox(width: TravleTokens.space8),
+                        Expanded(
+                          child: Text(
+                            'Bookings closed ${formatEventDateTime(s.bookingClosesAt, s.timeZoneId)}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ],

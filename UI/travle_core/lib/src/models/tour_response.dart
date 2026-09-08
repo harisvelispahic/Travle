@@ -30,6 +30,7 @@ class TourResponse {
     this.averageRating = 0,
     this.reviewCount = 0,
     this.isFavorite = false,
+    this.bookingCutoffMinutes,
     this.tourTypeName,
     this.organizerName,
     this.nextDepartureAt,
@@ -63,6 +64,11 @@ class TourResponse {
   final String? organizerName;
 
   final bool isActive;
+
+  /// This tour's own booking cutoff in minutes, or null when it follows the
+  /// platform default. Organizer-facing only; travelers see its effect as each
+  /// schedule's `bookingClosesAt`.
+  final int? bookingCutoffMinutes;
 
   /// True when a stop left the approved catalogue (edited back to moderation / rejected). Such a tour is
   /// hidden from travelers; on the organizer's own list it drives a "Temporarily unavailable" badge.

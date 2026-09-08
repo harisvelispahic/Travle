@@ -1,6 +1,7 @@
 using Travle.Model.Responses;
 using Travle.Services.Database;
 using MapsterMapper;
+using Microsoft.EntityFrameworkCore;
 
 namespace Travle.Services.BookingStateMachine
 {
@@ -18,6 +19,11 @@ namespace Travle.Services.BookingStateMachine
 
         public override async Task<BookingResponse> ConfirmAsync(Booking booking, int organizerUserId)
         {
+            // The organizer's decision window closes at departure. After that the lifecycle sweep has
+            // already resolved the booking (cancelled, fully refunded), and confirming would rewrite the
+            // history of a tour that has run.
+            await EnsureScheduleNotStartedAsync(booking, "confirmed");
+
             // Pending → Confirmed. Seats stay held; a single status change + notification is one save.
             MarkStatus(booking, BookingStatusCode.Confirmed);
             booking.ConfirmedByUserId = organizerUserId;
@@ -32,7 +38,11 @@ namespace Travle.Services.BookingStateMachine
         }
 
         public override async Task<BookingResponse> RejectAsync(Booking booking, int organizerUserId, string reason)
-            => await InTransactionAsync(async () =>
+        {
+            // Same window as ConfirmAsync — the two halves of one decision close together.
+            await EnsureScheduleNotStartedAsync(booking, "rejected");
+
+            return await InTransactionAsync(async () =>
             {
                 // Pending → Cancelled (organizer reject): release the seats, record who/why. The 100% refund
                 // is issued by IRefundService after this commits (BookingService.RejectAsync orchestrates).
@@ -40,6 +50,7 @@ namespace Travle.Services.BookingStateMachine
                 MarkStatus(booking, BookingStatusCode.Cancelled);
                 booking.CancelledByUserId = organizerUserId;
                 booking.RejectionReason = reason;
+                await SnapshotRefundObligationAsync(booking, CancellationSource.OrganizerReject);
                 AddNotification(booking.UserId, NotificationType.BookingRejected,
                     "Booking rejected",
                     $"Your booking was rejected by the organizer. Reason: {reason}. A full refund will be issued.",
@@ -47,6 +58,7 @@ namespace Travle.Services.BookingStateMachine
                 await DbContext.SaveChangesAsync();
                 return await BuildResponseAsync(booking.Id);
             });
+        }
 
         public override Task<BookingResponse> CancelAsync(Booking booking, int cancellingUserId, string? reason)
             => CancelByUserAsync(booking, cancellingUserId, reason);
@@ -56,6 +68,46 @@ namespace Travle.Services.BookingStateMachine
 
         public override Task<BookingResponse> CancelForOrganizerSuspensionAsync(Booking booking, int adminUserId)
             => CancelForOrganizerSuspensionInternalAsync(booking, adminUserId);
+
+        /// <summary>
+        /// The lifecycle sweep's answer to a booking the organizer never decided on (Pending → Cancelled at
+        /// departure, 100% refund owed). Pending is the one state that can otherwise outlive its own tour:
+        /// expiry only reaches held payments and auto-completion only reaches confirmed bookings, so without
+        /// this a paid booking whose organizer stayed silent would sit Pending for ever. The traveler paid
+        /// and was never accepted, so the money goes back in full; the refund is issued by
+        /// <c>IRefundService</c> after this commits (BookingService orchestrates).
+        /// </summary>
+        public override async Task<BookingResponse> CancelUnconfirmedAtStartAsync(Booking booking)
+            => await InTransactionAsync(async () =>
+            {
+                await ReleaseSeatsAsync(booking.TourScheduleId, booking.NumberOfPeople);
+                MarkStatus(booking, BookingStatusCode.Cancelled);
+                // No CancelledByUserId: nobody performed this cancellation, the clock did.
+                booking.CancellationReason = "The organizer did not confirm this booking before the tour started.";
+                await SnapshotRefundObligationAsync(booking, CancellationSource.UnconfirmedAtStart);
+
+                AddNotification(booking.UserId, NotificationType.BookingUnconfirmed,
+                    "Booking cancelled — never confirmed",
+                    "Your booking was cancelled because the organizer did not confirm it before the tour started. "
+                    + "A full refund will be issued to your original payment method.",
+                    booking.Id, alsoEmail: true);
+
+                var organizerId = await DbContext.TourSchedules
+                    .Where(s => s.Id == booking.TourScheduleId)
+                    .Select(s => s.Tour.OrganizerId)
+                    .FirstAsync();
+                // In-app only for the organizer: the traveler's copy is about money coming back and earns an
+                // email, while this one reports the consequence of their own inaction — the same reasoning
+                // that keeps a traveler's own cancellation in-app (see CancelByUserAsync).
+                AddNotification(organizerId, NotificationType.BookingCancelled,
+                    "Booking cancelled — you did not confirm it",
+                    "A paid booking on one of your tour schedules reached its departure without being confirmed "
+                    + "or rejected, so it was cancelled automatically and the traveler refunded in full.",
+                    booking.Id);
+
+                await DbContext.SaveChangesAsync();
+                return await BuildResponseAsync(booking.Id);
+            });
 
         public override List<BookingAction> GetAllowedActions()
             => new() { BookingAction.Confirm, BookingAction.Reject, BookingAction.Cancel };

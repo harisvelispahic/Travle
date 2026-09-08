@@ -66,6 +66,11 @@ public class BookingLifecycleWorker : BackgroundService
             var bookings = scope.ServiceProvider.GetRequiredService<IBookingService>();
 
             var expired = await bookings.ExpireOverdueHoldsAsync(stoppingToken);
+
+            // Before auto-completion: a booking the organizer never decided on must be cancelled and
+            // refunded at its departure, not quietly completed at the schedule's end as if it had run.
+            var unconfirmed = await bookings.ResolveUnconfirmedPendingAsync(stoppingToken);
+
             var completed = await bookings.AutoCompletePastConfirmedAsync(stoppingToken);
             var reminded = await bookings.SendDueRemindersAsync(_reminderOptions.WindowHours, stoppingToken);
 
@@ -73,11 +78,12 @@ public class BookingLifecycleWorker : BackgroundService
             // rows have committed. This scope's dispatcher is the same instance the sweep enqueued into.
             await scope.ServiceProvider.GetRequiredService<INotificationDispatcher>().FlushAsync(stoppingToken);
 
-            if (expired > 0 || completed > 0 || reminded > 0)
+            if (expired > 0 || unconfirmed > 0 || completed > 0 || reminded > 0)
             {
                 _logger.LogInformation(
-                    "Booking lifecycle sweep: expired {Expired} hold(s), completed {Completed} booking(s), reminded {Reminded} booking(s).",
-                    expired, completed, reminded);
+                    "Booking lifecycle sweep: expired {Expired} hold(s), cancelled {Unconfirmed} unconfirmed booking(s), "
+                    + "completed {Completed} booking(s), reminded {Reminded} booking(s).",
+                    expired, unconfirmed, completed, reminded);
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

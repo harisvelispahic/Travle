@@ -26,6 +26,7 @@ TourResponse _$TourResponseFromJson(Map<String, dynamic> json) => TourResponse(
   averageRating: (json['averageRating'] as num?)?.toDouble() ?? 0,
   reviewCount: (json['reviewCount'] as num?)?.toInt() ?? 0,
   isFavorite: json['isFavorite'] as bool? ?? false,
+  bookingCutoffMinutes: (json['bookingCutoffMinutes'] as num?)?.toInt(),
   tourTypeName: json['tourTypeName'] as String?,
   organizerName: json['organizerName'] as String?,
   nextDepartureAt: json['nextDepartureAt'] == null
@@ -61,6 +62,7 @@ Map<String, dynamic> _$TourResponseToJson(TourResponse instance) =>
       'organizerId': instance.organizerId,
       'organizerName': instance.organizerName,
       'isActive': instance.isActive,
+      'bookingCutoffMinutes': instance.bookingCutoffMinutes,
       'hasUnavailableDestination': instance.hasUnavailableDestination,
       'averageRating': instance.averageRating,
       'reviewCount': instance.reviewCount,

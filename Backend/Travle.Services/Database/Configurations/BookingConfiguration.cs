@@ -10,6 +10,7 @@ namespace Travle.Services.Database.Configurations
             base.Configure(builder);
 
             builder.Property(b => b.TotalAmount).HasPrecision(18, 2);
+            builder.Property(b => b.RefundAmountOwed).HasPrecision(18, 2);
             builder.Property(b => b.PaymentIdempotencyToken)
                 .IsRequired()
                 .HasMaxLength(32);

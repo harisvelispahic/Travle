@@ -55,6 +55,13 @@ namespace Travle.Services
         /// <summary>Scheduler tick: expire every PaymentInProgress hold past its 15-minute window. Returns the count.</summary>
         Task<int> ExpireOverdueHoldsAsync(CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// Scheduler tick: resolve every paid booking still awaiting the organizer's decision when its
+        /// departure arrives — cancelled with a full refund, since the traveler paid and was never accepted.
+        /// Without it Pending is the one state that can outlive its own tour. Returns the count.
+        /// </summary>
+        Task<int> ResolveUnconfirmedPendingAsync(CancellationToken cancellationToken = default);
+
         /// <summary>Scheduler tick: auto-complete every Confirmed booking whose schedule has ended. Returns the count.</summary>
         Task<int> AutoCompletePastConfirmedAsync(CancellationToken cancellationToken = default);
 

@@ -33,6 +33,12 @@ namespace Travle.Services.Validators
             RuleFor(x => x.TourTypeId)
                 .GreaterThan(0).WithMessage("A tour type must be selected.");
 
+            // Null = use the platform default. 0 is deliberately legal: it means "bookable until departure".
+            RuleFor(x => x.BookingCutoffMinutes)
+                .InclusiveBetween(0, 10080)
+                .When(x => x.BookingCutoffMinutes.HasValue)
+                .WithMessage("The booking cutoff must be between 0 minutes and 7 days (10080 minutes).");
+
             RuleFor(x => x.DestinationIds)
                 .NotEmpty().WithMessage("A tour must visit at least one destination.")
                 .Must(ids => ids.Distinct().Count() == ids.Count)

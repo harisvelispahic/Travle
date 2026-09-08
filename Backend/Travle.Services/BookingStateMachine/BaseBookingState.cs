@@ -3,6 +3,7 @@ using Travle.Model.Requests;
 using Travle.Model.Responses;
 using Travle.Services.Database;
 using Travle.Services.Notifications;
+using Travle.Services.Payments;
 using Travle.Services.Recommender;
 using MapsterMapper;
 using Microsoft.EntityFrameworkCore;
@@ -86,12 +87,39 @@ namespace Travle.Services.BookingStateMachine
         public virtual Task<BookingResponse> CancelForOrganizerSuspensionAsync(Booking booking, int adminUserId)
             => throw Illegal("cancelled");
 
+        public virtual Task<BookingResponse> CancelUnconfirmedAtStartAsync(Booking booking)
+            => throw Illegal("cancelled");
+
         /// <summary>The transitions this state currently permits (for UI button gating, rule K).</summary>
         public virtual List<BookingAction> GetAllowedActions() => new();
 
-        /// <summary>Names of the allowed transitions for a status, resolved through the factory.</summary>
-        public List<string> ResolveAllowedActionNames(int statusId)
-            => GetState((BookingStatusCode)statusId).GetAllowedActions().Select(a => a.ToString()).ToList();
+        /// <summary>
+        /// Names of the transitions a booking currently permits — its state's actions, minus the ones its
+        /// schedule's clock has already closed. Status alone is not enough: a Pending booking on a departed
+        /// tour is still Pending, but confirming, rejecting and cancelling it are all refused now
+        /// (<see cref="BookingTimeRules"/>), and an app that renders those buttons is offering an action the
+        /// server will reject. <paramref name="expiresAt"/> gates Pay the same way for a lapsed hold.
+        /// </summary>
+        public List<string> ResolveAllowedActionNames(int statusId, DateTime scheduleStartsAt, DateTime? expiresAt)
+        {
+            var now = DateTime.UtcNow;
+            var hasStarted = BookingTimeRules.HasStarted(scheduleStartsAt, now);
+            var holdLapsed = expiresAt is DateTime expiry && expiry <= now;
+
+            return GetState((BookingStatusCode)statusId)
+                .GetAllowedActions()
+                .Where(action => action switch
+                {
+                    // Paying is bounded by the hold, which itself can never outlive the booking cutoff.
+                    BookingAction.Pay => !holdLapsed,
+                    // The discretionary transitions all close at departure.
+                    BookingAction.Confirm or BookingAction.Reject
+                        or BookingAction.Cancel or BookingAction.CancelByOrganizer => !hasStarted,
+                    _ => true
+                })
+                .Select(action => action.ToString())
+                .ToList();
+        }
 
         // --- shared transition bodies (legal from more than one state) -------------------------------
 
@@ -103,12 +131,23 @@ namespace Travle.Services.BookingStateMachine
         /// never called inside this transaction.
         /// </summary>
         protected async Task<BookingResponse> CancelByUserAsync(Booking booking, int cancellingUserId, string? reason)
-            => await InTransactionAsync(async () =>
+        {
+            // A tour that has already run cannot be un-booked: cancelling here would release seats and owe a
+            // refund for something that was delivered.
+            await EnsureScheduleNotStartedAsync(booking, "cancelled");
+
+            return await InTransactionAsync(async () =>
             {
                 await ReleaseSeatsAsync(booking.TourScheduleId, booking.NumberOfPeople);
                 MarkStatus(booking, BookingStatusCode.Cancelled);
                 booking.CancelledByUserId = cancellingUserId;
                 booking.CancellationReason = reason;
+
+                // An admin may cancel on a traveler's behalf (BookingService.CancelAsync allows self-or-admin).
+                // Only the traveler's own decision is tiered; an intervention on their behalf refunds in full.
+                await SnapshotRefundObligationAsync(booking, cancellingUserId == booking.UserId
+                    ? CancellationSource.Traveler
+                    : CancellationSource.Admin);
 
                 var organizerId = await DbContext.TourSchedules
                     .Where(s => s.Id == booking.TourScheduleId)
@@ -130,6 +169,7 @@ namespace Travle.Services.BookingStateMachine
                 await DbContext.SaveChangesAsync();
                 return await BuildResponseAsync(booking.Id);
             });
+        }
 
         /// <summary>
         /// Cancellation forced by the tour organizer's suspension, shared by <see cref="PendingBookingState"/>
@@ -147,6 +187,7 @@ namespace Travle.Services.BookingStateMachine
                 MarkStatus(booking, BookingStatusCode.Cancelled);
                 booking.CancelledByUserId = adminUserId;
                 booking.CancellationReason = "The tour organizer's account was suspended.";
+                await SnapshotRefundObligationAsync(booking, CancellationSource.OrganizerSuspension);
                 AddNotification(booking.UserId, NotificationType.ScheduleCancelled,
                     "Tour cancelled",
                     "A tour you booked has been cancelled because the organizer is no longer available. A full refund will be issued.",
@@ -168,6 +209,7 @@ namespace Travle.Services.BookingStateMachine
             MarkStatus(booking, BookingStatusCode.Cancelled);
             booking.CancelledByUserId = organizerUserId;
             booking.CancellationReason = reason;
+            await SnapshotRefundObligationAsync(booking, CancellationSource.ScheduleCancel);
             AddNotification(booking.UserId, NotificationType.ScheduleCancelled,
                 "Schedule cancelled",
                 $"A tour schedule you booked was cancelled by the organizer. Reason: {reason}. A full refund will be issued.",
@@ -184,6 +226,74 @@ namespace Travle.Services.BookingStateMachine
         {
             booking.StatusId = (int)next;
             booking.StatusChangedAt = DateTime.UtcNow;
+        }
+
+        /// <summary>
+        /// Freezes what the traveler is owed, at the moment of cancellation, as part of the cancelling
+        /// transition itself — so the obligation is committed in the same transaction as the status change
+        /// and survives a Stripe failure that writes no <c>Refund</c> row.
+        ///
+        /// The percentage is decided here and never again: only a traveler's own cancellation is tiered
+        /// (resolved from the ladder by hours-before-departure), and every other source is a full refund,
+        /// because the traveler is penalised only for their own choice. <b>Write-once</b> — a second call
+        /// returns without touching the snapshot, so no retry or replay can re-decide a settled obligation.
+        /// The amount is computed from the charge actually captured (not the booking total), since that is
+        /// what Stripe can give back; a booking that was never paid records a zero obligation.
+        /// </summary>
+        protected async Task SnapshotRefundObligationAsync(Booking booking, CancellationSource source)
+        {
+            if (booking.RefundPercentageOwed is not null)
+            {
+                return;
+            }
+
+            var now = DateTime.UtcNow;
+
+            var percentage = source == CancellationSource.Traveler
+                ? await ResolveTravelerTierAsync(booking, now)
+                : 100;
+
+            // The captured charge, if any. Sum defensively: a booking has at most one succeeded payment in
+            // practice (the double-payment guard sees to that), but under-reporting the basis would
+            // under-refund, which is the one direction that costs the traveler money.
+            var capturedAmount = await DbContext.Payments
+                .Where(p => p.BookingId == booking.Id
+                            && (p.Status == PaymentStatus.Succeeded
+                                || p.Status == PaymentStatus.PartiallyRefunded
+                                || p.Status == PaymentStatus.Refunded))
+                .SumAsync(p => (decimal?)p.Amount) ?? 0m;
+
+            booking.CancelledAt = now;
+            booking.CancellationSource = source;
+            booking.RefundPercentageOwed = percentage;
+            booking.RefundAmountOwed = PaymentMath.RefundAmount(capturedAmount, percentage);
+        }
+
+        // The tier ladder, read at the instant of cancellation — the same resolver the pre-cancel preview
+        // uses, so what the traveler was shown is what gets frozen.
+        private async Task<int> ResolveTravelerTierAsync(Booking booking, DateTime now)
+        {
+            var startsAt = await DbContext.TourSchedules
+                .Where(s => s.Id == booking.TourScheduleId)
+                .Select(s => s.StartsAt)
+                .FirstAsync();
+
+            return await PaymentMath.ResolveRefundPercentageAsync(DbContext, startsAt, now);
+        }
+
+        /// <summary>
+        /// Refuses a discretionary transition on a booking whose departure has passed. The schedule is read
+        /// here rather than taken from the entity because the dispatcher loads bookings without their
+        /// schedule graph; one projected column is cheaper than an Include on every transition.
+        /// </summary>
+        protected async Task EnsureScheduleNotStartedAsync(Booking booking, string pastTenseAction)
+        {
+            var startsAt = await DbContext.TourSchedules
+                .Where(s => s.Id == booking.TourScheduleId)
+                .Select(s => s.StartsAt)
+                .FirstAsync();
+
+            BookingTimeRules.EnsureNotStarted(startsAt, DateTime.UtcNow, pastTenseAction);
         }
 
         /// <summary>Atomically returns seats to a slot (the inverse of the capacity guard).</summary>
@@ -276,7 +386,8 @@ namespace Travle.Services.BookingStateMachine
                 ?? throw new NotFoundException("Booking", bookingId);
 
             BookingProjections.FinalizeThumbnail(response);
-            response.AllowedActions = ResolveAllowedActionNames(response.StatusId);
+            response.AllowedActions = ResolveAllowedActionNames(
+                response.StatusId, response.ScheduleStartsAt, response.ExpiresAt);
             return response;
         }
 

@@ -41,12 +41,18 @@ namespace Travle.Services.BookingStateMachine
         /// Stripe is never called inside the transaction.
         /// </summary>
         public override async Task<BookingResponse> CancelByOrganizerAsync(Booking booking, int organizerUserId, string reason)
-            => await InTransactionAsync(async () =>
+        {
+            // Calling off a party is a decision about a tour that is still to come; once it has started the
+            // booking is history and auto-completes at the schedule's end instead.
+            await EnsureScheduleNotStartedAsync(booking, "cancelled");
+
+            return await InTransactionAsync(async () =>
             {
                 await ReleaseSeatsAsync(booking.TourScheduleId, booking.NumberOfPeople);
                 MarkStatus(booking, BookingStatusCode.Cancelled);
                 booking.CancelledByUserId = organizerUserId;
                 booking.CancellationReason = reason;
+                await SnapshotRefundObligationAsync(booking, CancellationSource.OrganizerCancel);
                 AddNotification(booking.UserId, NotificationType.BookingCancelled,
                     "Booking cancelled by the organizer",
                     $"The organizer cancelled your confirmed booking. Reason: {reason}. A full refund will be issued.",
@@ -55,6 +61,7 @@ namespace Travle.Services.BookingStateMachine
                 await DbContext.SaveChangesAsync();
                 return await BuildResponseAsync(booking.Id);
             });
+        }
 
         public override Task<BookingResponse> CancelForSlotAsync(Booking booking, int organizerUserId, string reason)
             => CancelForSlotInternalAsync(booking, organizerUserId, reason);

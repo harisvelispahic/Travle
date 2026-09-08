@@ -31,6 +31,7 @@ namespace Travle.Services.Projections
                 OrganizerId = t.OrganizerId,
                 OrganizerName = t.Organizer.FirstName + " " + t.Organizer.LastName,
                 IsActive = t.IsActive,
+                BookingCutoffMinutes = t.BookingCutoffMinutes,
                 // A tour is "unavailable" the moment any stop leaves the approved catalogue (edited back to
                 // Pending / rejected). Travelers never see such a tour; the organizer sees it flagged.
                 HasUnavailableDestination = t.TourDestinations.Any(td => td.Destination.Status != DestinationStatus.Approved),

@@ -79,9 +79,11 @@ namespace Travle.Services.Payments
                 throw new BusinessRuleException("This booking is not awaiting payment.");
             }
 
+            // The hold is normally 15 minutes, but a booking made close to its schedule's cutoff gets a
+            // shorter one (BookingTimeRules), so the message stays neutral about the length.
             if (booking.ExpiresAt is DateTime expiry && expiry <= DateTime.UtcNow)
             {
-                throw new BusinessRuleException("The 15-minute payment hold has expired. Please book again.");
+                throw new BusinessRuleException("The payment hold on this booking has expired. Please book again.");
             }
 
             if (booking.TotalAmount <= 0)
@@ -209,8 +211,9 @@ namespace Travle.Services.Payments
                 return;
             }
 
+            var now = DateTime.UtcNow;
             payment.Status = PaymentStatus.Succeeded;
-            payment.SucceededAt = DateTime.UtcNow;
+            payment.SucceededAt = now;
 
             // Never promote a booking on a charge that does not match what this row says was owed. The
             // intent was minted server-side with our amount and currency, and the row is looked up BY that
@@ -219,7 +222,21 @@ namespace Travle.Services.Payments
             // back, not to hand out a seat against an amount we did not price.
             var captured = MatchesRecordedCharge(payment, evt);
 
-            if (captured && payment.Booking.StatusId == (int)BookingStatusCode.PaymentInProgress)
+            // Re-check the clock at the moment of promotion, not just at checkout. Stripe events can arrive
+            // minutes late, so a hold that was live when the traveler pressed Pay may be gone by now. Two
+            // deadlines apply, both from BookingTimeRules: the hold (with the same grace the sweep gives it)
+            // and the departure itself. The departure check is implied by the hold whenever the tour sets a
+            // cutoff, but a tour may set a cutoff of 0 — and a charge must never buy a seat on a tour that
+            // is already under way, so the rule is asserted rather than inferred.
+            var startsAt = await _dbContext.TourSchedules
+                .Where(s => s.Id == payment.Booking.TourScheduleId)
+                .Select(s => s.StartsAt)
+                .FirstAsync(cancellationToken);
+
+            var inTime = BookingTimeRules.IsHoldHonoured(payment.Booking.ExpiresAt, now)
+                         && !BookingTimeRules.HasStarted(startsAt, now);
+
+            if (captured && inTime && payment.Booking.StatusId == (int)BookingStatusCode.PaymentInProgress)
             {
                 // The state machine owns the transition (and the PaymentSucceeded notification); its
                 // SaveChanges also persists the Payment edit above (same DbContext scope).
@@ -227,22 +244,38 @@ namespace Travle.Services.Payments
             }
             else
             {
-                // Two ways to land here, both ending the same way — bank the charge, then give it back in
-                // full. (1) The common race: the charge landed after the booking left PaymentInProgress — the
-                // 15-minute hold expired (seats released, possibly resold) or the organizer cancelled the
-                // slot. (2) The amount/currency guard above rejected the charge. Either way the money was
-                // really captured, so record it truthfully and auto-refund: a traveler must never be charged
-                // for a booking they cannot get. The refund runs post-commit (Stripe is never called inside a
-                // DB transaction) and is idempotent, so a webhook replay is safe. The booking is not
-                // resurrected — its seats may already be resold; the traveler is simply made whole.
+                // Three ways to land here, all ending the same way — bank the charge, then give it back in
+                // full. (1) The charge landed after the booking left PaymentInProgress — its hold expired
+                // (seats released, possibly resold) or the organizer cancelled the slot. (2) The charge
+                // landed too late to be applied: past the hold's grace, or after the tour began. (3) The
+                // amount/currency guard above rejected it. Either way the money was really captured, so
+                // record it truthfully and auto-refund: a traveler must never be charged for a booking they
+                // cannot get, and a tour that has started must never gain a "paid" booking after the fact.
+                // The refund runs post-commit (Stripe is never called inside a DB transaction) and is
+                // idempotent, so a webhook replay is safe.
                 _logger.LogWarning(
                     "Stripe webhook {EventId}: payment {PaymentId} succeeded but it cannot be applied "
-                    + "(amountMatches={Matches}, booking {BookingId} status {StatusId}); recording the charge and auto-refunding it in full.",
-                    evt.Id, payment.Id, captured, payment.BookingId, payment.Booking.StatusId);
+                    + "(amountMatches={Matches}, inTime={InTime}, booking {BookingId} status {StatusId}); "
+                    + "recording the charge and auto-refunding it in full.",
+                    evt.Id, payment.Id, captured, inTime, payment.BookingId, payment.Booking.StatusId);
                 await _dbContext.SaveChangesAsync(cancellationToken);
+
+                // Expire the booking only when the clock is what defeated it: past the hold's grace, or the
+                // tour already under way — then it can never be paid for, so releasing the seats now beats
+                // waiting for the sweep, and the traveler sees a settled booking beside their refund.
+                //
+                // Deliberately NOT when the amount guard was the sole objection: that booking's hold may
+                // still be live and its tour still ahead, so the traveler is entitled to try again with a
+                // correctly priced charge. Killing the hold there would turn a mispriced attempt into a lost
+                // booking.
+                if (!inTime && payment.Booking.StatusId == (int)BookingStatusCode.PaymentInProgress)
+                {
+                    await _states.GetState(BookingStatusCode.PaymentInProgress).ExpireAsync(payment.Booking);
+                }
+
                 await _refunds.RefundOrphanedPaymentAsync(
                     payment.Id,
-                    "Payment captured after the booking was no longer active; automatic full refund.",
+                    "Payment captured after the booking could no longer be honoured; automatic full refund.",
                     cancellationToken);
             }
         }
@@ -385,10 +418,10 @@ namespace Travle.Services.Payments
 
         /// <summary>
         /// Admin action: re-run a refund that a prior automatic attempt failed to complete (a rare Stripe
-        /// error left the money owed). Reuses the idempotent <see cref="IRefundService"/> path — the amount
-        /// is recomputed from the same tier, so a retry can never over-refund. The tier is reconstructed from
-        /// who cancelled the booking: a self-cancellation is tiered by hours-before-start; any other cancel
-        /// (organizer reject / slot cancel / organizer suspension) is a full refund.
+        /// error left the money owed). It pays the amount the booking recorded when it was cancelled —
+        /// nothing here reconstructs or re-decides it, so however many hours have passed since the first
+        /// attempt, the traveler receives exactly what that one would have paid. Idempotent, so a retry can
+        /// never double- or over-refund.
         /// </summary>
         public async Task<PaymentResponse> RetryRefundAsync(int paymentId, CancellationToken cancellationToken = default)
         {
@@ -414,10 +447,8 @@ namespace Travle.Services.Payments
                 throw new ConflictException("This payment has already been refunded.");
             }
 
-            int? forcedPercentage = payment.Booking.CancelledByUserId == payment.Booking.UserId ? null : 100;
-
             await _refunds.RefundForBookingAsync(
-                payment.BookingId, adminId, "Admin retried the owed refund.", forcedPercentage, cancellationToken);
+                payment.BookingId, adminId, "Admin retried the owed refund.", cancellationToken);
 
             // Re-read the row so the client sees the advanced status / refund totals (or, if the retry failed
             // again, the still-owed flag and the fresh RefundFailed notification the refund service raised).
@@ -451,6 +482,11 @@ namespace Travle.Services.Payments
                     RefundOwed = p.Booking.StatusId == (int)BookingStatusCode.Cancelled
                                  && p.Status == PaymentStatus.Succeeded
                                  && !p.Refunds.Any(),
+                    // The obligation frozen at cancellation — exactly what "Retry refund" will pay.
+                    RefundOwedAmount = p.Booking.RefundAmountOwed,
+                    RefundOwedPercentage = p.Booking.RefundPercentageOwed,
+                    CancellationSource = p.Booking.CancellationSource,
+                    p.Booking.CancelledAt,
                     p.SucceededAt,
                     p.CreatedAt
                 })
@@ -471,6 +507,11 @@ namespace Travle.Services.Payments
                 RefundedAmount = r.RefundedAmount,
                 RefundCount = r.RefundCount,
                 RefundOwed = r.RefundOwed,
+                RefundOwedAmount = r.RefundOwedAmount,
+                RefundOwedPercentage = r.RefundOwedPercentage,
+                // Mapped in memory for the same reason Status is: EF can't translate enum.ToString().
+                CancellationSource = r.CancellationSource?.ToString(),
+                CancelledAt = r.CancelledAt,
                 SucceededAt = r.SucceededAt,
                 CreatedAt = r.CreatedAt
             }).ToList();

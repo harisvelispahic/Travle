@@ -596,6 +596,17 @@ namespace Travle.Services.Database.Seeding
                             booking.CancelledByUserId = userId;
                             booking.CancellationReason = Pick(rng, SeedText.CancellationReasons);
 
+                            // The refund obligation, recorded exactly as a live cancellation would record it
+                            // (03 §refunds): every seeded cancellation here is the traveler's own, so it is
+                            // the tiered percentage, frozen against the moment they cancelled. Without this
+                            // a freshly seeded database would show hundreds of cancelled bookings carrying
+                            // no obligation — and an admin retrying one of their refunds would be refused,
+                            // because the refund service executes the recorded figure and never invents one.
+                            booking.CancelledAt = cancelledAt;
+                            booking.CancellationSource = CancellationSource.Traveler;
+                            booking.RefundPercentageOwed = pct;
+                            booking.RefundAmountOwed = RoundMoney(amount * pct / 100m);
+
                             var payment = SucceededPayment(NextIntent(), amount, fee, createdAt);
                             if (pct > 0)
                             {
