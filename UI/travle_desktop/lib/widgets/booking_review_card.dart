@@ -21,6 +21,7 @@ class BookingReviewCard extends StatelessWidget {
     this.onConfirm,
     this.onReject,
     this.onCancel,
+    this.onAdminCancel,
   });
 
   final BookingResponse booking;
@@ -31,12 +32,24 @@ class BookingReviewCard extends StatelessWidget {
   /// Organizer calls this confirmed booking off (always a 100% refund).
   final VoidCallback? onCancel;
 
+  /// Admin cancels on the traveler's behalf (always a 100% refund — the tier
+  /// ladder only ever applies to the traveler's own decision). Distinct from
+  /// [onCancel]: that one is the organizer calling their own booking off, and
+  /// the two are gated by different allowed actions, so a screen passes one or
+  /// the other, never both.
+  final VoidCallback? onAdminCancel;
+
   bool get _showDecision =>
       booking.isPending && onConfirm != null && onReject != null;
 
   bool get _showCancel => booking.canOrganizerCancel && onCancel != null;
 
-  bool get _showActions => _showDecision || _showCancel;
+  // Gated on the server's own verdict: Cancel leaves AllowedActions once the
+  // tour has started, so the button disappears exactly when the API would
+  // refuse it.
+  bool get _showAdminCancel => booking.canCancel && onAdminCancel != null;
+
+  bool get _showActions => _showDecision || _showCancel || _showAdminCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -149,6 +162,15 @@ class BookingReviewCard extends StatelessWidget {
                       onPressed: busy ? null : onCancel,
                       icon: const Icon(Icons.event_busy_outlined),
                       label: const Text('Cancel booking'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: theme.colorScheme.error,
+                      ),
+                    ),
+                  if (_showAdminCancel)
+                    OutlinedButton.icon(
+                      onPressed: busy ? null : onAdminCancel,
+                      icon: const Icon(Icons.cancel_outlined),
+                      label: const Text('Cancel for traveler'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: theme.colorScheme.error,
                       ),

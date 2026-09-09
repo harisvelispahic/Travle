@@ -405,11 +405,16 @@ namespace Travle.Services
                 blockers.Add($"{unresolvedBookings} unresolved booking(s) on upcoming dates");
             }
 
+            // Suspension is a genuine way out of this: it deactivates the organizer's tours and cancels and
+            // refunds their upcoming bookings, so both counts below fall to zero and the revoke goes through.
+            // That was not true when this guard was written — suspension only hid the tours behind a
+            // read-time filter — and the message said so anyway, sending an admin round a loop that could
+            // not terminate.
             throw new BusinessRuleException(
                 $"This organizer still has {string.Join(" and ", blockers)}, and removing the role would leave "
                 + "them unable to confirm or reject those bookings. Deactivate the tours (or let their dates "
-                + "pass) and then remove the role, or suspend the account instead — that cancels the upcoming "
-                + "bookings and refunds the travelers in full.");
+                + "pass) and then remove the role, or suspend the account first — that deactivates their tours "
+                + "and refunds the upcoming bookings in full.");
         }
 
         public async Task<UserResponse> UpdateProfileAsync(int id, UserUpdateRequest request)
@@ -526,21 +531,49 @@ namespace Travle.Services
             // The suspended user learns why by email (their session is being revoked, so email is the channel
             // that reaches them); the in-app row is also kept for transparency if they are later reinstated.
             // Staged so it commits with the suspension; the email fires on the post-commit flush.
+            // Asked before the deactivation below, so the copy can tell an organizer what happened to
+            // their catalogue. Staged here and committed with everything else.
+            var hadActiveTours = await _dbContext.Tours.AnyAsync(t => t.OrganizerId == id && t.IsActive);
+            var suspendedText = hadActiveTours
+                ? $"Your Travle account has been suspended. Reason: {request.Reason}. Your tours have been "
+                  + "deactivated and any upcoming bookings on them cancelled and refunded in full."
+                : $"Your Travle account has been suspended. Reason: {request.Reason}";
+
             _notifications.Enqueue(id, NotificationType.AccountSuspended,
                 "Account suspended",
-                $"Your Travle account has been suspended. Reason: {request.Reason}",
+                suspendedText,
                 relatedEntityId: null, alsoEmail: true);
 
-            // Suspending an organizer pulls their tours from sale, and any paid booking on them can no longer
-            // be honored — so cancel each (Pending/Confirmed) with a full refund and tell the traveler. The
+            // Suspending an organizer pulls their tours from sale, and no booking on them can be honored any
+            // more — so cancel each: paid ones with a full refund, and unpaid holds with nothing owed. The
             // suspension, every booking transition, and all their notifications commit atomically here; the
             // Stripe refunds run only after the commit (a Stripe call must never sit inside a DB transaction).
             // For a user who owns no tours this cancels nothing (an empty list), so it's safe to always run.
+            //
+            // Reinstating does NOT reactivate them: after a suspension of any length the organizer should
+            // decide for themselves which tours still stand, and an automatic republish could put dates
+            // back on sale that have since passed or that they no longer intend to run.
             List<int> cancelledBookingIds;
             await using (var transaction = await _dbContext.Database.BeginTransactionAsync())
             {
                 await _dbContext.SaveChangesAsync();
-                cancelledBookingIds = await _bookingService.CancelPaidBookingsForOrganizerAsync(id, adminId);
+
+                // Deactivate the tours outright rather than relying on the read-time filter that hides a
+                // suspended organizer's tours. Hiding is enough while the flag is set, but it is not a
+                // durable statement about the tour: the row stays IsActive, so anything reasoning about
+                // live tours still counts it, and reinstating the account would silently republish every
+                // one of them. Deactivating says the thing once, in the data.
+                //
+                // A set-based update: this can touch a whole catalogue, and none of the rows need
+                // tracking. It runs inside the suspension transaction, so tours and bookings move together
+                // or not at all.
+                await _dbContext.Tours
+                    .Where(t => t.OrganizerId == id && t.IsActive)
+                    .ExecuteUpdateAsync(set => set
+                        .SetProperty(t => t.IsActive, false)
+                        .SetProperty(t => t.ModifiedAt, DateTime.UtcNow));
+
+                cancelledBookingIds = await _bookingService.CancelActiveBookingsForOrganizerAsync(id, adminId);
                 await transaction.CommitAsync();
             }
 
@@ -578,9 +611,19 @@ namespace Travle.Services
 
             // Tell the reinstated user they're back — email is the channel that actually reaches them, since
             // they were signed out while suspended and may never open the in-app centre to see it.
+            // Mention the tours: suspension deactivated them and reinstatement deliberately does not turn
+            // them back on, so without this the organizer would sign in to an empty-looking catalogue and
+            // no explanation. Only said to someone who actually has tours.
+            var hasTours = await _dbContext.Tours.AnyAsync(t => t.OrganizerId == id);
+            var reinstatedText = hasTours
+                ? "Good news — your Travle account has been reinstated. You can sign in again. Your tours were "
+                  + "deactivated while your account was suspended and were not switched back on automatically: "
+                  + "reactivate the ones you still want to run, and add new dates for them."
+                : "Good news — your Travle account has been reinstated. You can sign in again.";
+
             _notifications.Enqueue(id, NotificationType.AccountReinstated,
                 "Account reinstated",
-                "Good news — your Travle account has been reinstated. You can sign in again.",
+                reinstatedText,
                 relatedEntityId: null, alsoEmail: true);
 
             await _dbContext.SaveChangesAsync();

@@ -1,4 +1,4 @@
-using Travle.Model.Constants;
+﻿using Travle.Model.Constants;
 using Travle.Model.Exceptions;
 using Travle.Model.Requests;
 using Travle.Model.Responses;
@@ -248,37 +248,52 @@ namespace Travle.Services
             return response;
         }
 
-        public async Task<List<int>> CancelPaidBookingsForOrganizerAsync(int organizerId, int adminUserId)
+        public async Task<List<int>> CancelActiveBookingsForOrganizerAsync(int organizerId, int adminUserId)
         {
-            // Paid, still-active bookings (Pending/Confirmed) on the suspended organizer's tours. Unpaid
-            // PaymentInProgress holds are deliberately left to expire on their own — no money was taken, so
-            // a "full refund" message would be wrong, and the 15-minute hold clears the seats shortly anyway.
+            // Every still-live booking on the suspended organizer's tours, holds included. A
+            // PaymentInProgress hold used to be left to lapse on its own — reasonable while suspension
+            // merely hid the tours, but suspension now deactivates them, and a hold that outlives its tour
+            // is an invitation to pay for something that cannot be delivered.
             //
             // Only upcoming departures. A suspension says the organizer cannot run tours from now on; it
             // says nothing about ones already delivered, and cancelling those would refund tours the
             // travelers actually went on. Past bookings finish their own lifecycle (auto-complete).
             var now = DateTime.UtcNow;
-            var paidActiveIds = await _dbContext.Bookings
+            var active = await _dbContext.Bookings
                 .AsNoTracking()
                 .Where(b => b.TourSchedule.Tour.OrganizerId == organizerId
                             && b.TourSchedule.StartsAt > now
-                            && (b.StatusId == (int)BookingStatusCode.Pending
+                            && (b.StatusId == (int)BookingStatusCode.PaymentInProgress
+                                || b.StatusId == (int)BookingStatusCode.Pending
                                 || b.StatusId == (int)BookingStatusCode.Confirmed))
-                .Select(b => b.Id)
+                .Select(b => new { b.Id, b.StatusId })
                 .ToListAsync();
+
+            var activeIds = active.Select(b => b.Id).ToList();
 
             // One tracked load for the whole batch (never a query per id — course §8.2).
-            var paidActive = await _dbContext.Bookings
-                .Where(b => paidActiveIds.Contains(b.Id))
+            var tracked = await _dbContext.Bookings
+                .Where(b => activeIds.Contains(b.Id))
                 .ToListAsync();
 
-            foreach (var booking in paidActive)
+            // Only the ones that were actually paid for owe a refund; a cancelled hold took no money, so
+            // its recorded obligation is zero and there is nothing for the caller to execute.
+            var refundable = new List<int>();
+            foreach (var booking in tracked)
             {
+                var wasPaid = booking.StatusId == (int)BookingStatusCode.Pending
+                              || booking.StatusId == (int)BookingStatusCode.Confirmed;
+
                 var state = _states.GetState((BookingStatusCode)booking.StatusId);
                 await state.CancelForOrganizerSuspensionAsync(booking, adminUserId);
+
+                if (wasPaid)
+                {
+                    refundable.Add(booking.Id);
+                }
             }
 
-            return paidActiveIds;
+            return refundable;
         }
 
         public async Task CancelBookingsForScheduleAsync(int scheduleId, int organizerUserId, string reason)

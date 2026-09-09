@@ -6,17 +6,17 @@ academic year 2025/26 resubmission.
 This document is both the working tracker and the write-up: each finding records what was wrong, the
 rule adopted to fix it, and where that rule now lives in the code. Kept up to date as the batches land.
 
-| #   | Finding                                                 | Status  |
-| --- | ------------------------------------------------------- | ------- |
-| 1   | Payment could complete after the tour had started       | Done    |
-| 2   | Missing time rules for `Pending` / `Confirmed` bookings | Done    |
-| 3   | Refund amount re-decided on every retry                 | Done    |
-| 4   | Refund policy validated per row, not as a scale         | Done    |
-| 5   | Traveler visibility / bookability rules inconsistent    | Done    |
-| 6   | `Organizer` role revocable with live tours and bookings | Done    |
-| 7   | `IsDeletable` disagreed with the real delete rule       | Done    |
-| 8   | No Print action on the PDF reports                      | Done    |
-| 9   | No filter on the desktop notifications list             | Done    |
+| #   | Finding                                                 | Status |
+| --- | ------------------------------------------------------- | ------ |
+| 1   | Payment could complete after the tour had started       | Done   |
+| 2   | Missing time rules for `Pending` / `Confirmed` bookings | Done   |
+| 3   | Refund amount re-decided on every retry                 | Done   |
+| 4   | Refund policy validated per row, not as a scale         | Done   |
+| 5   | Traveler visibility / bookability rules inconsistent    | Done   |
+| 6   | `Organizer` role revocable with live tours and bookings | Done   |
+| 7   | `IsDeletable` disagreed with the real delete rule       | Done   |
+| 8   | No Print action on the PDF reports                      | Done   |
+| 9   | No filter on the desktop notifications list             | Done   |
 
 Two migrations, both additive and nullable:
 `20260903171501_AddTourBookingCutoff`, `20260908160920_AddBookingCancellationSnapshot`.
@@ -115,6 +115,12 @@ screen can now name the figure a retry will pay instead of describing it vaguely
 the whole system — _the traveler is penalised only for their own decision_ — and it removes the
 divergence the review identified.
 
+**Follow-up (2026-09-09): the admin could not actually do it.** `POST /Bookings/{id}/Cancel` has always
+been gated self-or-admin, but the admin bookings screen rendered its cards with no actions at all, so the
+capability existed only in the API. The screen now offers **Cancel for traveler**, gated on the server's
+own `AllowedActions` so it disappears once the tour has started, with a mandatory reason and a dialog
+stating the refund is full.
+
 `RefundOrphanedPaymentAsync` deliberately stays outside this: it is a payment-level remedy for money
 captured against a booking that could not be honoured at all (often `Expired`, not `Cancelled`), so there
 is no cancellation obligation to read.
@@ -185,6 +191,23 @@ bookings are irrelevant: the role governs what happens next, not what already ha
 
 See the decisions log for why this blocks rather than cascades.
 
+**Follow-up (2026-09-09): suspension now deactivates the tours.** Testing surfaced a loop the guard could
+not resolve. Suspending an organizer cancelled and refunded their upcoming bookings but never set
+`Tour.IsActive = false` — a suspended organizer's tours were hidden by a _read-time_ filter on the
+organizer's flag, so the rows stayed active, the guard's tour count never fell, and the revoke stayed
+blocked. The error message meanwhile suggested suspending the account as a way forward, which sent the
+admin round a loop that could not terminate. That was a defect in the message, not just in the flow.
+
+`SuspendAsync` now deactivates the organizer's active tours inside the same transaction as the booking
+cancellations, which makes its own long-standing claim to "pull their tours from sale" literally true
+rather than achieved by a filter. Suspension therefore clears both blockers and the revoke goes through,
+which is what an admin expects.
+
+Reinstating deliberately does **not** switch the tours back on: after a suspension of any length the
+organizer should decide which tours still stand, and an automatic republish could put dates back on sale
+that have since passed. Both notifications say so — the suspension email mentions the deactivation, and
+the reinstatement email tells them to reactivate what they still want to run.
+
 ## 7. `IsDeletable` disagreed with the real delete rule
 
 **Was:** the flag was `active && future && SeatsTaken == 0`, but `DeleteScheduleAsync` additionally
@@ -201,7 +224,7 @@ explanation and the eventual error can never tell different stories.
 
 **Was:** both reports offered only Download. `report_download.dart` saved the file and its snackbar offered
 to open it in the OS viewer, where the user could then choose to print — and the file's own comment claimed
-that satisfied "downloadable and printable". RS2 asks for Download *and* Print as two actions in the app, so
+that satisfied "downloadable and printable". RS2 asks for Download _and_ Print as two actions in the app, so
 delegating to an external viewer did not meet it.
 
 **Now:** `printReportPdf` hands the same bytes to the platform print pipeline via the `printing` package, and
@@ -234,13 +257,13 @@ distinguishes "nothing at all" from "nothing matches this filter".
 
 ## Decisions log
 
-| Decision                             | Choice                            | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ------------------------------------ | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unresolved `Pending` at departure    | Cancel with a 100% refund         | The traveler paid and was never accepted, and an unconfirmed seat cannot be honoured. Auto-confirming would hand out a place the organizer never agreed to.                                                                                                                                                                                                                                                                                                               |
-| Admin-initiated cancellation         | 100%                              | Only the traveler's own decision is tiered. Makes the first attempt and any retry identical by construction.                                                                                                                                                                                                                                                                                                                                                              |
-| Refund percentages | Must strictly increase with notice | A policy paying less for more notice would punish the behaviour it exists to encourage. Two adjacent tiers paying the same are one rule written twice, so they must be merged rather than duplicated. |
-| Booking cutoff scope                 | Per tour, over a platform default | The lead time an organizer needs in order to confirm is a property of the tour. `null` uses the platform default, `0` keeps a date bookable until it starts.                                                                                                                                                                                                                                                                                                              |
-| Revoking `Organizer` with live tours | Block and inform                  | **The cascading variant already exists as account suspension**, which deactivates the organizer's upcoming tours and cancels and refunds their outstanding bookings. Building a second cascade behind a role toggle would duplicate a working flow and hide a lot of irreversible work behind one click. The revoke therefore refuses while active future tours or unresolved bookings exist, and points the admin at deactivating those tours or suspending the account. |
+| Decision                             | Choice                             | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------ | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unresolved `Pending` at departure    | Cancel with a 100% refund          | The traveler paid and was never accepted, and an unconfirmed seat cannot be honoured. Auto-confirming would hand out a place the organizer never agreed to.                                                                                                                                                                                                                                                                                                               |
+| Admin-initiated cancellation         | 100%                               | Only the traveler's own decision is tiered. Makes the first attempt and any retry identical by construction.                                                                                                                                                                                                                                                                                                                                                              |
+| Refund percentages                   | Must strictly increase with notice | A policy paying less for more notice would punish the behaviour it exists to encourage. Two adjacent tiers paying the same are one rule written twice, so they must be merged rather than duplicated.                                                                                                                                                                                                                                                                     |
+| Booking cutoff scope                 | Per tour, over a platform default  | The lead time an organizer needs in order to confirm is a property of the tour. `null` uses the platform default, `0` keeps a date bookable until it starts.                                                                                                                                                                                                                                                                                                              |
+| Revoking `Organizer` with live tours | Block and inform                   | **The cascading variant already exists as account suspension**, which deactivates the organizer's upcoming tours and cancels and refunds their outstanding bookings. Building a second cascade behind a role toggle would duplicate a working flow and hide a lot of irreversible work behind one click. The revoke therefore refuses while active future tours or unresolved bookings exist, and points the admin at deactivating those tours or suspending the account. |
 
 ## Configuration added
 

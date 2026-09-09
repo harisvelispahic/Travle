@@ -55,6 +55,9 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
   List<BookingResponse> _items = [];
   List<UserResponse> _organizers = [];
 
+  /// Ids with an action in flight, so only that card shows a spinner.
+  final Set<int> _acting = <int>{};
+
   @override
   void initState() {
     super.initState();
@@ -141,6 +144,47 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
   void _goToPage(int page) {
     setState(() => _page = page);
     _load();
+  }
+
+  /// Admin cancels a booking on the traveler's behalf.
+  ///
+  /// The API has always permitted this — `POST /Bookings/{id}/Cancel` is gated
+  /// with self-or-admin — but the console never offered it, so the capability
+  /// was unreachable in practice. The button is gated on the server's own
+  /// `AllowedActions`, so it disappears once the tour has started, exactly when
+  /// the API would refuse it.
+  ///
+  /// Always a full refund: the tier ladder applies only to a traveler's own
+  /// decision, and an admin acting for them is an intervention, not that
+  /// decision. The dialog says so before anyone commits to it.
+  Future<void> _cancelForTraveler(BookingResponse booking) async {
+    final reason = await showReasonDialog(
+      context,
+      title: 'Cancel booking',
+      label: 'Reason (sent to the traveler)',
+      confirmLabel: 'Cancel booking',
+      message: 'Cancelling ${booking.travelerName}\'s booking of '
+          '${booking.numberOfPeople} '
+          '${booking.numberOfPeople == 1 ? 'seat' : 'seats'} on '
+          '"${booking.tourName}" refunds them in full and frees the seats.',
+    );
+    if (reason == null || !mounted) return;
+
+    // Captured before the await: the dialog above is an async gap, so the
+    // provider is read while the context is still known to be current.
+    final provider = context.read<BookingProvider>();
+    setState(() => _acting.add(booking.id));
+    try {
+      await provider.cancel(booking.id, reason: reason);
+      if (!mounted) return;
+      AppSnackbars.success(
+          context, 'Booking cancelled — the traveler is being refunded in full.');
+      await _load();
+    } on ApiClientException catch (e) {
+      if (mounted) AppSnackbars.error(context, e.message);
+    } finally {
+      if (mounted) setState(() => _acting.remove(booking.id));
+    }
   }
 
   @override
@@ -303,7 +347,11 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
     return ListView.separated(
       itemCount: _items.length,
       separatorBuilder: (_, _) => const SizedBox(height: TravleTokens.space12),
-      itemBuilder: (context, i) => BookingReviewCard(booking: _items[i]),
+      itemBuilder: (context, i) => BookingReviewCard(
+        booking: _items[i],
+        busy: _acting.contains(_items[i].id),
+        onAdminCancel: () => _cancelForTraveler(_items[i]),
+      ),
     );
   }
 }

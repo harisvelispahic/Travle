@@ -1,4 +1,4 @@
-using Travle.Model.Responses;
+﻿using Travle.Model.Responses;
 using Travle.Services.Database;
 using MapsterMapper;
 using Microsoft.EntityFrameworkCore;
@@ -63,6 +63,39 @@ namespace Travle.Services.BookingStateMachine
 
         public override Task<BookingResponse> CancelForSlotAsync(Booking booking, int organizerUserId, string reason)
             => CancelForSlotInternalAsync(booking, organizerUserId, reason);
+
+        /// <summary>
+        /// The organizer's account was suspended while this booking was still holding seats for payment.
+        /// The hold is dropped rather than left to lapse on its own: suspension deactivates the tour, so
+        /// there is nothing left to pay for, and a hold that outlives its tour is an invitation to pay for
+        /// something that cannot be delivered.
+        ///
+        /// Not routed through <c>CancelForOrganizerSuspensionInternalAsync</c> like the paid states,
+        /// because that one promises a full refund — true for a booking that was paid for, wrong here,
+        /// where nothing was ever captured. The obligation is still recorded for audit; it simply comes out
+        /// at zero, since it is computed from the charge actually taken.
+        /// </summary>
+        public override async Task<BookingResponse> CancelForOrganizerSuspensionAsync(Booking booking, int adminUserId)
+            => await InTransactionAsync(async () =>
+            {
+                await ReleaseSeatsAsync(booking.TourScheduleId, booking.NumberOfPeople);
+                MarkStatus(booking, BookingStatusCode.Cancelled);
+                booking.CancelledByUserId = adminUserId;
+                booking.CancellationReason = "The tour organizer's account was suspended.";
+                await SnapshotRefundObligationAsync(booking, CancellationSource.OrganizerSuspension);
+
+                // In-app only, and it says plainly that no money moved. The convention across the lifecycle
+                // is that emails are for events that touch a traveler's money; this one deliberately did
+                // not, and the traveler is mid-checkout anyway, so the app tells them immediately.
+                AddNotification(booking.UserId, NotificationType.BookingCancelled,
+                    "Booking cancelled",
+                    "A tour you were part-way through booking has been cancelled because the organizer is no "
+                    + "longer available. No payment was taken and your seats have been released.",
+                    booking.Id);
+
+                await DbContext.SaveChangesAsync();
+                return await BuildResponseAsync(booking.Id);
+            });
 
         public override List<BookingAction> GetAllowedActions() => new() { BookingAction.Pay };
     }

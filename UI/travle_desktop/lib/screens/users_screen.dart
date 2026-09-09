@@ -110,7 +110,14 @@ class _UsersScreenState extends State<UsersScreen> {
 
   Future<void> _openDetail(UserResponse user) async {
     final changed = await showUserDetailDialog(context, user);
-    if (changed == true) await _load();
+    // Reload unless the dialog explicitly reported that nothing changed.
+    //
+    // A barrier tap or Escape pops with `null`, not with the dialog's own flag —
+    // and unlike the form dialogs, this one commits each action (suspend,
+    // unsuspend, grant, revoke) to the server the moment it is taken. Treating
+    // that `null` as "nothing changed" left the list holding a pre-change copy,
+    // so reopening the row showed roles the server had already removed.
+    if (changed != false) await _load();
   }
 
   Future<void> _create() async {

@@ -9,7 +9,12 @@ import '../widgets/user_detail_card.dart';
 
 /// Admin user-detail dialog: the read-only [UserDetailCard] plus the admin
 /// actions — suspend/unsuspend (reason required to suspend) and role grant/revoke.
-/// Returns `true` when anything changed so the caller reloads its list.
+///
+/// Every action here commits to the server immediately, so the dialog can have
+/// changed the user even when it is dismissed rather than closed. The result is
+/// therefore three-valued: `true` = something changed, `false` = nothing did,
+/// and `null` = dismissed via the barrier or Escape, which says nothing either
+/// way. A caller must treat `null` as "reload to be sure", never as `false`.
 Future<bool?> showUserDetailDialog(BuildContext context, UserResponse user) {
   return showDialog<bool>(
     context: context,
