@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
+import 'package:travle_ui/travle_ui.dart';
 
 /// Saves a generated report PDF to a location the admin chooses (native save
 /// dialog), then confirms with a snackbar offering to open it in the OS default
@@ -56,5 +58,32 @@ Future<void> _openInDefaultViewer(String path) async {
     }
   } on ProcessException {
     // Opening is best-effort; the file is already saved, so a failure here is benign.
+  }
+}
+
+/// Sends a generated report PDF straight to the OS print dialog, so the admin
+/// can print from inside the console instead of saving the file and finding a
+/// viewer for it (RS2 requires Download *and* Print as distinct actions).
+///
+/// [Printing.layoutPdf] hands the bytes to the platform's own print pipeline —
+/// nothing is written to disk, and the backend's QuestPDF output is printed
+/// exactly as it is downloaded. Returns false when the user cancels the dialog.
+Future<bool> printReportPdf(
+  BuildContext context,
+  Uint8List bytes,
+  String documentName,
+) async {
+  try {
+    return await Printing.layoutPdf(
+      onLayout: (_) async => bytes,
+      name: documentName,
+    );
+  } on Exception catch (e) {
+    // A missing or misbehaving print subsystem must not take the screen down;
+    // the same report is still downloadable.
+    if (context.mounted) {
+      AppSnackbars.error(context, 'Could not open the print dialog: $e');
+    }
+    return false;
   }
 }

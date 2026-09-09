@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:travle_core/travle_core.dart';
@@ -35,8 +37,54 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     });
   }
 
+  /// null = all, false = unread only, true = read only. Mirrors the provider's
+  /// filter; kept here too so the segmented control has something to bind to.
+  bool? _isReadFilter;
+
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _debounce;
+  static const _searchDebounce = Duration(milliseconds: 350);
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
   void _goToPage(int page) =>
       context.read<NotificationProvider>().loadPage(page);
+
+  // Any filter change re-fetches from page 1 — the old page number belongs to a
+  // different result set, so keeping it would land on an arbitrary offset. Both
+  // filters are sent together, so narrowing by one never discards the other.
+  void _applyFilters() {
+    context.read<NotificationProvider>().loadPage(
+          1,
+          isRead: _isReadFilter,
+          text: _searchController.text,
+          changeFilter: true,
+        );
+  }
+
+  void _setReadFilter(bool? isRead) {
+    setState(() => _isReadFilter = isRead);
+    _applyFilters();
+  }
+
+  // Debounced so a query is one request per pause, not one per keystroke.
+  void _onSearchChanged(String _) {
+    setState(() {}); // repaint the clear button
+    _debounce?.cancel();
+    _debounce = Timer(_searchDebounce, _applyFilters);
+  }
+
+  void _clearSearch() {
+    _debounce?.cancel();
+    _searchController.clear();
+    setState(() {});
+    _applyFilters();
+  }
 
   Future<void> _markAllRead() async {
     final confirmed = await showConfirmDialog(
@@ -52,6 +100,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       await provider.markAllRead();
       if (mounted) {
         AppSnackbars.success(context, 'All notifications marked as read.');
+        // Under the Unread filter every row on screen has just stopped matching
+        // it, so refetch rather than leaving a list the filter contradicts.
+        if (_isReadFilter != null) _applyFilters();
       }
     } on ApiClientException catch (e) {
       if (mounted) AppSnackbars.error(context, e.message);
@@ -90,6 +141,53 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           constraints: const BoxConstraints(maxWidth: 720),
           child: Column(
             children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(TravleTokens.space16,
+                    TravleTokens.space12, TravleTokens.space16, TravleTokens.space8),
+                child: Wrap(
+                  spacing: TravleTokens.space12,
+                  runSpacing: TravleTokens.space8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 300,
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: _onSearchChanged,
+                        decoration: InputDecoration(
+                          isDense: true,
+                          prefixIcon: const Icon(Icons.search),
+                          hintText: 'Search notifications…',
+                          suffixIcon: _searchController.text.isEmpty
+                              ? null
+                              : IconButton(
+                                  icon: const Icon(Icons.close),
+                                  tooltip: 'Clear',
+                                  onPressed: _clearSearch,
+                                ),
+                        ),
+                      ),
+                    ),
+                    SegmentedButton<int>(
+                      segments: const [
+                        ButtonSegment(value: 0, label: Text('All')),
+                        ButtonSegment(value: 1, label: Text('Unread')),
+                        ButtonSegment(value: 2, label: Text('Read')),
+                      ],
+                      selected: {
+                        _isReadFilter == null ? 0 : (_isReadFilter == false ? 1 : 2)
+                      },
+                      onSelectionChanged: provider.isLoading
+                          ? null
+                          : (selection) => _setReadFilter(switch (selection.first) {
+                                1 => false,
+                                2 => true,
+                                _ => null,
+                              }),
+                    ),
+                  ],
+                ),
+              ),
               Expanded(child: _buildBody(provider)),
               const Divider(height: 1),
               Padding(
@@ -118,13 +216,23 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       if (provider.isLoading) {
         return const Center(child: CircularProgressIndicator());
       }
+      // Distinguish "nothing here at all" from "nothing matches these filters" —
+      // otherwise a filtered-empty list reads as if the feature is broken.
+      final searching = _searchController.text.trim().isNotEmpty;
       return ListView(
-        children: const [
-          SizedBox(height: 120),
+        children: [
+          const SizedBox(height: 120),
           EmptyState(
-            icon: Icons.notifications_none,
-            message: 'No notifications yet',
-            hint: 'Updates about bookings, reviews and moderation will show up here.',
+            icon: searching ? Icons.search_off : Icons.notifications_none,
+            message: switch ((searching, _isReadFilter)) {
+              (true, _) => 'No notifications match your search',
+              (false, false) => 'No unread notifications',
+              (false, true) => 'No read notifications',
+              _ => 'No notifications yet',
+            },
+            hint: (searching || _isReadFilter != null)
+                ? 'Try a different search, or the All filter.'
+                : 'Updates about bookings, reviews and moderation will show up here.',
           ),
         ],
       );

@@ -36,6 +36,16 @@ class NotificationProvider extends BaseProvider<NotificationResponse> {
   int? _totalCount;
   bool _hasMore = true;
 
+  /// Read/unread filter applied to [loadPage]: null = all, true = read only,
+  /// false = unread only. Held here rather than in the screen so paging keeps
+  /// the filter, and so a live push can tell whether it belongs in the current
+  /// view. Mobile never sets it and is unaffected.
+  bool? _isReadFilter;
+
+  /// Free-text query applied to [loadPage] (title and body), or null for none.
+  /// Held alongside the read filter for the same reasons.
+  String? _textFilter;
+
   /// The loaded notifications, newest first.
   List<NotificationResponse> get items => List.unmodifiable(_items);
 
@@ -51,6 +61,16 @@ class NotificationProvider extends BaseProvider<NotificationResponse> {
 
   /// Total matching rows as of the last [loadPage] (null until one lands).
   int? get totalCount => _totalCount;
+
+  /// The active read/unread filter (null = all).
+  bool? get isReadFilter => _isReadFilter;
+
+  /// The active free-text query (null when the list is unfiltered by text).
+  String? get textFilter => _textFilter;
+
+  /// Whether any filter is narrowing the list — lets a screen explain an empty
+  /// result rather than implying there is nothing at all.
+  bool get isFiltered => _isReadFilter != null || _textFilter != null;
   bool get isConnected => _realtime.isConnected;
 
   /// Fires for every live (SignalR) push, for app-level reactions to specific
@@ -101,7 +121,20 @@ class NotificationProvider extends BaseProvider<NotificationResponse> {
   /// This is the desktop centre's model — a management surface pages the way its
   /// tables do, so an admin can walk a long history without an ever-growing list.
   /// Mobile calls [loadFirstPage] once and then [loadMore] to accumulate.
-  Future<void> loadPage(int page) async {
+  /// Set [changeFilter] to apply [isRead] and [text] (either may be null to
+  /// clear that one); leave it off to keep whatever is already applied, which is
+  /// what the pager does when moving between pages.
+  Future<void> loadPage(
+    int page, {
+    bool? isRead,
+    String? text,
+    bool changeFilter = false,
+  }) async {
+    if (changeFilter) {
+      _isReadFilter = isRead;
+      final trimmed = text?.trim();
+      _textFilter = (trimmed == null || trimmed.isEmpty) ? null : trimmed;
+    }
     _loading = true;
     notifyListeners();
     try {
@@ -109,6 +142,8 @@ class NotificationProvider extends BaseProvider<NotificationResponse> {
         'page': page,
         'pageSize': pageSize,
         'includeTotalCount': true,
+        if (_isReadFilter != null) 'isRead': _isReadFilter,
+        if (_textFilter != null) 'text': _textFilter,
       });
       _items
         ..clear()
@@ -174,10 +209,28 @@ class NotificationProvider extends BaseProvider<NotificationResponse> {
   void _onPushed(NotificationResponse notification) {
     // Guard against a duplicate if the same row also arrives via a REST refresh.
     _items.removeWhere((n) => n.id == notification.id);
-    _items.insert(0, notification);
+
+    // A pushed notification belongs in the list only when the current view would
+    // have fetched it: it is unread by definition, so it never belongs under a
+    // "Read" filter, and it is only prepended under a text query when it
+    // actually matches — otherwise the push would put a row on screen that the
+    // filters say isn't there. The badge and the push stream fire either way.
+    if (_isReadFilter != true && _matchesTextFilter(notification)) {
+      _items.insert(0, notification);
+    }
     if (!notification.isRead) _unreadCount++;
     notifyListeners();
     _pushes.add(notification);
+  }
+
+  // Mirrors the server's contains-match over title and body, case-insensitively.
+  // Only ever used to decide whether a live push joins an already-filtered list;
+  // the authoritative filtering is the query the server ran.
+  bool _matchesTextFilter(NotificationResponse notification) {
+    final term = _textFilter?.toLowerCase();
+    if (term == null) return true;
+    return notification.title.toLowerCase().contains(term) ||
+        notification.text.toLowerCase().contains(term);
   }
 
   @override

@@ -15,8 +15,8 @@ rule adopted to fix it, and where that rule now lives in the code. Kept up to da
 | 5   | Traveler visibility / bookability rules inconsistent    | Done    |
 | 6   | `Organizer` role revocable with live tours and bookings | Done    |
 | 7   | `IsDeletable` disagreed with the real delete rule       | Done    |
-| 8   | No Print action on the PDF reports                      | Pending |
-| 9   | No filter on the desktop notifications list             | Pending |
+| 8   | No Print action on the PDF reports                      | Done    |
+| 9   | No filter on the desktop notifications list             | Done    |
 
 Two migrations so far, both additive and nullable:
 `20260903171501_AddTourBookingCutoff`, `20260908160920_AddBookingCancellationSnapshot`.
@@ -196,6 +196,39 @@ structural actions, both of which preserve coverage by construction: **split** a
 
 The per-row endpoints remain and still enforce the ladder rule; they are simply no longer how the policy is
 edited.
+
+## 8. No Print action on the PDF reports
+
+**Was:** both reports offered only Download. `report_download.dart` saved the file and its snackbar offered
+to open it in the OS viewer, where the user could then choose to print — and the file's own comment claimed
+that satisfied "downloadable and printable". RS2 asks for Download *and* Print as two actions in the app, so
+delegating to an external viewer did not meet it.
+
+**Now:** `printReportPdf` hands the same bytes to the platform print pipeline via the `printing` package, and
+each report has a Print button beside Download with its own busy flag. Nothing is written to disk on that
+path, and the backend's QuestPDF output is printed exactly as it is downloaded — the generation and download
+flows are untouched.
+
+## 9. No filter on the desktop notifications list
+
+**Was:** the list had paging, unread emphasis and Mark all as read, but no filter. The backend already
+supported one — `NotificationSearch.IsRead` exists and `NotificationService.GetMineAsync` applies it — the
+client simply never sent it.
+
+**Now:** an All / Unread / Read control drives the fetch, alongside a debounced free-text search over a
+notification's title and body (`NotificationSearch.Text`, applied with the shared accent-aware
+`TextSearch.WhereContains`). Both filters live on the shared provider rather than the screen, so paging
+preserves them and they compose; changing either refetches from page one, since the old page number belongs
+to a different result set.
+
+The search is beyond the review's ask. It earns its place because a notification is the only record of
+several events — a refund, a rejection reason, a schedule cancellation — so being able to find one by what
+it said is how an admin gets back to it once it has fallen off the first page.
+
+Two details that decide whether it behaves: mobile shares this provider, so the filter is opt-in and mobile
+is untouched; and a live SignalR push (always unread) is no longer prepended while the Read filter is
+active, which would otherwise put a row on screen that the filter says is not there. The empty state also
+distinguishes "nothing at all" from "nothing matches this filter".
 
 ---
 

@@ -163,6 +163,7 @@ class _PopularDestinationsViewState extends State<_PopularDestinationsView> {
   List<DestinationCategoryResponse> _categories = [];
   bool _loading = true;
   bool _downloading = false;
+  bool _printing = false;
   String? _error;
 
   DateTime? _fromDate;
@@ -233,6 +234,21 @@ class _PopularDestinationsViewState extends State<_PopularDestinationsView> {
       if (mounted) AppSnackbars.error(context, e.message);
     } finally {
       if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  // Same server-generated PDF as the download, sent straight to the print
+  // dialog — the two actions differ only in where the bytes go.
+  Future<void> _print() async {
+    setState(() => _printing = true);
+    try {
+      final bytes = await _provider.popularDestinationsPdf(filter: _filter());
+      if (!mounted) return;
+      await printReportPdf(context, bytes, 'Popular destinations');
+    } on ApiClientException catch (e) {
+      if (mounted) AppSnackbars.error(context, e.message);
+    } finally {
+      if (mounted) setState(() => _printing = false);
     }
   }
 
@@ -341,6 +357,18 @@ class _PopularDestinationsViewState extends State<_PopularDestinationsView> {
                   : const Icon(Icons.download),
               label: const Text('Download PDF'),
             ),
+            const SizedBox(width: TravleTokens.space12),
+            OutlinedButton.icon(
+              onPressed: _printing ? null : _print,
+              icon: _printing
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.print_outlined),
+              label: const Text('Print'),
+            ),
           ],
         ),
       ),
@@ -430,6 +458,7 @@ class _RevenueViewState extends State<_RevenueView> {
   RevenueReport? _report;
   bool _loading = true;
   bool _downloading = false;
+  bool _printing = false;
   String? _error;
 
   DateTime? _fromDate;
@@ -483,6 +512,21 @@ class _RevenueViewState extends State<_RevenueView> {
       if (mounted) AppSnackbars.error(context, e.message);
     } finally {
       if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  // Same server-generated PDF as the download, sent straight to the print
+  // dialog — the two actions differ only in where the bytes go.
+  Future<void> _print() async {
+    setState(() => _printing = true);
+    try {
+      final bytes = await _provider.revenuePdf(filter: _filter());
+      if (!mounted) return;
+      await printReportPdf(context, bytes, 'Revenue by destination');
+    } on ApiClientException catch (e) {
+      if (mounted) AppSnackbars.error(context, e.message);
+    } finally {
+      if (mounted) setState(() => _printing = false);
     }
   }
 
@@ -544,6 +588,18 @@ class _RevenueViewState extends State<_RevenueView> {
                     )
                   : const Icon(Icons.download),
               label: const Text('Download PDF'),
+            ),
+            const SizedBox(width: TravleTokens.space12),
+            OutlinedButton.icon(
+              onPressed: _printing ? null : _print,
+              icon: _printing
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.print_outlined),
+              label: const Text('Print'),
             ),
           ],
         ),

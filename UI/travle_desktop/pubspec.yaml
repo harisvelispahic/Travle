@@ -22,6 +22,9 @@ dependencies:
     path: ../travle_ui
   fl_chart: ^1.2.0
   window_manager: ^0.5.2
+  # Opens the OS print dialog for the generated report PDFs (RS2 requires a
+  # Print action alongside Download). Desktop-capable on Windows/macOS/Linux.
+  printing: ^5.14.2
 
 dev_dependencies:
   flutter_test:

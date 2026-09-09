@@ -1,4 +1,4 @@
-using Travle.Model.Exceptions;
+﻿using Travle.Model.Exceptions;
 using Travle.Model.Responses;
 using Travle.Model.SearchObjects;
 using Travle.Services.Authorization;
@@ -32,6 +32,10 @@ namespace Travle.Services.Notifications
             search ??= new NotificationSearch();
 
             var query = _dbContext.Notifications.AsNoTracking().Where(n => n.UserId == userId);
+
+            // Phrase-style free text over what the notification actually said. Accent awareness comes from
+            // the term itself (TextSearch), so a plain query still matches an accented title.
+            query = query.WhereContains(search.Text, n => n.Title, n => n.Text);
 
             if (search.IsRead.HasValue)
             {
