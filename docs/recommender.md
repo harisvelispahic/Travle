@@ -464,7 +464,8 @@ Stari Most 0.93, …).
 ```mermaid
 flowchart TD
     A["GET /Recommendations<br/>(user identified from JWT)"] --> B{"Cached result<br/>for this user?"}
-    B -- yes --> Z["Return the cached list"]
+    B -- yes --> Y["Drop any destination that has<br/>since left the approved catalogue"]
+    Y --> Z["Return the cached list"]
     B -- no --> C["Load the approved-destination<br/>feature catalog (itself cached)"]
     C --> D["Load this user's<br/>interaction (signal) rows"]
     D --> E{"Total signal weight < 3 ?"}
@@ -508,6 +509,13 @@ Computing is cheap, but identical repeated requests shouldn't hit the database e
   it's too weak and too frequent to justify recomputing; the 15-minute expiry covers it eventually.)
 - **Catalog cache** — the list of approved destinations and their features is "hot" data that rarely
   changes, so we cache it briefly and share it across all users.
+
+Both caches can name a destination that has since been sent back for moderation, and neither is invalidated
+by a moderation decision — it is another admin's action, on data shared by every user's cache entry. So
+**approval is re-checked on the way out**, on both paths: `DropDeApprovedAsync` filters a cached result and
+`LoadCardsAsync` filters a freshly computed one, both against the single `TravelerVisibility` condition. A
+destination pulled from the catalogue therefore leaves the recommendations on the very next request rather
+than when the cache expires. The list simply gets shorter; re-approving brings it straight back.
 
 ---
 

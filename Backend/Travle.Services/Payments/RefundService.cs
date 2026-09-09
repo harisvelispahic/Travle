@@ -90,7 +90,7 @@ namespace Travle.Services.Payments
         }
 
         public async Task RefundOrphanedPaymentAsync(
-            int paymentId, string reason, CancellationToken cancellationToken = default)
+            int paymentId, string reason, int? initiatedByUserId = null, CancellationToken cancellationToken = default)
         {
             var payment = await _dbContext.Payments
                 .Include(p => p.Booking)
@@ -110,16 +110,19 @@ namespace Travle.Services.Payments
                 return;
             }
 
-            // Full refund of the whole captured charge, attributed to the traveler themselves (no
-            // admin/organizer initiated it). This one does NOT read the booking's obligation: it is a
-            // payment-level remedy for money taken against a booking that could not be honoured at all, not
-            // the settlement of a cancellation — the booking may even be Expired rather than Cancelled. The
-            // idempotency guard inside IssueRefundAsync makes a webhook replay safe (never a double refund).
+            // Full refund of the whole captured charge. This one does NOT read the booking's obligation: it
+            // is a payment-level remedy for money taken against a booking that could not be honoured at all,
+            // not the settlement of a cancellation — the booking may be Expired, or still holding its seats
+            // after the amount guard rejected the charge. The idempotency guard inside IssueRefundAsync
+            // makes a webhook replay safe (never a double refund).
+            //
+            // Attributed to the traveler when the webhook raises it automatically, since nobody initiated
+            // it; an admin retrying a failed attempt passes their own id, because they did.
             await IssueRefundAsync(
                 payment,
                 percentage: 100,
                 amount: payment.Amount,
-                initiatedByUserId: payment.Booking.UserId,
+                initiatedByUserId: initiatedByUserId ?? payment.Booking.UserId,
                 reason,
                 cancellationToken,
                 notificationText: "Your payment was received after the booking hold had already expired and its seats were released, so a full refund has been issued to your original payment method.");

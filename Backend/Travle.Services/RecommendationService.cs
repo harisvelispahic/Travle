@@ -45,9 +45,12 @@ namespace Travle.Services
 
             // Repeated identical requests inside the window are served from cache without recomputation
             // (and, deliberately, without re-logging — logs record distinct computations, not every serve).
+            // The cached list still passes the approval check on its way out: it was assembled from
+            // approved destinations, but it outlives a moderation decision taken since (see
+            // DropDeApprovedAsync).
             if (_cache.TryGetUserResult(userId, out var cachedResult))
             {
-                return cachedResult;
+                return await DropDeApprovedAsync(cachedResult);
             }
 
             var catalog = await _cache.GetOrLoadCatalogAsync(LoadApprovedCatalogAsync);
@@ -248,6 +251,53 @@ namespace Travle.Services
             return ids.ToHashSet();
         }
 
+        /// <summary>
+        /// Removes from an already-computed list any destination that has since left the approved
+        /// catalogue.
+        ///
+        /// The per-user result cache holds the finished response for 15 minutes, so it survives a
+        /// moderation decision taken after it was built. Filtering only where the list is computed
+        /// (<see cref="LoadCardsAsync"/>) therefore misses the case that matters most: the serve that
+        /// costs nothing and happens most often. Both paths now end at the same condition
+        /// (<see cref="TravelerVisibility.DestinationIsVisible"/>), so a destination sent back for review
+        /// disappears from recommendations on the very next request rather than when the cache expires.
+        ///
+        /// The filtered result is deliberately <b>not</b> written back to the cache: the entry's remaining
+        /// lifetime is what it is, and re-caching a shortened list would only make the next miss recompute
+        /// from a narrower base. The list is also not topped back up to <c>TopN</c> — a moderated
+        /// destination leaves a shorter list, exactly as it does on the computed path.
+        /// </summary>
+        private async Task<RecommendationResponse> DropDeApprovedAsync(RecommendationResponse cached)
+        {
+            var ids = cached.Items.Select(i => i.Destination.Id).ToList();
+            if (ids.Count == 0)
+            {
+                return cached;
+            }
+
+            var stillVisible = (await _dbContext.Destinations
+                    .AsNoTracking()
+                    .Where(d => ids.Contains(d.Id))
+                    .VisibleToTravelers()
+                    .Select(d => d.Id)
+                    .ToListAsync())
+                .ToHashSet();
+
+            // The common case by far: nothing was moderated, so hand back the very same instance.
+            if (stillVisible.Count == ids.Count)
+            {
+                return cached;
+            }
+
+            // A new response rather than a mutation of the cached one, which is a shared instance every
+            // other request inside the window still reads.
+            return new RecommendationResponse
+            {
+                IsColdStart = cached.IsColdStart,
+                Items = cached.Items.Where(i => stillVisible.Contains(i.Destination.Id)).ToList()
+            };
+        }
+
         // Light destination cards (thumbnail only, rule 12) for the given ids, keyed by id, with the current
         // user's IsFavorite flag applied. Reuses the one shared destination projection.
         private async Task<Dictionary<int, DestinationResponse>> LoadCardsAsync(IReadOnlyCollection<int> ids, int userId)
@@ -257,9 +307,9 @@ namespace Travle.Services
                 return new Dictionary<int, DestinationResponse>();
             }
 
-            // Re-check approval on the way out. These ids come from the recommendation cache, which is
-            // computed from approved destinations but outlives a moderation change — without this a
-            // destination sent back for review lingers in recommendations until the cache expires.
+            // Re-check approval on the way out. The ids reaching here were scored against the shared feature
+            // catalog, which is itself cached and so can name a destination that has since been sent back
+            // for review. The cache-hit path applies the same rule in DropDeApprovedAsync.
             var cards = await DestinationProjections
                 .ProjectToResponse(_dbContext.Destinations.AsNoTracking()
                     .Where(d => ids.Contains(d.Id))

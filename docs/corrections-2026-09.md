@@ -125,6 +125,32 @@ stating the refund is full.
 captured against a booking that could not be honoured at all (often `Expired`, not `Cancelled`), so there
 is no cancellation obligation to read.
 
+**Follow-up (2026-09-09): the admin could not retry an orphaned charge.** Both remedies raise the same
+`RefundFailed` notification when Stripe rejects the automatic attempt, and it tells every admin to retry from
+the payments screen. Only one of them led anywhere. `RefundOwed` and `RetryRefundAsync` both required the
+booking to be `Cancelled`, so a charge captured against a booking that was never honoured — `Expired` after a
+late payment, or still holding its seats after the amount guard refused it — showed no Retry button and was
+refused by the API with "a refund can only be retried for a cancelled booking". The money stayed owed with no
+way to pay it, and the instruction the traveler-facing failure had already promised was a dead end.
+
+`RefundEligibility` now holds the rule once and names which remedy applies: a cancelled booking pays its
+recorded obligation, an orphaned charge pays the whole captured amount, and a live paid booking owes nothing.
+The list projection and the endpoint both read it, so the button and the API agree the way `IsDeletable` and
+`DeleteScheduleAsync` do since finding 7. The screen now also names the figure for an orphan, which is the
+full charge, and an admin retry is recorded against the admin rather than the traveler — the webhook's own
+automatic attempt still attributes to the traveler, because nobody initiated that one.
+
+Auditing that rule surfaced a third case on the same seam. The obligation is computed from the charge
+captured **at the moment of cancellation**, so when a slot is retired or an organizer suspended while a
+traveler is mid-checkout, the snapshot records a zero: nothing had been captured yet. If that traveler's
+charge then lands and its automatic refund fails, a retry reading the snapshot would pay 0.00 and write a
+zero `Refund` row that settles the payment permanently — for money genuinely taken. `ResolveRemedy` now
+compares `Payment.SucceededAt` with `Booking.CancelledAt` and treats a later charge as an orphan; a null
+timestamp on either side keeps the ordinary recorded-obligation answer. Verified by driving the whole
+sequence live — book, retire the slot mid-checkout, deliver the signed webhook, remove the refund the way a
+Stripe failure would, retry — which returned 120.00 instead of 0.00, while an ordinary cancellation whose
+charge landed first still paid its recorded 85.00 at 50%.
+
 ## 4. Refund policy validated per row, not as a scale
 
 **Was:** the insert and update validators checked one tier in isolation — minimum not negative, maximum
@@ -178,6 +204,19 @@ recommender's final read, and the organizer profile. One condition to read, one 
 
 Organizer- and admin-facing reads deliberately do not apply it: an organizer must still see their own
 deactivated or temporarily unavailable tour in order to act on it.
+
+**Follow-up (2026-09-09): the recommender's cache sat in front of the fix.** Adding the approval re-check to
+`RecommendationService.LoadCardsAsync` closed the computed path but not the one that matters most.
+`GetForCurrentUserAsync` serves the finished response from a 15-minute per-user cache and returns before
+`LoadCardsAsync` is reached, so a destination sent back for review kept appearing until that entry expired —
+the exact symptom the review described, still reproducible. `DropDeApprovedAsync` now filters the cached list
+on its way out against the same `TravelerVisibility.DestinationIsVisible` condition, one id query, so the
+destination disappears on the very next request instead of up to a quarter of an hour later.
+
+Two deliberate choices: the filtered list is **not** written back to the cache, since shortening the entry
+would only narrow what the next recompute starts from; and the list is not topped back up to `TopN`, because
+a moderated destination leaves a shorter list on the computed path too. Re-approval brings it straight back,
+as nothing here is destructive.
 
 ## 6. `Organizer` role revocable with live tours and bookings
 

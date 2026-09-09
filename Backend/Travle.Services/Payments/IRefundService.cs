@@ -31,14 +31,19 @@ namespace Travle.Services.Payments
             int scheduleId, int initiatedByUserId, string reason, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Full auto-refund for a payment that was captured after its booking was no longer consumable — a
-        /// <c>payment_intent.succeeded</c> that landed after the 15-minute hold expired (seats released, maybe
-        /// resold) or the slot was cancelled. Called by the webhook once the charge is recorded, so the
-        /// traveler is never left charged with nothing. Attributed to the traveler themselves (no
-        /// admin/organizer initiated it); idempotent (a payment that already carries a <c>Refund</c> is
-        /// skipped) and, like the other refunds, a post-commit Stripe call outside any DB transaction.
+        /// Full refund for a payment that was captured against a booking that could not be honoured — a
+        /// <c>payment_intent.succeeded</c> that landed after the hold expired or the tour departed (seats
+        /// released, maybe resold), or one the amount guard refused. Called by the webhook once the charge is
+        /// recorded, so the traveler is never left charged with nothing, and again by
+        /// <c>PaymentService.RetryRefundAsync</c> when that automatic attempt failed against Stripe.
+        ///
+        /// Reads no recorded obligation: there is no cancellation here to settle, so the whole charge goes
+        /// back. <paramref name="initiatedByUserId"/> defaults to the traveler, which is the truth when the
+        /// webhook raises this on its own; an admin retry passes their own id. Idempotent (a payment that
+        /// already carries a <c>Refund</c> is skipped) and, like the other refunds, a post-commit Stripe call
+        /// outside any DB transaction.
         /// </summary>
         Task RefundOrphanedPaymentAsync(
-            int paymentId, string reason, CancellationToken cancellationToken = default);
+            int paymentId, string reason, int? initiatedByUserId = null, CancellationToken cancellationToken = default);
     }
 }

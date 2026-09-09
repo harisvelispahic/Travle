@@ -339,7 +339,7 @@ development. A scratch script for this lives in the session scratchpad; it is 30
 | `POST` | `/Payments/Webhook` | Anonymous, **signature-verified** | Stripe → us; promotes PaymentInProgress → Pending on success, expires on failure. |
 | `GET` | `/Payments` | Admin | Paginated, filterable payments list (status, period, text search). |
 | `GET` | `/Payments/summary` | Admin | Revenue / commission / refund totals over the same filter. |
-| `POST` | `/Payments/{id}/retry-refund` | Admin | Re-run an **owed** refund a prior automatic attempt failed to complete; reuses the idempotent, tier-capped refund path (can never over-refund). |
+| `POST` | `/Payments/{id}/retry-refund` | Admin | Re-run an **owed** refund a prior automatic attempt failed to complete. `RefundEligibility` picks the remedy: a cancelled booking pays its recorded obligation, an orphaned charge pays the whole captured amount. Idempotent, so it can never over-refund. |
 
 Payments are **never** CRUD-edited or deleted. The retry action does not *edit* a payment — it re-invokes
 the refund executor, which appends a `Refund` row and advances the payment status exactly as the automatic
@@ -511,6 +511,8 @@ side gained:
   never over-refund — closing the loop without a general-purpose "manual refund" tool. Desktop: the admin
   payments table shows a "Retry owed refund" button only on `refundOwed` rows (a new generic row-action on
   `PaginatedSearchTable`); the snackbar reports whether the retry cleared the debt or it's still owed.
+  *Superseded twice: the tier reconstruction went away with the recorded obligation (2026-09-08 entry
+  below), and the `Cancelled`-only condition went away with `RefundEligibility` (2026-09-09 entry below).*
 - **Organizer-suspension refunds.** Suspending an organizer now cancels every paid (Pending/Confirmed)
   booking on their tours with a **100% refund** (policy decision, 2026-08-17). `UserService.SuspendAsync`
   cancels inside the suspension transaction (via `BookingService.CancelPaidBookingsForOrganizerAsync` →
@@ -716,6 +718,47 @@ which preserve coverage by construction. The per-row endpoints remain and still 
 Rows are replaced rather than reconciled: no foreign key points at a tier (refunds snapshot
 `PercentageApplied`, and bookings now snapshot the amount owed), so a tier carries no history worth
 preserving through an edit.
+
+---
+
+### An owed refund is retryable whichever remedy owes it ✅ (done, 2026-09-09)
+
+**Symptom.** When an automatic refund failed against Stripe, every admin was told by email to "retry it from
+the Payments screen". For a charge captured against a booking that was never honoured, that screen showed no
+Retry button, and the API answered *"a refund can only be retried for a cancelled booking"*. The money stayed
+owed with nothing an admin could do about it.
+
+**Cause.** Two remedies exist, and only one was wired to the retry. `RefundForBookingAsync` settles a
+cancelled booking by paying its recorded obligation; `RefundOrphanedPaymentAsync` returns the whole charge
+when a payment was captured against a booking that could not be honoured at all. Both raise the same
+`RefundFailed` alert on failure, but `PaymentResponse.RefundOwed` and `RetryRefundAsync` each independently
+required `Booking.StatusId == Cancelled`, which is true of the first remedy and false of the second. The
+booking-time work made this reachable more often: the webhook now **expires** a booking whose charge landed
+too late, so the orphan sits on `Expired`, and the amount-guard branch deliberately leaves the booking on
+`PaymentInProgress` with its hold alive.
+
+**Fix.** `RefundEligibility` states the rule once — captured, unrefunded, and on a booking that owes the
+money — and names which remedy pays it: `RecordedObligation` for a `Cancelled` booking, `OrphanedCharge` for
+`Expired` or `PaymentInProgress`, `None` for a live paid booking whose charge is doing its job. The list
+projection and `RetryRefundAsync` both read it, so the button the console renders and the rule the endpoint
+enforces cannot drift — the same shape as `IsDeletable` against `DeleteScheduleAsync`.
+
+**One `Cancelled` booking is not a settlement.** The recorded obligation is computed from the charge captured
+*at the moment of cancellation*, so a charge that lands afterwards was never part of it — and the snapshot is
+then a **zero**, because nothing had been captured when it was written. That state is real: an organizer
+retires a slot, or an admin suspends them, while a traveler is mid-checkout, and the traveler's payment then
+succeeds. The webhook already refunds it in full through the orphan path, but a *retry* after a failed Stripe
+call would have read the snapshot and paid 0.00, writing a zero `Refund` row that marks the payment settled
+for good. `ResolveRemedy` therefore compares `Payment.SucceededAt` against `Booking.CancelledAt`: a charge
+that succeeded after the cancellation is an `OrphanedCharge` like any other. Comparing a null `DateTime?` is
+false either way, so a row missing either timestamp keeps the ordinary recorded-obligation answer.
+
+The screen also names the figure for an orphan, which is the whole captured amount at 100%, rather than
+leaving it blank. `RefundOrphanedPaymentAsync` gained an optional `initiatedByUserId`: the webhook's own
+automatic attempt still attributes the `Refund` row to the traveler, because nobody initiated it, while an
+admin retry is recorded against the admin who pressed the button.
+
+No migration, and the automatic paths are untouched.
 
 ---
 

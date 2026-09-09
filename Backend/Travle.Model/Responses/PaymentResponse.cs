@@ -28,16 +28,19 @@ namespace Travle.Model.Responses
         public int RefundCount { get; set; }
 
         /// <summary>
-        /// True when this captured payment sits on a cancelled booking but carries no refund yet — i.e. a
-        /// refund is owed (an automatic attempt failed). Drives the admin "Retry refund" action.
+        /// True when this captured payment still owes money back and carries no refund yet, because an
+        /// automatic attempt failed. Two cases qualify: a cancelled booking, which owes the obligation it
+        /// recorded, and a charge captured against a booking that was never honoured at all (expired, or
+        /// refused by the amount guard), which owes the whole amount. Drives the admin "Retry refund"
+        /// action, and is resolved by the same rule that endpoint enforces.
         /// </summary>
         public bool RefundOwed { get; set; }
 
         /// <summary>
-        /// The refund amount and percentage the booking recorded when it was cancelled — what a retry will
-        /// pay, to the fening. Present for any cancelled booking (whether or not the refund went through),
-        /// so an owed refund can be shown as a concrete figure rather than an open question. Null for a
-        /// booking that was never cancelled.
+        /// What a retry will pay, to the fening: the figure the booking recorded when it was cancelled, or
+        /// the whole captured charge when there was no cancellation to record one. Present for any cancelled
+        /// booking (whether or not the refund went through) so an owed refund reads as a concrete figure
+        /// rather than an open question. Null when nothing is or was owed.
         /// </summary>
         public decimal? RefundOwedAmount { get; set; }
 

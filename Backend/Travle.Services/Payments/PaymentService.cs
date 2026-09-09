@@ -276,7 +276,7 @@ namespace Travle.Services.Payments
                 await _refunds.RefundOrphanedPaymentAsync(
                     payment.Id,
                     "Payment captured after the booking could no longer be honoured; automatic full refund.",
-                    cancellationToken);
+                    cancellationToken: cancellationToken);
             }
         }
 
@@ -434,10 +434,6 @@ namespace Travle.Services.Payments
                 .FirstOrDefaultAsync(p => p.Id == paymentId, cancellationToken)
                 ?? throw new NotFoundException("Payment", paymentId);
 
-            if (payment.Booking.StatusId != (int)BookingStatusCode.Cancelled)
-            {
-                throw new BusinessRuleException("A refund can only be retried for a cancelled booking.");
-            }
             if (payment.Status != PaymentStatus.Succeeded)
             {
                 throw new BusinessRuleException("Only a captured payment can be refunded.");
@@ -447,8 +443,37 @@ namespace Travle.Services.Payments
                 throw new ConflictException("This payment has already been refunded.");
             }
 
-            await _refunds.RefundForBookingAsync(
-                payment.BookingId, adminId, "Admin retried the owed refund.", cancellationToken);
+            // Which remedy applies is decided by RefundEligibility, the same rule the admin list renders its
+            // Retry action from, so the button and the endpoint can never disagree about what is owed.
+            // hasRefund is false by construction: the guard above already refused a payment carrying one.
+            var remedy = RefundEligibility.ResolveRemedy(
+                payment.Booking.StatusId, payment.Status, hasRefund: false,
+                payment.SucceededAt, payment.Booking.CancelledAt);
+
+            switch (remedy)
+            {
+                case RefundEligibility.Remedy.RecordedObligation:
+                    await _refunds.RefundForBookingAsync(
+                        payment.BookingId, adminId, "Admin retried the owed refund.", cancellationToken);
+                    break;
+
+                // Money captured against a booking that was never honoured — expired before the charge
+                // landed, or rejected by the amount guard. There is no cancellation to settle, so the whole
+                // charge goes back through the same path the webhook's automatic attempt used. Reaching
+                // here means that attempt failed against Stripe; the notification it raised tells admins to
+                // retry from this screen, and this is where that leads.
+                case RefundEligibility.Remedy.OrphanedCharge:
+                    await _refunds.RefundOrphanedPaymentAsync(
+                        payment.Id,
+                        "Admin retried the full refund owed for a payment the booking could not be honoured against.",
+                        initiatedByUserId: adminId,
+                        cancellationToken: cancellationToken);
+                    break;
+
+                default:
+                    throw new BusinessRuleException(
+                        "This payment is not owed a refund: its booking is still live, so the charge stands.");
+            }
 
             // Re-read the row so the client sees the advanced status / refund totals (or, if the retry failed
             // again, the still-owed flag and the fresh RefundFailed notification the refund service raised).
@@ -459,8 +484,9 @@ namespace Travle.Services.Payments
         }
 
         // Projects payments to the admin DTO. Materializes with the raw enum then maps its name in memory
-        // (EF can't translate enum.ToString()). RefundOwed marks a captured payment on a cancelled booking
-        // that still carries no refund — the set the "Retry refund" action targets.
+        // (EF can't translate enum.ToString()). RefundOwed and the figure behind it are resolved the same
+        // way, from RefundEligibility over the columns already read — the set the "Retry refund" action
+        // targets, decided by the rule the endpoint itself enforces.
         private static async Task<List<PaymentResponse>> MapPaymentRowsAsync(
             IQueryable<Payment> query, CancellationToken cancellationToken)
         {
@@ -477,12 +503,11 @@ namespace Travle.Services.Payments
                     p.PlatformFeePercentage,
                     p.PlatformFeeAmount,
                     p.Status,
+                    BookingStatusId = p.Booking.StatusId,
                     RefundedAmount = p.Refunds.Sum(r => (decimal?)r.Amount) ?? 0m,
                     RefundCount = p.Refunds.Count,
-                    RefundOwed = p.Booking.StatusId == (int)BookingStatusCode.Cancelled
-                                 && p.Status == PaymentStatus.Succeeded
-                                 && !p.Refunds.Any(),
-                    // The obligation frozen at cancellation — exactly what "Retry refund" will pay.
+                    HasRefund = p.Refunds.Any(),
+                    // The obligation frozen at cancellation, for the bookings that have one.
                     RefundOwedAmount = p.Booking.RefundAmountOwed,
                     RefundOwedPercentage = p.Booking.RefundPercentageOwed,
                     CancellationSource = p.Booking.CancellationSource,
@@ -492,28 +517,41 @@ namespace Travle.Services.Payments
                 })
                 .ToListAsync(cancellationToken);
 
-            return rows.Select(r => new PaymentResponse
+            return rows.Select(r =>
             {
-                Id = r.Id,
-                BookingId = r.BookingId,
-                TravelerName = r.TravelerName,
-                TravelerUsername = r.TravelerUsername,
-                TourName = r.TourName,
-                Amount = r.Amount,
-                Currency = r.Currency,
-                PlatformFeePercentage = r.PlatformFeePercentage,
-                PlatformFeeAmount = r.PlatformFeeAmount,
-                Status = r.Status.ToString(),
-                RefundedAmount = r.RefundedAmount,
-                RefundCount = r.RefundCount,
-                RefundOwed = r.RefundOwed,
-                RefundOwedAmount = r.RefundOwedAmount,
-                RefundOwedPercentage = r.RefundOwedPercentage,
-                // Mapped in memory for the same reason Status is: EF can't translate enum.ToString().
-                CancellationSource = r.CancellationSource?.ToString(),
-                CancelledAt = r.CancelledAt,
-                SucceededAt = r.SucceededAt,
-                CreatedAt = r.CreatedAt
+                // Resolved in memory for the same reason Status is — a shared C# rule is worth more here
+                // than a condition EF could translate but that would then exist in two places.
+                var remedy = RefundEligibility.ResolveRemedy(
+                    r.BookingStatusId, r.Status, r.HasRefund, r.SucceededAt, r.CancelledAt);
+
+                // What a retry would actually pay. A cancelled booking carries its recorded obligation; an
+                // orphaned charge has none to carry, and the answer is the whole captured amount.
+                var owedAmount = remedy == RefundEligibility.Remedy.OrphanedCharge ? r.Amount : r.RefundOwedAmount;
+                var owedPercentage = remedy == RefundEligibility.Remedy.OrphanedCharge ? 100 : r.RefundOwedPercentage;
+
+                return new PaymentResponse
+                {
+                    Id = r.Id,
+                    BookingId = r.BookingId,
+                    TravelerName = r.TravelerName,
+                    TravelerUsername = r.TravelerUsername,
+                    TourName = r.TourName,
+                    Amount = r.Amount,
+                    Currency = r.Currency,
+                    PlatformFeePercentage = r.PlatformFeePercentage,
+                    PlatformFeeAmount = r.PlatformFeeAmount,
+                    Status = r.Status.ToString(),
+                    RefundedAmount = r.RefundedAmount,
+                    RefundCount = r.RefundCount,
+                    RefundOwed = remedy != RefundEligibility.Remedy.None,
+                    RefundOwedAmount = owedAmount,
+                    RefundOwedPercentage = owedPercentage,
+                    // Mapped in memory for the same reason Status is: EF can't translate enum.ToString().
+                    CancellationSource = r.CancellationSource?.ToString(),
+                    CancelledAt = r.CancelledAt,
+                    SucceededAt = r.SucceededAt,
+                    CreatedAt = r.CreatedAt
+                };
             }).ToList();
         }
 
