@@ -18,7 +18,7 @@ rule adopted to fix it, and where that rule now lives in the code. Kept up to da
 | 8   | No Print action on the PDF reports                      | Done    |
 | 9   | No filter on the desktop notifications list             | Done    |
 
-Two migrations so far, both additive and nullable:
+Two migrations, both additive and nullable:
 `20260903171501_AddTourBookingCutoff`, `20260908160920_AddBookingCancellationSnapshot`.
 
 ---
@@ -137,17 +137,22 @@ refund rule. Messages name the offending boundary.
 leaves a gap and removing the top row leaves no open end. That is the contiguity rule working as
 specified — an admin widens a neighbour first.
 
-## 7. `IsDeletable` disagreed with the real delete rule
+## Refund policy editor (follow-on from #4)
 
-**Was:** the flag was `active && future && SeatsTaken == 0`, but `DeleteScheduleAsync` additionally
-refuses when **any** booking row exists, including cancelled and expired ones — which do not count
-toward `SeatsTaken`. A slot that had once held an expired booking reported `IsDeletable: true`, the
-desktop enabled Delete, and the server returned 409.
+Making the ladder contiguous had a consequence worth recording: it made the per-row reference CRUD screen
+unusable. A ladder that tiles every hour before departure has no room for another row, so **every**
+single-row edit to a valid policy is correctly refused — adding a tier overlaps a neighbour, deleting one
+leaves a gap, and capping the top one removes the open end. The rule was right and the screen was now wrong.
 
-**Now:** the projection carries `BookingCount` (every booking row ever made on the slot) and the flag
-uses it, matching `DeleteScheduleAsync` exactly. The response also carries `DeleteBlockedReason`, and the
-console shows that server-authored sentence in its tooltip instead of a hardcoded local one, so the
-explanation and the eventual error can never tell different stories.
+The tiers are one aggregate, so they are now edited as one: `PUT /RefundPolicyTiers/ladder` replaces the
+whole set in a transaction after validating it, and the console has a dedicated editor in place of the
+generic CRUD screen. In it the boundary between two tiers is a single shared value, so a gap or an overlap
+is not something an admin can express — moving a boundary moves both sides at once. That leaves two
+structural actions, both of which preserve coverage by construction: **split** a tier at a new boundary and
+**merge** a tier into the one below. Validation runs live against the same rules the server enforces.
+
+The per-row endpoints remain and still enforce the ladder rule; they are simply no longer how the policy is
+edited.
 
 ## 5. Traveler visibility and bookability were spelled out differently at each entry point
 
@@ -180,22 +185,17 @@ bookings are irrelevant: the role governs what happens next, not what already ha
 
 See the decisions log for why this blocks rather than cascades.
 
-## Refund policy editor (follow-on from #4)
+## 7. `IsDeletable` disagreed with the real delete rule
 
-Making the ladder contiguous had a consequence worth recording: it made the per-row reference CRUD screen
-unusable. A ladder that tiles every hour before departure has no room for another row, so **every**
-single-row edit to a valid policy is correctly refused — adding a tier overlaps a neighbour, deleting one
-leaves a gap, and capping the top one removes the open end. The rule was right and the screen was now wrong.
+**Was:** the flag was `active && future && SeatsTaken == 0`, but `DeleteScheduleAsync` additionally
+refuses when **any** booking row exists, including cancelled and expired ones — which do not count
+toward `SeatsTaken`. A slot that had once held an expired booking reported `IsDeletable: true`, the
+desktop enabled Delete, and the server returned 409.
 
-The tiers are one aggregate, so they are now edited as one: `PUT /RefundPolicyTiers/ladder` replaces the
-whole set in a transaction after validating it, and the console has a dedicated editor in place of the
-generic CRUD screen. In it the boundary between two tiers is a single shared value, so a gap or an overlap
-is not something an admin can express — moving a boundary moves both sides at once. That leaves two
-structural actions, both of which preserve coverage by construction: **split** a tier at a new boundary and
-**merge** a tier into the one below. Validation runs live against the same rules the server enforces.
-
-The per-row endpoints remain and still enforce the ladder rule; they are simply no longer how the policy is
-edited.
+**Now:** the projection carries `BookingCount` (every booking row ever made on the slot) and the flag
+uses it, matching `DeleteScheduleAsync` exactly. The response also carries `DeleteBlockedReason`, and the
+console shows that server-authored sentence in its tooltip instead of a hardcoded local one, so the
+explanation and the eventual error can never tell different stories.
 
 ## 8. No Print action on the PDF reports
 

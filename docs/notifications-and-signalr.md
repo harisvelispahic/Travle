@@ -379,8 +379,9 @@ differ.
 - **`widgets/notification_bell.dart`** — bell + live badge, mounted in the **top bar** of
   **`layouts/side_nav_shell.dart`** (right-aligned beside the section title). It forwards an
   `onNavigateToSection` callback.
-- **`screens/notifications_screen.dart`** — the centre, width-constrained for desktop; same
-  list / pull-to-refresh / paging / mark-all-with-confirmation as mobile.
+- **`screens/notifications_screen.dart`** — the centre, width-constrained for desktop; the same
+  list / paging / mark-all-with-confirmation as mobile, **plus an All / Unread / Read filter and a
+  debounced free-text search** (added 2026-09-09, August review finding 9 — see §15).
 - **`screens/notification_detail_screen.dart`** — the same full detail, but its "view related" **jumps to
   the relevant side-nav section** (Tour Bookings, Tour Reviews, Role Requests, Destinations) rather than
   pushing an entity page. Desktop's management screens are shell-embedded lists (not pushable by id), so
@@ -697,3 +698,67 @@ whether the worker image predates the code: `docker ps` shows its build age, and
 `docker logs travle-worker` will show `Received an email message with unknown type '<type>'; discarding`
 when it's running an image older than a newly-added `EmailType`. The messages are not lost by the broker —
 the (old) worker acknowledged and dropped them by choice; a rebuilt worker handles every subsequent event.
+
+---
+
+## 15. Filtering and searching the desktop centre (August 2026 review, finding 9)
+
+The desktop list had paging, unread emphasis and *Mark all as read*, but no way to narrow it. The backend
+already supported read/unread — `NotificationSearch.IsRead` existed and `GetMineAsync` applied it — the
+client simply never sent it.
+
+**What the screen sends now.** An All / Unread / Read segmented control, and a free-text query over a
+notification's title and body debounced at 350 ms (the same interval the other desktop lists use).
+`NotificationSearch` gained `Text`, applied with the shared accent-aware `TextSearch.WhereContains`, so a
+plain query still matches an accented title and a phrase stays a phrase.
+
+The search goes beyond the review's ask. It earns its place because a notification is the only record of
+several events — a refund, a rejection reason, a schedule cancellation — so finding one by what it *said*
+is how an admin gets back to it once it has fallen off the first page.
+
+**Where the state lives, and why it matters.** Both filters are held on the shared `NotificationProvider`,
+not on the screen. That is what makes paging preserve them and makes the two compose. Changing either
+refetches from page one, because the old page number belongs to a different result set.
+
+Three details decide whether this behaves rather than merely renders:
+
+- **Mobile is untouched.** It shares this provider, so both filters are opt-in named parameters on
+  `loadPage`; mobile never passes them and its infinite scroll is unchanged.
+- **A live push joins the list only when the current view would have fetched it.** A pushed notification
+  is unread by definition, so it is never prepended under the *Read* filter, and under a text query only
+  when it actually matches (`_matchesTextFilter` mirrors the server's contains-match). Otherwise the push
+  would put a row on screen that the filters say is not there. The bell badge and the `pushes` stream fire
+  either way — they are about the event, not the current view.
+- **Mark all as read refetches while filtered.** Under *Unread*, every visible row has just stopped
+  matching, so leaving the list as-is would contradict its own filter.
+
+The empty state distinguishes "nothing at all" from "nothing matches these filters", so a filtered-empty
+list does not read as a broken feature.
+
+---
+
+## 16. `BookingUnconfirmed` (August 2026 review, finding 2)
+
+One new notification type, `BookingUnconfirmed = 31`, raised by the lifecycle sweep when a paid booking
+reaches its departure without the organizer ever confirming or rejecting it. The booking is cancelled and
+refunded in full; see docs/tours-and-bookings.md §24.
+
+Both parties are told, with a deliberate asymmetry in channel:
+
+| Recipient | Type | Channel |
+|---|---|---|
+| Traveler | `BookingUnconfirmed` | in-app **+ email** — their money is coming back |
+| Organizer | `BookingCancelled` | in-app only — it reports the consequence of their own inaction |
+
+That mirrors the existing convention: a traveler's own cancellation is in-app only for the same reason
+(emailing someone about an action they just took is noise), while anything that moves money is emailed.
+
+Nobody performed this cancellation, so the booking's `CancelledByUserId` stays null and the source is
+recorded as `UnconfirmedAtStart`.
+
+**Operational note.** On a database seeded some time ago, the first sweep after deploying this will find
+every `Pending` booking whose departure has since passed and resolve them in one tick — a burst of
+cancellations, refunds and notifications. That is the fix working on stale data, not a fault. A freshly
+seeded database has nothing to resolve, because the seeder only assigns `Pending` to future schedules.
+
+---

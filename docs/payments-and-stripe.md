@@ -92,6 +92,10 @@ rejection means a 100% refund (money round-trips). The spec designs for exactly 
 
 ### 3.2 The two "holds" — don't confuse them
 
+> **Updated 2026-09-03.** The booking hold is no longer a flat 15 minutes: it is
+> `min(now + 15 min, StartsAt − cutoff)`, so it can never outlive the tour's booking cutoff. See the
+> changelog entry "Payment closes before departure, not at it".
+
 - **Seat hold (ours).** On checkout, the booking enters `PaymentInProgress` and we reserve capacity for
   **15 minutes** (`Booking.ExpiresAt`, `TourSchedule.SeatsTaken`). If payment doesn't complete, a
   scheduler releases the seats and marks the booking `Expired`. This is pure Travle logic, built in
@@ -613,6 +617,105 @@ Migration `20260821164253_AddBookingPaymentIdempotencyToken`: add the column, ba
 then create the unique index — in that order, or the index would trip over the shared `""` default.
 Verified on a throwaway database (full chain applies) and on the dev database (2019 bookings, 2019
 distinct tokens, none empty). No DTO, client or UI change.
+
+---
+
+### Payment closes before departure, not at it ✅ (done, 2026-09-03)
+
+**Symptom.** A booking made a minute before a tour kept a valid payment hold a quarter of an hour *into*
+it, and a `payment_intent.succeeded` arriving after departure promoted the booking to a normally-paid
+`Pending` for a tour that had already run.
+
+**Cause.** Two independent gaps. `InitialBookingState.CreateAsync` refused a departed schedule but then
+set `ExpiresAt` to a flat 15 minutes with no relation to `StartsAt`. And
+`HandlePaymentSucceededAsync` promoted on the sole condition that the booking was still
+`PaymentInProgress` — it never re-read the schedule, so it could not tell a timely charge from a late one.
+
+**Fix.** Booking and payment now close a configurable interval *before* departure:
+`Tour.BookingCutoffMinutes`, or the platform default `Booking:DefaultCutoffMinutes` (two hours). The hold
+is clamped to `min(now + 15 min, StartsAt − cutoff)`, so it can never outlive the cutoff. The webhook
+re-checks the clock at the moment of promotion and applies a charge only while the hold is honoured
+(sharing `BookingTimeRules.HoldGracePeriod` with the expiry sweep, so the two cannot disagree) and the
+tour has not started.
+
+A charge that arrives too late is still banked truthfully, the booking is expired so its seats are
+released, and the money goes back in full through the orphaned-payment path. The departure check is
+redundant whenever a tour sets a non-zero cutoff, and is asserted anyway because a tour may set `0`.
+
+One deliberate asymmetry: the booking is expired only when the **clock** defeated the payment. If the
+amount/currency guard was the sole objection, the hold may still be live and the tour still ahead, so it
+is left alone and the traveler can retry with a correctly priced charge.
+
+---
+
+### The refund obligation is recorded once, never re-decided ✅ (done, 2026-09-08)
+
+**Symptom.** The same cancellation could refund a different percentage depending on *when* the refund
+executed. A traveler who cancelled at the 50% tier could receive 25% because a failed Stripe call was
+retried by an admin three hours later.
+
+**Cause.** `IssueRefundAsync` resolved the tier against `DateTime.UtcNow` — the moment of *execution*,
+not of the decision. A failed Stripe call wrote no `Refund` row, so nothing about the obligation was
+persisted anywhere, and `RetryRefundAsync` re-resolved the ladder against a fresh clock. Worse, the retry
+inferred the percentage from *who* cancelled (anyone but the traveler ⇒ 100%) while the original
+admin-initiated cancellation took the tiered path — so one obligation had two different financial
+meanings depending on which attempt you looked at.
+
+**Fix.** The obligation is frozen at the moment of cancellation, by the cancelling transition itself, in
+the same transaction as the status change. `Booking` gains `CancelledAt`, `CancellationSource`,
+`RefundPercentageOwed` and `RefundAmountOwed`, written **once** by
+`BaseBookingState.SnapshotRefundObligationAsync` — a second call returns without touching them, so no
+retry or replay can re-decide a settled obligation. The amount is computed from the charge actually
+captured, because that is what Stripe can give back.
+
+`RefundService` consequently decides nothing: `IssueRefundAsync` is handed the percentage and amount and
+executes them, `RefundForBookingAsync` lost its `forcedPercentage` parameter, and the inference inside
+`RetryRefundAsync` is gone. The admin payments screen can now name the exact figure a retry will pay,
+because it is recorded even when no `Refund` row exists yet.
+
+**Locked decision.** An admin cancelling on a traveler's behalf owes **100%**. One sentence covers the
+whole system — *the traveler is penalised only for their own decision* — and it removes the divergence
+between the first attempt and the retry.
+
+`RefundOrphanedPaymentAsync` deliberately stays outside this. It is a payment-level remedy for money
+captured against a booking that could not be honoured at all (often `Expired`, not `Cancelled`), so there
+is no cancellation obligation to read; it refunds the whole captured charge.
+
+Migration `20260908160920_AddBookingCancellationSnapshot`: four nullable columns plus a backfill for
+already-cancelled bookings. Where a `Refund` row exists it is authoritative (it is what actually moved);
+otherwise the percentage is reconstructed the way the cancellation itself would have decided it — the
+ladder against the recorded cancellation time for a traveler cancel, 100% for every other source. The
+source is inferred only where the audit trail is unambiguous and left `Unknown` rather than guessed.
+Verified against 297 cancelled bookings; the seeder now records the same fields so a fresh database is
+consistent with a backfilled one.
+
+---
+
+### The refund policy is validated — and edited — as one ladder ✅ (done, 2026-09-09)
+
+**Symptom.** An admin could create overlapping tiers, leave an hour range uncovered, or define several
+open-ended tiers. `PaymentMath.ResolveRefundPercentageAsync` then resolved an overlap arbitrarily by sort
+order and a gap silently to 0% — deciding real money with no error anywhere.
+
+**Cause.** The validators checked one tier in isolation (minimum not negative, maximum above minimum,
+percentage 0–100). Nothing looked at the other rows, and there was no delete guard at all.
+
+**Fix.** `RefundPolicyLadder.EnsureContiguous` validates the scale a write would **produce**, from all
+three `OnBefore*` hooks. The resulting tiers must start at 0 hours, meet exactly with no gap and no
+overlap, contain exactly one open-ended tier which must be the highest, and refund strictly more as
+notice grows. So for every possible number of hours before departure there is exactly one refund rule.
+
+**Consequence, and the follow-on.** A ladder that tiles the whole range has no room for another row, so
+*every* single-row edit to a valid policy is correctly refused — which made the per-row reference CRUD
+screen unusable. The rule was right; the screen was now wrong. The tiers are one aggregate, so they are
+edited as one: `PUT /RefundPolicyTiers/ladder` validates the whole set and replaces it in a transaction,
+and the console has a dedicated editor where the boundary between two tiers is a single shared value —
+moving it moves both sides, so a gap or overlap cannot be expressed. That leaves **split** and **merge**,
+which preserve coverage by construction. The per-row endpoints remain and still enforce the ladder rule.
+
+Rows are replaced rather than reconciled: no foreign key points at a tier (refunds snapshot
+`PercentageApplied`, and bookings now snapshot the amount owed), so a tier carries no history worth
+preserving through an edit.
 
 ---
 

@@ -445,10 +445,14 @@ There is deliberately **no `PUT` and no `DELETE`** — bookings are status-machi
 
 An `IHostedService`/`BackgroundService` that lives **in the API process** (not the RabbitMQ worker container — matching the spec's process tree). Every **1 minute** (a `PeriodicTimer`), in a **fresh DI scope** (its own `DbContext`), it:
 
-1. **Expires holds** — finds `PaymentInProgress` bookings past `ExpiresAt` and runs each through `ExpireAsync` (status → Expired, seats released).
-2. **Auto-completes** — finds `Confirmed` bookings whose schedule `EndsAt` has passed and runs each through `CompleteAsync` (status → Completed).
+1. **Expires holds** — finds `PaymentInProgress` bookings past `ExpiresAt` (plus a 90-second grace, see Part III) and runs each through `ExpireAsync` (status → Expired, seats released).
+2. **Resolves unconfirmed bookings** — finds `Pending` bookings whose departure has arrived and runs each through `CancelUnconfirmedAtStartAsync` (status → Cancelled, full refund owed). Added by the August 2026 review corrections; see Part III §24.
+3. **Auto-completes** — finds `Confirmed` bookings whose schedule `EndsAt` has passed and runs each through `CompleteAsync` (status → Completed).
+4. **Raises pre-tour reminders** — for `Confirmed` bookings starting inside the configured window (Phase 9; see docs/notifications-and-signalr.md).
 
-Each candidate is re-loaded and re-checked before transitioning (a webhook may have moved it in the meantime), and a failed tick is logged and swallowed so the loop never dies. Both maintenance methods (`ExpireOverdueHoldsAsync`, `AutoCompletePastConfirmedAsync`) live on `BookingService` and go through the same state machine — the scheduler is just their clock.
+Step 2 runs **before** step 3 deliberately: a booking the organizer never decided on must be cancelled and refunded at its departure, not silently completed at the schedule's end as though it had happened.
+
+Each candidate is re-loaded and re-checked before transitioning (a webhook may have moved it in the meantime), and a failed tick is logged and swallowed so the loop never dies. Every maintenance method lives on `BookingService` and goes through the same state machine — the scheduler is just their clock.
 
 ## 15. Slot-cancel, wired end-to-end (the other half of the Phase-4 stub)
 
@@ -525,7 +529,82 @@ The seed carries one booking in each demonstrable state (03 §7). Phase 5 added 
 
 `PaymentInProgress` is transient (it only exists between checkout and payment/expiry), so it isn't seeded — it appears at runtime the moment a traveler books.
 
-## 22. Updated status board (supersedes §7)
+# Part III — August 2026 review corrections
+
+The resubmission review found the booking lifecycle's *time* rules incomplete and its visibility rules
+inconsistent. Both are now single, centralized rules. Full write-up in `docs/corrections-2026-09.md`;
+this section records what changed in the model described above.
+
+## 23. `BookingTimeRules` — the one home for every deadline
+
+Two deadlines, both relative to `TourSchedule.StartsAt`:
+
+- **The booking cutoff.** Bookings and completed payments close this long before departure —
+  `Tour.BookingCutoffMinutes`, or the platform default `Booking:DefaultCutoffMinutes` (two hours). `null`
+  means "use the default"; `0` means "bookable right up to departure".
+- **The departure itself.** The wall for the discretionary transitions: confirm, reject, traveler cancel
+  and organizer cancel are all refused once the tour has started.
+
+Everything that has an opinion about "too late" reads these: booking creation, the payment hold, the
+Stripe webhook, the lifecycle sweeps, the schedule-creation guard, and the capability flags the clients
+render. The 90-second hold grace lives here too, so the expiry sweep and the webhook honour a
+last-moment charge on identical terms rather than each keeping their own constant.
+
+**Why the cutoff sits before departure rather than at it.** It guarantees the organizer real time to
+confirm or reject before the traveler has to set off, and it makes "payment lands on a running tour"
+unreachable in normal operation instead of merely handled. Organizers are held to the same rule:
+`AddScheduleAsync` refuses a date starting inside its own tour's cutoff, because a schedule published
+already closed is a mistake worth catching where it is made.
+
+The hold is `min(now + 15 min, StartsAt − cutoff)`, so it can never outlive the cutoff — which is the
+mechanism that stops a payment completing on a tour that has already begun.
+
+## 24. `Pending` can no longer outlive its own tour
+
+Expiry only reaches held payments and auto-completion only reaches confirmed bookings, so a **paid**
+`Pending` booking whose organizer never acted used to sit there indefinitely — through the departure and
+past the end of the tour.
+
+`ResolveUnconfirmedPendingAsync` closes that: at departure the booking is cancelled and refunded **in
+full** (the traveler paid and was never accepted), with both parties notified. `CancelledByUserId` stays
+null — nobody performed this cancellation, the clock did — and the source is recorded as
+`UnconfirmedAtStart`.
+
+Two related holes closed by the same rule: organizer suspension now cancels only **upcoming** bookings
+(it was refunding tours travelers had already been on), and `ResolveAllowedActionNames` now takes the
+schedule start and hold expiry, so the apps stop offering actions the server would reject.
+
+## 25. Capability flags are the server's own verdict
+
+`TourScheduleResponse` gained `BookingClosesAt`, `IsBookable`, `BookingCount` and `DeleteBlockedReason`.
+
+`IsDeletable` previously read `active && future && SeatsTaken == 0`, but `DeleteScheduleAsync` also
+refuses when **any** booking row exists — cancelled and expired ones included, which do not count toward
+`SeatsTaken`. The flag now uses `BookingCount`, so the console never offers a delete the server will
+refuse, and `DeleteBlockedReason` carries the server's own sentence into the tooltip.
+
+`IsBookable` is the traveler-facing equivalent: open, before the cutoff, seats left. The mobile app gates
+its Book button on it rather than re-deriving the rule.
+
+## 26. One traveler-visibility rule
+
+`TravelerVisibility` holds the condition — active, organizer not suspended, every stop approved — and
+every entry point composes it: public search, `GetSchedulesAsync`, `InitialBookingState.CreateAsync`,
+both favorites lists, the recommender's final read and the organizer's public profile.
+
+Before this, the booking guard did not check stop approval, so a tour could vanish from search and detail
+while a remembered `scheduleId` stayed enough to book it. Organizer- and admin-facing reads deliberately
+do **not** apply the rule: an organizer must still see their own deactivated or temporarily unavailable
+tour in order to act on it.
+
+## 27. Cancelling records what is owed
+
+Every cancelling transition now freezes the obligation onto the booking in the same transaction as the
+status change: `CancelledAt`, `CancellationSource`, `RefundPercentageOwed`, `RefundAmountOwed`. Only a
+traveler's own cancellation is tiered; every other source, admin-initiated included, is a full refund.
+See docs/payments-and-stripe.md for how the refund side executes it.
+
+## 28. Updated status board (supersedes §7)
 
 | Capability | Phase | Status |
 |---|---|---|
@@ -535,9 +614,16 @@ The seed carries one booking in each demonstrable state (03 §7). Phase 5 added 
 | Scheduler: auto-expire holds, auto-complete finished bookings | 5 | ✅ **done** |
 | Slot-cancel → mass booking `Cancelled` transition (atomic) | 5 | ✅ **done** (refund exec still P6) |
 | Mobile traveler UI: book flow, history, master-detail, cancel | 5 | ✅ **done** |
-| Desktop UI: organizer confirm/reject, admin all-bookings | 5 | ⏳ next |
-| Stripe `Payment`/`Refund`, webhook (PaymentInProgress → Pending), real refunds | 6 | ⏳ later |
-| `BookingConfirmed`/`BookingCompleted` recommender interactions | 8 | ⏳ later |
-| SignalR real-time notification push (rows are written now) | 9 | ⏳ later |
+| Desktop UI: organizer confirm/reject, admin all-bookings | 5 | ✅ **done** |
+| Stripe `Payment`/`Refund`, webhook (PaymentInProgress → Pending), real refunds | 6 | ✅ **done** |
+| `BookingConfirmed`/`BookingCompleted` recommender interactions | 8 | ✅ **done** |
+| SignalR real-time notification push | 9 | ✅ **done** |
+| Booking cutoff + departure wall (`BookingTimeRules`) | review | ✅ **done** |
+| `Pending` auto-resolved at departure (cancel + full refund) | review | ✅ **done** |
+| Refund obligation snapshotted at cancellation | review | ✅ **done** |
+| One `TravelerVisibility` rule across every entry point | review | ✅ **done** |
 
-**One-line summary:** a booking is created (seats claimed transactionally, held 15 min), paid (P6), confirmed or rejected by the organizer, and finally auto-completed — every hop owned by one centralized, enum-driven state machine that is the *only* thing allowed to touch a booking's status.
+**One-line summary:** a booking is created (seats claimed transactionally, held until the cutoff or 15
+minutes, whichever comes first), paid, confirmed or rejected by the organizer before departure, and
+finally auto-completed — every hop owned by one centralized, enum-driven state machine that is the *only*
+thing allowed to touch a booking's status, and every deadline owned by `BookingTimeRules`.
